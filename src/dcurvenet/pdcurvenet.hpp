@@ -1,0 +1,43 @@
+// pdcurvenet.hpp
+#pragma once
+
+#include "dcurvenet.hpp"
+#include "components/dvert.hpp"
+#include "components/dsegment.hpp"
+#include "components/dspline.hpp"
+#include <Eigen/Core>
+
+
+namespace DCurvenet {
+
+class pdcurvenet : public dcurvenet {
+    public:
+        // Constructor copies in the values of the discrete curvenet, but with our modified data types
+        pdcurvenet(dcurvenet& parentDC);
+
+        // TODO: Needs getters so that others can ask for internals
+
+        // Big function for applying projection and geodesics
+        // TODO: Add mesh
+        void ComputePDC(double eps);
+    protected:
+        // No class inheritance
+    private:
+        // Hard copy in values during intialization
+        copyDC(dcurvenet& parentDC);
+
+        // Apply projection
+        void projectToSurface();
+
+        // Snap to nearby verts/edges
+        void snapToNearbyElements();
+
+        // We copy over and then modify these lists in our PDC
+        // std::vector<dvert> dVerts;
+        // std::vector<dsegment> dSegments;
+        // std::vector<dspline> dSplines;
+        
+        
+};
+
+}   // namespace DCurvenet
