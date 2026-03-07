@@ -13,6 +13,7 @@
 #include <array>
 #include <vector>
 #include <stdexcept>
+#include <memory>
 #include <glm/glm.hpp>
 #include <glm/vec3.hpp>
 
@@ -21,6 +22,7 @@
 
 // My files
 #include "profileformer/profileformer.hpp"
+#include "utils/jsonUtils.hpp"
 #include "utils/utils.hpp"
 
 // Main file for visualization with Polyscope
@@ -49,6 +51,10 @@ polyscope::PointCloud* psControls;
 
 // VARIABLES FOR PARSING AND WRITING FILES
 std::string InputPath;
+std::string CurvesPath;
+
+// Core pipeline object
+std::unique_ptr<ProfileFormer::profileformer> PF;
 
 // UI HELPERS
 int selectedVertex = -1;    // Index of selected vertex on mesh
@@ -75,24 +81,69 @@ std::vector<std::vector<int>> controlsE;
 
 // Netural Cut-mesh and Projected DC will also go here once we have them
 
+// Forward declarations for legacy callback aliases
+void removeGizmo();
+void resetMeshVertexPositions();
 
 
 // ----------------- FUNCTIONS BEGIN HERE -------------------------
 
+void refreshCurvenetVisuals() {
+    if (!PF) return;
+
+    std::vector<std::array<double, 3>> curvePtsD;
+    std::vector<std::array<std::size_t, 2>> curveEdgesD;
+    Utils::buildPolyscopeCurveNetwork(PF->getNeutralCurvenet(), curvePtsD, curveEdgesD, 180);
+
+    psCurvenetP.clear();
+    psCurvenetP.reserve(curvePtsD.size());
+    for (const auto& p : curvePtsD) {
+        psCurvenetP.emplace_back(static_cast<float>(p[0]),
+                                 static_cast<float>(p[1]),
+                                 static_cast<float>(p[2]));
+    }
+    psCurvenetE = curveEdgesD;
+
+    const auto controlsD = Utils::buildControlCloud(PF->getNeutralCurvenet());
+    psControlsP.clear();
+    psControlsP.reserve(controlsD.size());
+    for (const auto& p : controlsD) {
+        psControlsP.emplace_back(static_cast<float>(p[0]),
+                                 static_cast<float>(p[1]),
+                                 static_cast<float>(p[2]));
+    }
+
+    psCurvenet = polyscope::registerCurveNetwork("Discrete Curvenet", psCurvenetP, psCurvenetE);
+    psControls = polyscope::registerPointCloud("Controls", psControlsP);
+}
+
 // Performs call to pre-computation of cut-mesh and operators
 int computePrecomp() {
-    return 1;
+    if (!PF) {
+        std::cout << "Pre-computation skipped: profileformer not initialized." << std::endl;
+        return 1;
+    }
+    PF->precomputation();
+    refreshCurvenetVisuals();
+    return 0;
 }
 
 // Performs call to surface deformation and updates PS mesh
 int computeDeformation() {
-    return 1;
+    // TODO: Keep legacy entrypoint; deformation pipeline is not fully wired yet.
+    return 0;
 }
+
+// Legacy aliases to preserve callback naming used by existing scaffold.
+int performPrecomp() { return computePrecomp(); }
+void endVertexEdit() { removeGizmo(); }
+void resetVertexPositions() { resetMeshVertexPositions(); }
 
 
 // Creates gizmo at vertex
 void addGizmoAtVertex(int vert_idx) {
-    glm::vec3 startpos = psV[vert_idx];
+    const Eigen::Vector3d& p = psV[static_cast<std::size_t>(vert_idx)];
+    glm::vec3 startpos(static_cast<float>(p.x()), static_cast<float>(p.y()), static_cast<float>(p.z()));
 
     activeGizmo = true;
     if (!vertexGizmo) {
@@ -123,7 +174,10 @@ void removeGizmo() {
 
 // Modify a vertex position in polyscope
 void modifyVertexPositions(int vert_idx, glm::vec3 new_pos) {
-    psV[vert_idx] = new_pos;
+    psV[static_cast<std::size_t>(vert_idx)] =
+        Eigen::Vector3d(static_cast<double>(new_pos.x),
+                        static_cast<double>(new_pos.y),
+                        static_cast<double>(new_pos.z));
     // Need a conversion function to change internal copy
     // V_current[vert_idx] = IO::glmToEigen(new_pos);
     return;
@@ -136,7 +190,7 @@ TODO: Some way to reset curvenet + controls
 void resetMeshVertexPositions() {
     // Reset Mesh
     Utils::copyPositions(V, psV);
-    Utils::copyPositions(T, psT);
+    Utils::copyConnectivity(T, psT);
     psMesh = polyscope::registerSurfaceMesh("Surface Mesh", psV, psT);
     return;
 }
@@ -182,10 +236,10 @@ void myCallback() {
 
     // Constraint mode activation
     if (controlMode && mouseClicked && pick.isHit && pick.structure == psMesh) {
-        polyscope::VolumeMeshPickResult meshPick = psMesh->interpretPickResult(pick);
+        polyscope::SurfaceMeshPickResult meshPick = psMesh->interpretPickResult(pick);
 
         // TODO: We should be able to click the mesh arbitrarily, not just at vertices
-        if (meshPick.elementType == polyscope::VolumeMeshElement::VERTEX) {
+        if (meshPick.elementType == polyscope::MeshElement::VERTEX) {
             selectedVertex = static_cast<int>(meshPick.index);
         } else {
             std::cout << "Did not click on mesh." << std::endl;
@@ -194,11 +248,13 @@ void myCallback() {
 }
 
 int main(int argc, char **argv) {
+
     if (argc < 2) {
         std::cout << "Too few arguments. Usage: ./profile_former <OBJ file path>" << std::endl;
         return 1;
     }
     InputPath = argv[1];
+    CurvesPath = (argc > 2) ? argv[2] : "../curvenet/data/sphere-curves.json";
 
     // Initialize polyscope
     polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None; // Disable ground plane
@@ -217,22 +273,32 @@ int main(int argc, char **argv) {
 
     // Load our mesh object
     std::cout << "\nLoading surface mesh file" << std::endl;
-    igl::readOBJ(InputPath, V, T);
+    // Legacy line preserved (disabled): igl::readOBJ(InputPath, V, T);
+    Utils::loadObjMesh(InputPath, V, T);
+
+    std::cout << "Loading curve JSON file" << std::endl;
+    JSONUtils::CurvenetInput cnInput = JSONUtils::loadBezierCurvenetInput(CurvesPath);
+
+    // Initialize profileformer + curvenet with existing project types.
+    PF = std::make_unique<ProfileFormer::profileformer>(V, T, cnInput.controlP, cnInput.curveC);
+    computePrecomp();
 
     // Register tet mesh with PS
     std::cout << "Registering Surface Mesh to Polyscope" << std::endl;
     psMesh = polyscope::registerSurfaceMesh("Surface Mesh", V, T);
 
-    // Empty curvenet
-    psCurvenet = polyscope::registerCurveNetwork("Discrete Curvenet", psCurvenetP, psCurvenetE);
-    //psCurvenet->setEnabled(true);
+    // Curvenet + controls were populated by computePrecomp() / refreshCurvenetVisuals()
+    // // Empty curvenet
+    // psCurvenet = polyscope::registerCurveNetwork("Discrete Curvenet", psCurvenetP, psCurvenetE);
+    // //psCurvenet->setEnabled(true);
 
-    // Empty controls
-    psControls = polyscope::registerPointCloud("Controls", psCurvenetP);
-    //psControls->setEnabled(true);
+    // // Empty controls
+    // psControls = polyscope::registerPointCloud("Controls", psCurvenetP);
+    // //psControls->setEnabled(true);
 
     // Give control to the polyscope gui
     polyscope::show();
 
     return EXIT_SUCCESS;
+    }
 }

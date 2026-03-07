@@ -1,70 +1,139 @@
+// utils.cpp
+
 #include "utils.hpp"
 
-#include <Eigen/Core>
-#include <glm/vec3.hpp>
-#include <vector>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
+#include <utility>
 
 namespace Utils {
-    // GLM::vec3 to Eigen::Vector3d converter
-    Eigen::Vector3d glmToEigen(const glm::vec3 input) {
-        Eigen::Vector3d output;
-        output(0) = static_cast<double>(input.x);
-        output(1) = static_cast<double>(input.y);
-        output(2) = static_cast<double>(input.z);
-        return output;
+
+#if 0
+// Legacy conversion helpers preserved from original stub.
+Eigen::Vector3d glmToEigen(const glm::vec3 input) {
+    Eigen::Vector3d output;
+    output(0) = static_cast<double>(input.x);
+    output(1) = static_cast<double>(input.y);
+    output(2) = static_cast<double>(input.z);
+    return output;
+}
+
+glm::vec3 eigenToGLM(const Eigen::Vector3d input) {
+    glm::vec3 output;
+    output.x = static_cast<float>(input(0));
+    output.y = static_cast<float>(input(1));
+    output.z = static_cast<float>(input(2));
+    return output;
+}
+
+void meshConversionEigentoGLM(const std::vector<Eigen::Vector3d>& Eig, std::vector<glm::vec3>& GLM) {
+    GLM.clear();
+    GLM.resize(Eig.size());
+    for (int v = 0; v < static_cast<int>(Eig.size()); v++) {
+        GLM[v] = eigenToGLM(Eig[v]);
+    }
+}
+
+void meshConversionGLMtoEigen(std::vector<Eigen::Vector3d>& Eig, const std::vector<glm::vec3>& GLM) {
+    Eig.clear();
+    Eig.resize(GLM.size());
+    for (int v = 0; v < static_cast<int>(GLM.size()); v++) {
+        Eig[v] = glmToEigen(GLM[v]);
+    }
+}
+#endif
+
+void copyPositions(const std::vector<Eigen::Vector3d>& oldV, std::vector<Eigen::Vector3d>& newV) { newV = oldV; }
+
+void copyConnectivity(const std::vector<std::vector<int>>& oldT, std::vector<std::vector<int>>& newT) { newT = oldT; }
+
+void loadObjMesh(const std::string& path,
+                 std::vector<Eigen::Vector3d>& vertices,
+                 std::vector<std::vector<int>>& faces) {
+    std::ifstream in(path);
+    if (!in) {
+        throw std::runtime_error("Failed to open OBJ: " + path);
     }
 
-    // Eigen::Vector3d to GLM::vec3 converter
-    glm::vec3 eigenToGLM(const Eigen::Vector3d input) {
-        glm::vec3 output;
-        output.x = static_cast<float>(input(0));
-        output.y = static_cast<float>(input(1));
-        output.z = static_cast<float>(input(2));
-        return output;
-    }
+    vertices.clear();
+    faces.clear();
 
-    // Entire mesh conversion routine Eigen to GLM
-    void meshConversionEigentoGLM(const std::vector<Eigen::Vector3d>& Eig, std::vector<glm::vec3>& GLM) {
-        GLM.clear();
-        GLM.resize(Eig.size());
-        for (int v = 0; v < Eig.size(); v++) {
-            GLM[v] = eigenToGLM(Eig[v]);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') {
+            continue;
         }
-        return;
-    }
 
-    // Entire mesh conversion routine GLM to Eigen
-    void meshConversionGLMtoEigen(std::vector<Eigen::Vector3d>& Eig, const std::vector<glm::vec3>& GLM) {
-        Eig.clear();
-        Eig.resize(GLM.size());
-        for (int v = 0; v < GLM.size(); v++) {
-            Eig[v] = glmToEigen(GLM[v]);
-        }
-        return;
-    }
+        std::istringstream iss(line);
+        std::string tag;
+        iss >> tag;
 
-    // Copy positions and connectivity into a copied container
-    void copyPositions(const std::vector<Eigen::Vector3d>& V_old, std::vector<Eigen::Vector3d>& V_new) {
-        V_new.clear();
-        V_new.resize(V_old.size());
-        for (int v = 0; v < V_old.size(); v++) {
-            Eigen::Vector3d new_v = {V_old[v](0), V_old[v](1), V_old[v](2)};
-            V_new[v] = new_v;
-        }
-        return;
-    }
+        if (tag == "v") {
+            double x = 0.0;
+            double y = 0.0;
+            double z = 0.0;
+            iss >> x >> y >> z;
+            vertices.emplace_back(x, y, z);
+        } else if (tag == "f") {
+            std::vector<int> face;
+            std::string tok;
+            while (iss >> tok) {
+                const std::size_t slash = tok.find('/');
+                const std::string idxStr = (slash == std::string::npos) ? tok : tok.substr(0, slash);
+                if (idxStr.empty()) {
+                    continue;
+                }
 
-    void copyConnectivity(const std::vector<std::vector<int>>& T_old, std::vector<std::vector<int>>& T_new) {
-        T_new.clear();
-        T_new.resize(V_old.size());
-        for (int f = 0; f < T_old.size(); f++) {
-            std::vector<int> f_idxs;
-            for (int v = 0; v < T_old[f].size(); v++) {
-                f_idxs.push_back(T[f][v]);
+                const int idxRaw = std::stoi(idxStr);
+                int idx = 0;
+                if (idxRaw > 0) {
+                    idx = idxRaw - 1;
+                } else {
+                    const int fromBack = -idxRaw;
+                    if (fromBack <= 0 || static_cast<std::size_t>(fromBack) > vertices.size()) {
+                        throw std::runtime_error("Invalid negative face index in OBJ");
+                    }
+                    idx = static_cast<int>(vertices.size()) - fromBack;
+                }
+                face.push_back(idx);
             }
-            V_new[v] = f_idxs;
-        }
-        return;
-    }
 
-} // namespace Utils
+            if (face.size() >= 3) {
+                faces.push_back(std::move(face));
+            }
+        }
+    }
+}
+
+void buildPolyscopeCurveNetwork(const Curvenet::curvenet& cn,
+                                std::vector<std::array<double, 3>>& points,
+                                std::vector<std::array<std::size_t, 2>>& edges,
+                                std::size_t samplesPerSpline) {
+    points.clear();
+    edges.clear();
+
+    for (const auto& s : cn.getSplines()) {
+        const std::vector<Eigen::Vector3d> sampled = s.sampleParameterization(static_cast<int>(samplesPerSpline));
+        const std::size_t base = points.size();
+        for (std::size_t i = 0; i < sampled.size(); ++i) {
+            const auto& p = sampled[i];
+            points.push_back({p.x(), p.y(), p.z()});
+            if (i > 0) {
+                edges.push_back({base + i - 1, base + i});
+            }
+        }
+    }
+}
+
+std::vector<std::array<double, 3>> buildControlCloud(const Curvenet::curvenet& cn) {
+    std::vector<std::array<double, 3>> out;
+    out.reserve(cn.controls().size());
+    for (const auto& c : cn.controls()) {
+        const auto& p = c.getPosition();
+        out.push_back({p.x(), p.y(), p.z()});
+    }
+    return out;
+}
+
+}  // namespace Utils

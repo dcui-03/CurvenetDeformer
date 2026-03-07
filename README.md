@@ -18,3 +18,59 @@ Created template headers for all data structures (ProfileFormer, Curvenet, Cutme
 **Cut-Mesh** (CutMesh): Has its own class (*cutmesh*).
 
 There is also a utils folders for miscellaneous algorithms (DEC, straightest Geodesic, other) each with their own namespaces. (I'm a bit crazy about categorizing things, but better to be to organized than not enough ig...)
+
+## Build and Run (Current)
+
+### 1. Dependencies
+
+You need:
+- CMake (>= 3.20)
+- A C++17 compiler
+- Eigen3
+- nlohmann/json
+- X11/OpenGL development libs (for Polyscope/GLFW on Linux/WSL)
+
+On Ubuntu/WSL, for example:
+
+```bash
+sudo apt update
+sudo apt install -y \
+  build-essential \
+  cmake \
+  pkg-config \
+  libeigen3-dev \
+  nlohmann-json3-dev \
+  libgl1-mesa-dev \
+  libglu1-mesa-dev \
+  xorg-dev
+```
+
+### 2. Dependency folder
+
+`deps/polyscope` must exist in this repo.
+
+```bash
+git clone --recursive https://github.com/nmwsharp/polyscope.git deps/polyscope
+```
+
+### 3. Configure + build
+
+From repo root:
+
+```bash
+CC=/usr/bin/gcc CXX=/usr/bin/g++ cmake -S . -B build-ui -DPROFILEFORMER_WITH_POLYSCOPE=ON
+cmake --build build-ui -j
+```
+
+Notes:
+- For Conda environments, explicitly setting `CC/CXX` to system compilers avoids X11 header/toolchain conflicts.
+
+### 4. Run
+
+```bash
+./build-ui/profile_former ../curvenet/data/sphere.obj ../curvenet/data/sphere-curves.json
+```
+
+Arguments:
+- `argv[1]`: mesh `.obj` path (required)
+- `argv[2]`: curve `.json` path (optional; defaults to `../curvenet/data/sphere-curves.json`)

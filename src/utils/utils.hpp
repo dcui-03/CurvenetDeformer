@@ -1,38 +1,44 @@
-// Utils.hpp
+// utils.hpp
 #pragma once
 
+#include "curvenet/curvenet.hpp"
+
 #include <Eigen/Core>
-#include <glm/vec3.hpp>
+
+#include <array>
+#include <cstddef>
+#include <string>
 #include <vector>
 
 namespace Utils {
-    // GLM::vec3 to Eigen::Vector3d converter
-    Eigen::Vector3d glmToEigen(const glm::vec3 input);
 
-    // Eigen::Vector3d to GLM::vec3 converter
-    glm::vec3 eigenToGLM(const Eigen::Vector3d input);
+#if 0
+// Legacy conversion helpers preserved from original stub.
+// Disabled because GLM is not a required dependency in the current build.
+Eigen::Vector3d glmToEigen(const glm::vec3 input);
+glm::vec3 eigenToGLM(const Eigen::Vector3d input);
+void meshConversionEigentoGLM(const std::vector<Eigen::Vector3d>& Eig, std::vector<glm::vec3>& GLM);
+void meshConversionGLMtoEigen(std::vector<Eigen::Vector3d>& Eig, const std::vector<glm::vec3>& GLM);
+#endif
 
-    // Entire mesh conversion routine Eigen to GLM
-    void meshConversionEigentoGLM(const std::vector<Eigen::Vector3d>& Eig, std::vector<glm::vec3>& GLM);
+// Copy positions and connectivity into a copied container
+void copyPositions(const std::vector<Eigen::Vector3d>& oldV, std::vector<Eigen::Vector3d>& newV);
+void copyConnectivity(const std::vector<std::vector<int>>& oldT, std::vector<std::vector<int>>& newT);
 
-    // Entire mesh conversion routine GLM to Eigen
-    // Note that GLM is float, while Eigen prefers double
-    // Do NOT convert back and forth, you will lose information
-    void meshConversionGLMtoEigen(std::vector<Eigen::Vector3d>& Eig, const std::vector<glm::vec3>& GLM);
+// Generic helpers used by main visualization path
+void loadObjMesh(const std::string& path,
+                 std::vector<Eigen::Vector3d>& vertices,
+                 std::vector<std::vector<int>>& faces);
 
-    // Copy positions and connectivity into a copied container
-    void copyPositions(const std::vector<Eigen::Vector3d>& V_old, std::vector<Eigen::Vector3d>& V_new);
+void buildPolyscopeCurveNetwork(const Curvenet::curvenet& cn,
+                                std::vector<std::array<double, 3>>& points,
+                                std::vector<std::array<std::size_t, 2>>& edges,
+                                std::size_t samplesPerSpline);
 
-    void copyConnectivity(const std::vector<std::vector<int>>& T_old, std::vector<std::vector<int>>& T_new);
+std::vector<std::array<double, 3>> buildControlCloud(const Curvenet::curvenet& cn);
 
+// TODO: Fill in when needed by the deformation stage.
+// int projectOntoTangentPlane(const Eigen::Vector3d& normal, Eigen::Vector3d& projection, bool normalize = true);
+// std::vector<int> sortVectorsCCW(...);
 
-    // TODO: Fill in these functions
-    // Project a vector onto a tangent plane, given the normal to the plane
-    // Returns 1 if degenerate (shouldn't happen but we should handle it somehow?)
-    int projectOntoTangentPlane(const Eigen::Vector3d& normal, Eigen::Vector3d& projection, bool normalize = true);
-
-    // Given a set of projected vectors, order them CCW
-    // TODO: How do we indicate degenerate vectors?
-    Eigen::
-
-} // namespace Utils
+}  // namespace Utils
