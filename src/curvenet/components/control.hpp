@@ -20,6 +20,7 @@ public:
 
     void setPosition(const Eigen::Vector3d& p) { pos = p; }
     void addSplineIdx(int splineIdx) { spline_idxs.push_back(splineIdx); }
+    void setSplineIdxs(const std::vector<int>& idxs) { spline_idxs = idxs; }
 
     // Number of outgoing splines from this control
     int num_outgoing() const;

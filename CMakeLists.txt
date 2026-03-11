@@ -28,6 +28,10 @@ add_library(profileformer_core
   src/curvenet/components/control.cpp
   src/curvenet/components/spline.cpp
   src/curvenet/curvenet.cpp
+  src/dcurvenet/components/dvert.cpp
+  src/dcurvenet/components/dsegment.cpp
+  src/dcurvenet/components/dspline.cpp
+  src/dcurvenet/dcurvenet.cpp
   src/profileformer/profileformer.cpp
   src/utils/jsonUtils.cpp
   src/utils/utils.cpp

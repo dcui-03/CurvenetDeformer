@@ -71,6 +71,34 @@ std::vector<Eigen::Vector3d> spline::sampleParameterization(int n) const {
     return out;
 }
 
+std::vector<Eigen::Vector3d> spline::sampleUniformParameterization(int n) const {
+    if (n < 2) {
+        n = 2;
+    }
+
+    std::vector<Eigen::Vector3d> out;
+    out.reserve(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        const double t = static_cast<double>(i) / static_cast<double>(n - 1);
+        out.push_back(tSampleParameterization(t));
+    }
+    return out;
+}
+
+double spline::controlPolylineLength() const {
+    return (p0 - h0).norm() + (h0 - h1).norm() + (h1 - p1).norm();
+}
+
+Eigen::Vector3d spline::outgoingTangentAtControl(int controlIdx) const {
+    if (controlIdx == c1) {
+        return h0 - p0;
+    }
+    if (controlIdx == c2) {
+        return h1 - p1;
+    }
+    return Eigen::Vector3d::Zero();
+}
+
 Eigen::Vector3d spline::tSampleParameterization(double t) const {
     t = clamp01(t);
     const double u = 1.0 - t;

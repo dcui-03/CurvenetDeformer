@@ -2,6 +2,7 @@
 #pragma once
 
 #include "curvenet/curvenet.hpp"
+#include "dcurvenet/dcurvenet.hpp"
 
 #include <Eigen/Core>
 #include <Eigen/Sparse>
@@ -13,10 +14,6 @@
 #include "utils/decUtils.hpp"
 #endif
 
-namespace DCurvenet {
-class dcurvenet;
-}
-
 namespace ProfileFormer {
 
 class profileformer {
@@ -26,6 +23,7 @@ public:
     profileformer(const std::vector<Eigen::Vector3d>& meshV,
                   const std::vector<std::vector<int>>& meshT,
                   const std::vector<Eigen::Vector3d>& controlP,
+                  const std::vector<Eigen::Vector3d>& surfaceN,
                   const std::vector<std::vector<int>>& curveC);
 
     // Precompute cut-mesh and operators
@@ -37,6 +35,7 @@ public:
     // TODO: Initialize directly from existing mesh data struct (ex. GeometryCentral or minimesh)
     // TODO: Needs getters so that the UI can ask for internals
     const Curvenet::curvenet& getNeutralCurvenet() const { return nCurvenet; }
+    const DCurvenet::dcurvenet& getNeutralDCurvenet() const { return nDCurvenet; }
     const std::vector<Eigen::Vector3d>& getNeutralMeshV() const { return nMeshV; }
     const std::vector<std::vector<int>>& getNeutralMeshT() const { return nMeshT; }
 
@@ -47,7 +46,9 @@ private:
     // TODO: We should probably compute vertex, edge, and face normals here and store them somewhere...
     void initializeMesh(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshT);
     void initializeCurvenet(const std::vector<Eigen::Vector3d>& controlP,
+                            const std::vector<Eigen::Vector3d>& surfaceN,
                             const std::vector<std::vector<int>>& curveC);
+    void initializeDCurvenet();
 
     // Computes deformations on the temporary discrete curvenet, then fills in a list of flattened deformation
     // gradients per vertex
@@ -62,11 +63,12 @@ private:
     // Store the neutral curvenet (spline)
     Curvenet::curvenet nCurvenet;
     // Store the neutral discrete curvenet
-    // (preserved legacy members; disabled until dcurvenet/cutmesh are compile-ready)
-#if 0
     DCurvenet::dcurvenet nDCurvenet;
-    CutMesh::cutmesh nCutmesh;
-#endif
+
+    // Discretization parameters / cached neutral statistics.
+    int dcurve_samples_per_mean_edge = 5;
+    int dcurve_uniform_refine_samples = 64;
+    double neutral_mean_edge_length = 1.0;
 
     // Store operators (left as placeholders; not required for curvenet visualization init)
     Eigen::SparseMatrix<double> VtLV;

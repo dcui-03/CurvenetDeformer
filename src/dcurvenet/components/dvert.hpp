@@ -1,41 +1,55 @@
-// dvert.hpp
 #pragma once
 
 #include <Eigen/Core>
+
 #include <vector>
 
 namespace DCurvenet {
 
-// Control Points
-class dvert {
-    public:
-        // Constructor which takes the 
-        dvert(Eigen::Vector3d position, int control);
-
-        // TODO: Needs getters that check the labels and can return an error if we try to get something with wrong attribute
-
-        // Set the normal (during parallel transport)
-        // sign of true means positive
-        int setNormal(Eigen::Vector3d normal, bool sign);
-        // Number of outgoing segments from this control
-        // Returns -1 if not a control
-        int num_outgoing();
-    protected:
-        // No class inheritance
-    private:
-        // Attributes
-        Eigen::Vector3d pos;
-        int control;            // -1 if not a control, and the index of the parent control point if is
-        std::vector<int> segment_idxs;   // pointers to an ordering of outgoing segments (CCW) or (previous then next along spline)
-        // matching CCW corner normals for outgoing segments (if is from control)
-        // For non-control vertices this should have positive first, then negative normal
-        std::vector<Eigen::Vector3d> adjacent_normals;
-        double t;       // t-value along parent spline.  NOTE: for control points, this must be 0.0 or 1.0
-        
-        // PDC ATTRIBUTES
-        int DC_origin = 0;      // 0 for dverts inherited from DC, 1 for dverts produced by splits
-        int projection_element; // 0 if projected dvert lands on face, 1 if lands on edge, 2 if lands on vertex
-        int element_index;      // The index of the face, edge or vertex in the mesh
+struct SegmentData {
+    int dspline_idx = -1;
+    int segment_idx = -1;
+    Eigen::Vector3d t_out = Eigen::Vector3d::Zero();
+    double l = 0.0;
+    Eigen::Vector3d n_plus = Eigen::Vector3d::Zero();
+    Eigen::Vector3d n_minus = Eigen::Vector3d::Zero();
+    double w_plus = 0.0;
+    double w_minus = 0.0;
 };
 
-}   // namespace Curvenet
+class dvert {
+public:
+    dvert() = default;
+    dvert(const Eigen::Vector3d& position, int controlIndex = -1, int parentSpline = -1, double tValue = 0.0);
+
+    const Eigen::Vector3d& position() const { return pos; }
+    int controlIndex() const { return control; }
+    int parentSpline() const { return parent_spline; }
+    double parameterT() const { return t; }
+    bool isControl() const { return control >= 0; }
+
+    void addDSplineIdx(int dsplineIdx);
+    void setDSplineIdxs(const std::vector<int>& dsplineIdxs);
+    const std::vector<int>& dsplineIdxs() const { return dspline_idxs; }
+
+    void setCornerNormals(const std::vector<Eigen::Vector3d>& normals) { corner_normals = normals; }
+    const std::vector<Eigen::Vector3d>& cornerNormals() const { return corner_normals; }
+    void setSegmentData(const std::vector<SegmentData>& data) { segment_data = data; }
+    const std::vector<SegmentData>& getSegmentData() const { return segment_data; }
+
+    void addSegmentIdx(int segmentIdx);
+    const std::vector<int>& segmentIdxs() const { return segment_idxs; }
+    int numOutgoing() const;
+
+private:
+    Eigen::Vector3d pos = Eigen::Vector3d::Zero();
+    int control = -1;
+    std::vector<int> dspline_idxs;
+    std::vector<Eigen::Vector3d> corner_normals;
+    std::vector<SegmentData> segment_data;
+    std::vector<int> segment_idxs;
+    double t = 0.0;
+    int parent_spline = -1;
+};
+
+}  // namespace DCurvenet

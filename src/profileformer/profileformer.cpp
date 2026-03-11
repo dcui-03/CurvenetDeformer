@@ -1,27 +1,21 @@
 #include "profileformer.hpp"
+#include "utils/utils.hpp"
 
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 
-
 namespace ProfileFormer {
 
-namespace {
-Eigen::Vector3d safeNormalize(const Eigen::Vector3d& v, const Eigen::Vector3d& fallback) {
-    const double n = v.norm();
-    if (n <= std::numeric_limits<double>::epsilon()) {
-        return fallback;
-    }
-    return v / n;
-}
-}  // namespace
 
 profileformer::profileformer(const std::vector<Eigen::Vector3d>& meshV,
                              const std::vector<std::vector<int>>& meshT,
                              const std::vector<Eigen::Vector3d>& controlP,
+                             const std::vector<Eigen::Vector3d>& surfaceN,
                              const std::vector<std::vector<int>>& curveC) {
     initializeMesh(meshV, meshT);
-    initializeCurvenet(controlP, curveC);
+    initializeCurvenet(controlP, surfaceN, curveC);
+    initializeDCurvenet();
 }
 
 void profileformer::initializeMesh(const std::vector<Eigen::Vector3d>& meshV,
@@ -34,21 +28,30 @@ void profileformer::initializeMesh(const std::vector<Eigen::Vector3d>& meshV,
     }
     nMeshV = meshV;
     nMeshT = meshT;
+    neutral_mean_edge_length = Utils::computeMeanMeshEdgeLength(nMeshV, nMeshT);
 }
 
 void profileformer::initializeCurvenet(const std::vector<Eigen::Vector3d>& controlP,
+                                       const std::vector<Eigen::Vector3d>& surfaceN,
                                        const std::vector<std::vector<int>>& curveC) {
-    // For this initialization pass, derive normals directly from control positions.
-    std::vector<Eigen::Vector3d> surfaceN(controlP.size(), Eigen::Vector3d::UnitZ());
+    std::vector<Eigen::Vector3d> normals(controlP.size(), Eigen::Vector3d::UnitZ());
     for (std::size_t i = 0; i < controlP.size(); ++i) {
-        surfaceN[i] = safeNormalize(controlP[i], Eigen::Vector3d::UnitZ());
+        normals[i] = (i < surfaceN.size() ? surfaceN[i] : controlP[i]).normalized();
     }
-    nCurvenet = Curvenet::curvenet(controlP, surfaceN, curveC);
+    nCurvenet = Curvenet::curvenet(controlP, normals, curveC);
+}
+
+void profileformer::initializeDCurvenet() {
+    nDCurvenet = DCurvenet::dcurvenet(
+        nCurvenet,
+        neutral_mean_edge_length,
+        dcurve_samples_per_mean_edge,
+        dcurve_uniform_refine_samples);
 }
 
 int profileformer::precomputation() {
-    // Minimal precomputation needed for rendering a stable sampled curvenet.
-    // Full cutmesh/DEC precompute remains TODO.
+    // Keep this cheap for UI refreshes.
+    initializeDCurvenet();
     return 0;
 }
 

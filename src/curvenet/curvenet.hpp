@@ -13,13 +13,11 @@ namespace Curvenet {
 
 class curvenet {
 public:
-    // Constructor takes four points [start, tangent 1, tangent 2, end], and associated normals
-    // TODO change structure of controls?
+    curvenet() = default;
     curvenet(const std::vector<Eigen::Vector3d>& controlP,
              const std::vector<Eigen::Vector3d>& surfaceN,
              const std::vector<std::vector<int>>& curveC);
 
-    // TODO: Needs getters so that the discrete CN can ask for internals
     const std::vector<control>& controls() const { return controlPoints; }
     const std::vector<tangent>& tangents() const { return tangentPoints; }
     const std::vector<spline>& getSplines() const { return splines; }
@@ -41,6 +39,7 @@ private:
                           const std::vector<std::vector<int>>& curveC);
     void intializeSplines(const std::vector<Eigen::Vector3d>& controlP,
                           const std::vector<std::vector<int>>& curveC);
+    void reorderControlSplineOrderingCCW();
     int controlIndexFromSource(int sourceIdx) const;
 
     // Store control points as a list

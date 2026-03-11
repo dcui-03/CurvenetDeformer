@@ -3,3 +3,4 @@
 /deps/polyscope
 *.Identifier
 *.ini
+/build-core

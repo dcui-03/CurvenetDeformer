@@ -1,46 +1,50 @@
-// dvert.hpp
 #pragma once
 
-#include "dvert.hpp"
-#include "dspline.hpp"
 #include <Eigen/Core>
-#include <vector>
 
 namespace DCurvenet {
 
-// Control Points
-class dsegment {
-    public:
-        // Constructor which takes the start and ends of the segment, as well as the parent dspline index
-        dsegment(int start_idx, int end_idx, int dspline_idx);
-
-        // TODO: Needs getters that check the labels and can return an error if we try to get something with wrong attribute
-
-    protected:
-        // No class inheritance
-    private:
-        // Compute Local Scaled Frames
-        void computeLocalScalesandFrames();
-
-        // Attributes
-        Eigen::Vector3d direc;  // oriented direction of segment
-        double length;  // length of segment
-        // Local frames and their scales
-        // Note, store scales as vector and turn into diagonal matrix when needed
-        Eigen::Matrix3d p_frame;
-        Eigen::Matrix3d m_frame;
-        Eigen::Vector3d p_scale;
-        Eigen::Vector3d m_scale;
-
-        int start_dvert;
-        int end_dvert;
-        int parent_dspline;  // pointer to parent discrete spline
-
-        // PDC ATTRIBUTES
-        // Note: In PDC, we need to alter our start_dvert and end_dvert to be PDC's indices
-        // Attributes we only need for PDC
-        int DCsegment = -1; // Index of parent dsegment in DC
-        
+struct SegmentSideData {
+    Eigen::Vector3d n = Eigen::Vector3d::Zero();
+    Eigen::Vector3d b = Eigen::Vector3d::Zero();
+    double w = 0.0;
+    double h = 0.0;
+    Eigen::Matrix3d B = Eigen::Matrix3d::Identity();
+    Eigen::Vector3d S = Eigen::Vector3d::Zero();
+    Eigen::Matrix3d BS = Eigen::Matrix3d::Zero();
+    bool valid = false;
 };
 
-}   // namespace Curvenet
+class dsegment {
+public:
+    dsegment() = default;
+    dsegment(int startIdx,
+             int endIdx,
+             int dsplineIdx,
+             const Eigen::Vector3d& startPos,
+             const Eigen::Vector3d& endPos);
+
+    int startDvert() const { return start_dvert; }
+    int endDvert() const { return end_dvert; }
+    int parentDSpline() const { return parent_dspline; }
+
+    const Eigen::Vector3d& direction() const { return direc; }
+    double segmentLength() const { return length; }
+    const SegmentSideData& plusSide() const { return plus_side; }
+    const SegmentSideData& minusSide() const { return minus_side; }
+    void setPlusSide(const SegmentSideData& side) { plus_side = side; }
+    void setMinusSide(const SegmentSideData& side) { minus_side = side; }
+
+private:
+    Eigen::Vector3d direc = Eigen::Vector3d::Zero();
+    double length = 0.0;
+
+    int start_dvert = -1;
+    int end_dvert = -1;
+    int parent_dspline = -1;
+
+    SegmentSideData plus_side;
+    SegmentSideData minus_side;
+};
+
+}  // namespace DCurvenet

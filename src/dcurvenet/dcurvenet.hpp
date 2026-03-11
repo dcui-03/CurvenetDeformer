@@ -1,41 +1,59 @@
-// dcurvenet.hpp
 #pragma once
 
-#include "curvenet/curvenet.hpp"
-#include "components/dvert.hpp"
 #include "components/dsegment.hpp"
 #include "components/dspline.hpp"
+#include "components/dvert.hpp"
+#include "curvenet/curvenet.hpp"
+
 #include <Eigen/Core>
 
+#include <vector>
 
 namespace DCurvenet {
 
 class dcurvenet {
-    public:
-        // Takes the original curvenet and discretizes it
-        dcurvenet(Curvenet::curvenet& CN);
+public:
+    dcurvenet() = default;
+    dcurvenet(const Curvenet::curvenet& CN,
+              double meanEdgeLength,
+              int samplesPerMeanEdge = 5,
+              int uniformRefineSamples = 64);
 
-        // TODO: Needs getters so that others can ask for internals
+    const std::vector<dvert>& verts() const { return dVerts; }
+    const std::vector<dsegment>& segments() const { return dSegments; }
+    const std::vector<dspline>& splines() const { return dSplines; }
 
-    protected:
-        // No class inheritance
-    private:
-        // Reorganize during intialization
-        intializeDSplines();
-        initializeDSegments();
-        initializeDVerts();
+    double getMeanEdgeLength() const { return mean_edge_length; }
+    int getSamplesPerMeanEdge() const { return samples_per_mean_edge; }
+    int getUniformRefineSamples() const { return uniform_refine_samples; }
 
-        // For controls, computes their corner normals. For non-controls, this method does nothing (return -1)
-        int computeCornerNormals();
+private:
+    static int computeInteriorSampleCount(const Curvenet::spline& s,
+                                          double meanEdgeLength,
+                                          int samplesPerMeanEdge);
 
-        // Store control points as a list
-        // Store verts as first copying the curvenet. Then add middle points after that spline by spline
-        // This preserves indexing for controls
-        std::vector<dvert> dVerts;
-        std::vector<dsegment> dSegments;
-        std::vector<dspline> dSplines;
-        
-        
+    static std::vector<Eigen::Vector3d> resamplePolylineEvenArcLength(const std::vector<Eigen::Vector3d>& polyline,
+                                                                       int outputCount);
+
+    bool outgoingAtControl(int controlDvertIdx,
+                           int dsplineIdx,
+                           int& segIdx,
+                           Eigen::Vector3d& tOut,
+                           double& segLen) const;
+    const SegmentData* findControlSegmentData(int controlDvertIdx, int segmentIdx) const;
+    void computeControlRibbonData(const std::vector<Curvenet::control>& controls,
+                                  const std::vector<int>& controlToDvert);
+    void interpolateRibbonAlongDSplines();
+
+    void initializeFromCurvenet(const Curvenet::curvenet& CN);
+
+    std::vector<dvert> dVerts;
+    std::vector<dsegment> dSegments;
+    std::vector<dspline> dSplines;
+
+    double mean_edge_length = 1.0;
+    int samples_per_mean_edge = 5;
+    int uniform_refine_samples = 64;
 };
 
-}   // namespace DCurvenet
+}  // namespace DCurvenet

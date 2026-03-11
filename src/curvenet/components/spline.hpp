@@ -25,6 +25,15 @@ public:
     // Sample n points via arclength.
     std::vector<Eigen::Vector3d> sampleParameterization(int n) const;
 
+    // Uniform in parameter t in [0,1].
+    std::vector<Eigen::Vector3d> sampleUniformParameterization(int n) const;
+
+    // Length of the control polygon p0-h0-h1-p1.
+    double controlPolylineLength() const;
+
+    // Tangent direction pointing from a control toward the spline interior.
+    Eigen::Vector3d outgoingTangentAtControl(int controlIdx) const;
+
     int startControl() const { return c1; }
     int endControl() const { return c2; }
 

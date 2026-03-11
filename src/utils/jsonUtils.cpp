@@ -1,6 +1,7 @@
 // jsonUtils.cpp
 
 #include "jsonUtils.hpp"
+#include "utils.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -30,14 +31,6 @@ Eigen::Vector3d parseVec3(const json& v) {
         throw std::runtime_error("Expected 3-element JSON array");
     }
     return {asNumber(v[0]), asNumber(v[1]), asNumber(v[2])};
-}
-
-Eigen::Vector3d safeNormalize(const Eigen::Vector3d& v, const Eigen::Vector3d& fallback) {
-    const double n = v.norm();
-    if (n <= std::numeric_limits<double>::epsilon()) {
-        return fallback;
-    }
-    return v / n;
 }
 
 bool nearlyEqual(const Eigen::Vector3d& a, const Eigen::Vector3d& b, double eps) {
@@ -90,7 +83,7 @@ CurvenetInput loadBezierCurvenetInput(const std::string& jsonPath, double dedupT
 
     auto addPoint = [&](const Eigen::Vector3d& p, const Eigen::Vector3d& n) -> int {
         out.controlP.push_back(p);
-        out.surfaceN.push_back(safeNormalize(n, Eigen::Vector3d::UnitZ()));
+        out.surfaceN.push_back(n.normalized());
         return static_cast<int>(out.controlP.size() - 1);
     };
 
@@ -150,4 +143,3 @@ CurvenetInput loadBezierCurvenetInput(const std::string& jsonPath, double dedupT
 }
 
 }  // namespace JSONUtils
-

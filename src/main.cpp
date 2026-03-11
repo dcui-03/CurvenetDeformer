@@ -38,15 +38,28 @@ std::vector<Eigen::Vector3d> psV; // Vertex list
 std::vector<std::vector<int>> psT; // Face list: Note the inner list has arbitrary size for non-triangle faces
 polyscope::SurfaceMesh* psMesh;
 
-// Handles for discrete curvenet
-std::vector<glm::vec3> psCurvenetP; // Point list
-std::vector<std::array<size_t, 2>> psCurvenetE; // Edge List
-polyscope::CurveNetwork* psCurvenet;
+// Handles for curvenet and discrete curvenet
+std::vector<glm::vec3> psCurvenetP; // Point list (smooth curvenet)
+std::vector<std::array<size_t, 2>> psCurvenetE; // Edge list (smooth curvenet)
+polyscope::CurveNetwork* psCurvenet = nullptr;
+
+std::vector<glm::vec3> psDCurvenetP; // Point list (discrete curvenet)
+std::vector<std::array<size_t, 2>> psDCurvenetE; // Edge list (discrete curvenet)
+polyscope::CurveNetwork* psDCurvenet = nullptr;
+
+std::vector<glm::vec3> psDCurvenetInteriorP; // Interior dcurvenet vertices
+std::vector<glm::vec3> psDCurvenetControlP; // Control dcurvenet vertices
+polyscope::PointCloud* psDCurvenetInterior = nullptr;
+polyscope::PointCloud* psDCurvenetControls = nullptr;
+
+std::vector<glm::vec3> psControlNormalOriginsP; // Point list (origins for corner normals)
+std::vector<glm::vec3> psControlNormalVectors; // Vector list (corner normals)
+polyscope::PointCloud* psControlNormals = nullptr;
 
 // Handles for controls (?)
 // Not sure what we need visualization-wise
 std::vector<glm::vec3> psControlsP; // Point list
-polyscope::PointCloud* psControls;
+polyscope::PointCloud* psControls = nullptr;
 
 
 // VARIABLES FOR PARSING AND WRITING FILES
@@ -90,11 +103,15 @@ void resetMeshVertexPositions();
 
 void refreshCurvenetVisuals() {
     if (!PF) return;
+    auto toGlm = [](const Eigen::Vector3d& v) {
+        return glm::vec3(static_cast<float>(v.x()),
+                         static_cast<float>(v.y()),
+                         static_cast<float>(v.z()));
+    };
 
     std::vector<std::array<double, 3>> curvePtsD;
     std::vector<std::array<std::size_t, 2>> curveEdgesD;
     Utils::buildPolyscopeCurveNetwork(PF->getNeutralCurvenet(), curvePtsD, curveEdgesD, 180);
-
     psCurvenetP.clear();
     psCurvenetP.reserve(curvePtsD.size());
     for (const auto& p : curvePtsD) {
@@ -103,6 +120,57 @@ void refreshCurvenetVisuals() {
                                  static_cast<float>(p[2]));
     }
     psCurvenetE = curveEdgesD;
+
+    std::vector<std::array<double, 3>> dcurvePtsD;
+    std::vector<std::array<std::size_t, 2>> dcurveEdgesD;
+    Utils::buildPolyscopeDiscreteCurveNetwork(PF->getNeutralDCurvenet(), dcurvePtsD, dcurveEdgesD);
+
+    psDCurvenetP.clear();
+    psDCurvenetP.reserve(dcurvePtsD.size());
+    for (const auto& p : dcurvePtsD) {
+        psDCurvenetP.emplace_back(static_cast<float>(p[0]),
+                                  static_cast<float>(p[1]),
+                                  static_cast<float>(p[2]));
+    }
+    psDCurvenetE = dcurveEdgesD;
+
+    psDCurvenetInteriorP.clear();
+    psDCurvenetControlP.clear();
+    const auto& dVerts = PF->getNeutralDCurvenet().verts();
+    psDCurvenetInteriorP.reserve(dVerts.size());
+    psDCurvenetControlP.reserve(dVerts.size());
+    for (const auto& v : dVerts) {
+        const auto& p = v.position();
+        const glm::vec3 gp(static_cast<float>(p.x()), static_cast<float>(p.y()), static_cast<float>(p.z()));
+        if (v.isControl()) {
+            psDCurvenetControlP.push_back(gp);
+        } else {
+            psDCurvenetInteriorP.push_back(gp);
+        }
+    }
+
+    std::vector<std::array<double, 3>> controlNormalOriginsD;
+    std::vector<std::array<double, 3>> controlNormalVectorsD;
+    Utils::buildPolyscopeControlCornerNormals(PF->getNeutralDCurvenet(),
+                                              controlNormalOriginsD,
+                                              controlNormalVectorsD);
+
+    psControlNormalOriginsP.clear();
+    psControlNormalVectors.clear();
+    psControlNormalOriginsP.reserve(controlNormalOriginsD.size());
+    psControlNormalVectors.reserve(controlNormalVectorsD.size());
+    for (std::size_t i = 0; i < controlNormalOriginsD.size(); ++i) {
+        const auto& p = controlNormalOriginsD[i];
+        psControlNormalOriginsP.emplace_back(static_cast<float>(p[0]),
+                                             static_cast<float>(p[1]),
+                                             static_cast<float>(p[2]));
+    }
+    for (std::size_t i = 0; i < controlNormalVectorsD.size(); ++i) {
+        const auto& v = controlNormalVectorsD[i];
+        psControlNormalVectors.emplace_back(static_cast<float>(v[0]),
+                                            static_cast<float>(v[1]),
+                                            static_cast<float>(v[2]));
+    }
 
     const auto controlsD = Utils::buildControlCloud(PF->getNeutralCurvenet());
     psControlsP.clear();
@@ -113,8 +181,114 @@ void refreshCurvenetVisuals() {
                                  static_cast<float>(p[2]));
     }
 
-    psCurvenet = polyscope::registerCurveNetwork("Discrete Curvenet", psCurvenetP, psCurvenetE);
+    psCurvenet = polyscope::registerCurveNetwork("Curvenet", psCurvenetP, psCurvenetE);
+    psCurvenet->setColor({0.95f, 0.55f, 0.15f});
+    psCurvenet->setRadius(0.0018f, true);
+
+    psDCurvenet = polyscope::registerCurveNetwork("DCurveNet Segments", psDCurvenetP, psDCurvenetE);
+    psDCurvenet->setColor({0.15f, 0.80f, 0.95f});
+    psDCurvenet->setRadius(0.0045f, true);
+
+    std::vector<glm::vec3> plusT;
+    std::vector<glm::vec3> plusB;
+    std::vector<glm::vec3> plusN;
+    std::vector<glm::vec3> minusT;
+    std::vector<glm::vec3> minusB;
+    std::vector<glm::vec3> minusN;
+    const auto& dSegs = PF->getNeutralDCurvenet().segments();
+    plusT.reserve(dSegs.size());
+    plusB.reserve(dSegs.size());
+    plusN.reserve(dSegs.size());
+    minusT.reserve(dSegs.size());
+    minusB.reserve(dSegs.size());
+    minusN.reserve(dSegs.size());
+
+    for (const auto& seg : dSegs) {
+        if (seg.plusSide().valid) {
+            plusT.push_back(toGlm(seg.plusSide().BS.col(0)));
+            plusB.push_back(toGlm(seg.plusSide().BS.col(1)));
+            plusN.push_back(toGlm(seg.plusSide().BS.col(2)));
+        } else {
+            plusT.emplace_back(0.f, 0.f, 0.f);
+            plusB.emplace_back(0.f, 0.f, 0.f);
+            plusN.emplace_back(0.f, 0.f, 0.f);
+        }
+
+        if (seg.minusSide().valid) {
+            minusT.push_back(toGlm(seg.minusSide().BS.col(0)));
+            minusB.push_back(toGlm(seg.minusSide().BS.col(1)));
+            minusN.push_back(toGlm(seg.minusSide().BS.col(2)));
+        } else {
+            minusT.emplace_back(0.f, 0.f, 0.f);
+            minusB.emplace_back(0.f, 0.f, 0.f);
+            minusN.emplace_back(0.f, 0.f, 0.f);
+        }
+    }
+
+    constexpr double kFrameDisplayScale = 1.0; // true geometric length
+
+    auto* qPlusT = psDCurvenet->addEdgeVectorQuantity("Frame+ t (true)", plusT, polyscope::VectorType::STANDARD);
+    qPlusT->setVectorColor({0.98f, 0.65f, 0.10f});
+    qPlusT->setVectorLengthRange(1.0);
+    qPlusT->setVectorLengthScale(kFrameDisplayScale, false);
+    qPlusT->setEnabled(true);
+
+    auto* qPlusB = psDCurvenet->addEdgeVectorQuantity("Frame+ b (true)", plusB, polyscope::VectorType::STANDARD);
+    qPlusB->setVectorColor({0.95f, 0.20f, 0.45f});
+    qPlusB->setVectorLengthRange(1.0);
+    qPlusB->setVectorLengthScale(kFrameDisplayScale, false);
+    qPlusB->setEnabled(true);
+
+    auto* qPlusN = psDCurvenet->addEdgeVectorQuantity("Frame+ n (true)", plusN, polyscope::VectorType::STANDARD);
+    qPlusN->setVectorColor({0.15f, 0.95f, 0.30f});
+    qPlusN->setVectorLengthRange(1.0);
+    qPlusN->setVectorLengthScale(kFrameDisplayScale, false);
+    qPlusN->setEnabled(true);
+
+    auto* qMinusT = psDCurvenet->addEdgeVectorQuantity("Frame- t (true)", minusT, polyscope::VectorType::STANDARD);
+    qMinusT->setVectorColor({0.85f, 0.45f, 0.10f});
+    qMinusT->setVectorLengthRange(1.0);
+    qMinusT->setVectorLengthScale(kFrameDisplayScale, false);
+    qMinusT->setEnabled(true);
+
+    auto* qMinusB = psDCurvenet->addEdgeVectorQuantity("Frame- b (true)", minusB, polyscope::VectorType::STANDARD);
+    qMinusB->setVectorColor({0.55f, 0.40f, 1.00f});
+    qMinusB->setVectorLengthRange(1.0);
+    qMinusB->setVectorLengthScale(kFrameDisplayScale, false);
+    qMinusB->setEnabled(true);
+
+    auto* qMinusN = psDCurvenet->addEdgeVectorQuantity("Frame- n (true)", minusN, polyscope::VectorType::STANDARD);
+    qMinusN->setVectorColor({0.10f, 0.80f, 1.00f});
+    qMinusN->setVectorLengthRange(1.0);
+    qMinusN->setVectorLengthScale(kFrameDisplayScale, false);
+    qMinusN->setEnabled(true);
+
+    psDCurvenetInterior = polyscope::registerPointCloud("DCurveNet Vertices (Interior)", psDCurvenetInteriorP);
+    psDCurvenetInterior->setPointColor({0.65f, 0.90f, 1.00f});
+    psDCurvenetInterior->setPointRadius(0.0035, true);
+
+    psDCurvenetControls = polyscope::registerPointCloud("DCurveNet Vertices (Controls)", psDCurvenetControlP);
+    psDCurvenetControls->setPointColor({1.00f, 0.40f, 0.10f});
+    psDCurvenetControls->setPointRadius(0.0075, true);
+
     psControls = polyscope::registerPointCloud("Controls", psControlsP);
+    psControls->setPointRadius(0.0045, true);
+    psControls->setPointColor({0.95f, 0.75f, 0.25f});
+
+    psControlNormals = polyscope::registerPointCloud("Control Corner Normal Origins", psControlNormalOriginsP);
+    psControlNormals->setPointColor({0.10f, 0.95f, 0.25f});
+    psControlNormals->setPointRadius(0.005, true);
+
+    if (!psControlNormalVectors.empty()) {
+        constexpr double kControlNormalDisplayScale = 0.08; // visualization-only multiplier
+        auto* nQ = psControlNormals->addVectorQuantity("Control Corner Normals",
+                                                       psControlNormalVectors,
+                                                       polyscope::VectorType::STANDARD);
+        nQ->setEnabled(true);
+        nQ->setVectorColor({0.10f, 0.95f, 0.25f});
+        nQ->setVectorLengthRange(1.0);
+        nQ->setVectorLengthScale(kControlNormalDisplayScale, false);
+    }
 }
 
 // Performs call to pre-computation of cut-mesh and operators
@@ -247,8 +421,7 @@ void myCallback() {
     }
 }
 
-int main(int argc, char **argv) {
-
+int main(int argc, char** argv) {
     if (argc < 2) {
         std::cout << "Too few arguments. Usage: ./profile_former <OBJ file path>" << std::endl;
         return 1;
@@ -280,7 +453,7 @@ int main(int argc, char **argv) {
     JSONUtils::CurvenetInput cnInput = JSONUtils::loadBezierCurvenetInput(CurvesPath);
 
     // Initialize profileformer + curvenet with existing project types.
-    PF = std::make_unique<ProfileFormer::profileformer>(V, T, cnInput.controlP, cnInput.curveC);
+    PF = std::make_unique<ProfileFormer::profileformer>(V, T, cnInput.controlP, cnInput.surfaceN, cnInput.curveC);
     computePrecomp();
 
     // Register tet mesh with PS
@@ -300,5 +473,4 @@ int main(int argc, char **argv) {
     polyscope::show();
 
     return EXIT_SUCCESS;
-    }
 }

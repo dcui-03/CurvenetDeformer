@@ -2,9 +2,16 @@
 
 #include "utils.hpp"
 
+#include <Eigen/Geometry>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 namespace Utils {
@@ -47,6 +54,76 @@ void meshConversionGLMtoEigen(std::vector<Eigen::Vector3d>& Eig, const std::vect
 void copyPositions(const std::vector<Eigen::Vector3d>& oldV, std::vector<Eigen::Vector3d>& newV) { newV = oldV; }
 
 void copyConnectivity(const std::vector<std::vector<int>>& oldT, std::vector<std::vector<int>>& newT) { newT = oldT; }
+
+Eigen::Vector3d anyUnitTangent(const Eigen::Vector3d& normal) {
+    Eigen::Vector3d n = normal.normalized();
+    Eigen::Vector3d candidate = std::abs(n.z()) < 0.9 ? Eigen::Vector3d::UnitZ() : Eigen::Vector3d::UnitX();
+    Eigen::Vector3d t = n.cross(candidate);
+    if (t.norm() <= std::numeric_limits<double>::epsilon()) {
+        t = n.cross(Eigen::Vector3d::UnitY());
+    }
+    return t.normalized();
+}
+
+Eigen::Vector3d anyPerpendicularUnit(const Eigen::Vector3d& tangent) {
+    Eigen::Vector3d tn = tangent.normalized();
+    Eigen::Vector3d candidate = std::abs(tn.z()) < 0.9 ? Eigen::Vector3d::UnitZ() : Eigen::Vector3d::UnitX();
+    Eigen::Vector3d p = tn.cross(candidate);
+    if (p.norm() <= std::numeric_limits<double>::epsilon()) {
+        p = tn.cross(Eigen::Vector3d::UnitY());
+    }
+    return p.normalized();
+}
+
+Eigen::Vector3d projectAndNormalizeToTangentPlane(const Eigen::Vector3d& normal,
+                                                  const Eigen::Vector3d& tangent) {
+    const Eigen::Vector3d tn = tangent.normalized();
+    const Eigen::Vector3d projected = normal - tn * normal.dot(tn);
+    return projected.normalized();
+}
+
+namespace {
+std::uint64_t edgeKey(int a, int b) {
+    const std::uint32_t lo = static_cast<std::uint32_t>(std::min(a, b));
+    const std::uint32_t hi = static_cast<std::uint32_t>(std::max(a, b));
+    return (static_cast<std::uint64_t>(lo) << 32U) | static_cast<std::uint64_t>(hi);
+}
+}  // namespace
+
+double computeMeanMeshEdgeLength(const std::vector<Eigen::Vector3d>& verts,
+                                 const std::vector<std::vector<int>>& faces) {
+    std::unordered_set<std::uint64_t> seen;
+    double sum = 0.0;
+    std::size_t count = 0;
+
+    for (const auto& f : faces) {
+        if (f.size() < 2) {
+            continue;
+        }
+        const std::size_t m = f.size();
+        for (std::size_t i = 0; i < m; ++i) {
+            const int a = f[i];
+            const int b = f[(i + 1) % m];
+            if (a < 0 || b < 0 || static_cast<std::size_t>(a) >= verts.size() || static_cast<std::size_t>(b) >= verts.size() ||
+                a == b) {
+                continue;
+            }
+
+            const std::uint64_t key = edgeKey(a, b);
+            if (!seen.insert(key).second) {
+                continue;
+            }
+
+            sum += (verts[static_cast<std::size_t>(a)] - verts[static_cast<std::size_t>(b)]).norm();
+            ++count;
+        }
+    }
+
+    if (count == 0) {
+        return 1.0;
+    }
+    return sum / static_cast<double>(count);
+}
 
 void loadObjMesh(const std::string& path,
                  std::vector<Eigen::Vector3d>& vertices,
@@ -122,6 +199,52 @@ void buildPolyscopeCurveNetwork(const Curvenet::curvenet& cn,
             if (i > 0) {
                 edges.push_back({base + i - 1, base + i});
             }
+        }
+    }
+}
+
+void buildPolyscopeDiscreteCurveNetwork(const DCurvenet::dcurvenet& dcn,
+                                        std::vector<std::array<double, 3>>& points,
+                                        std::vector<std::array<std::size_t, 2>>& edges) {
+    points.clear();
+    edges.clear();
+
+    const auto& verts = dcn.verts();
+    points.reserve(verts.size());
+    for (const auto& v : verts) {
+        const auto& p = v.position();
+        points.push_back({p.x(), p.y(), p.z()});
+    }
+
+    const auto& segs = dcn.segments();
+    edges.reserve(segs.size());
+    for (const auto& s : segs) {
+        edges.push_back({static_cast<std::size_t>(s.startDvert()), static_cast<std::size_t>(s.endDvert())});
+    }
+}
+
+void buildPolyscopeControlCornerNormals(const DCurvenet::dcurvenet& dcn,
+                                        std::vector<std::array<double, 3>>& origins,
+                                        std::vector<std::array<double, 3>>& vectors) {
+    origins.clear();
+    vectors.clear();
+
+    const auto& verts = dcn.verts();
+    for (const auto& v : verts) {
+        if (!v.isControl()) {
+            continue;
+        }
+
+        const auto& p = v.position();
+        const auto& normals = v.cornerNormals();
+        for (const auto& n : normals) {
+            const double len = n.norm();
+            Eigen::Vector3d nu = Eigen::Vector3d::Zero();
+            if (len > std::numeric_limits<double>::epsilon()) {
+                nu = n / len;
+            }
+            origins.push_back({p.x(), p.y(), p.z()});
+            vectors.push_back({nu.x(), nu.y(), nu.z()});
         }
     }
 }
