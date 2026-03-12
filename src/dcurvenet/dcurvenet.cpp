@@ -8,6 +8,9 @@
 
 
 namespace DCurvenet {
-
+    // Takes the original curvenet and discretizes it
+    dcurvenet::dcurvenet(Curvenet::curvenet& CN) {
+        // 
+    }
 
 }   // namespace DCurvenet

@@ -19,6 +19,9 @@ class dsegment {
     protected:
         // No class inheritance
     private:
+        // Make a hard copy (ex. for PDC)
+        dsegment makeCopy();
+
         // Compute Local Scaled Frames
         void computeLocalScalesandFrames();
 
@@ -40,6 +43,9 @@ class dsegment {
         // Note: In PDC, we need to alter our start_dvert and end_dvert to be PDC's indices
         // Attributes we only need for PDC
         int DCsegment = -1; // Index of parent dsegment in DC
+        // TODO: Not sure how to handle segments landing exactly on edges. Let's start by labeling them
+        // If not on an edge, set to -1. If exactly on an edge, label by which edge it's on
+        int onEdge = -1;
         
 };
 

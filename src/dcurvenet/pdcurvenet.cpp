@@ -8,6 +8,8 @@
 
 
 namespace DCurvenet {
-
+    pdcurvenet::pdcurvenet(dcurvenet& parentDC) {
+        // Copy over all values
+    }
 
 }   // namespace DCurvenet

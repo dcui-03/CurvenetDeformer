@@ -9,8 +9,8 @@ namespace DCurvenet {
 // Control Points
 class dvert {
     public:
-        // Constructor which takes the 
-        dvert(Eigen::Vector3d position, int control);
+        // Constructor which takes the position and 
+        dvert(Eigen::Vector3d position);
 
         // TODO: Needs getters that check the labels and can return an error if we try to get something with wrong attribute
 
@@ -21,12 +21,14 @@ class dvert {
         // Returns -1 if not a control
         int num_outgoing();
     protected:
-        // No class inheritance
-    private:
+        // Make a hard copy (ex. for PDC)
+        dvert makeCopy();
+
         // Attributes
         Eigen::Vector3d pos;
-        int control;            // -1 if not a control, and the index of the parent control point if is
-        std::vector<int> segment_idxs;   // pointers to an ordering of outgoing segments (CCW) or (previous then next along spline)
+        bool control = false;            // bool that is true if is control, and false otherwise
+        std::vector<int> dspline_idxs;   // pointer to parent splines (CCW) or just the 1.
+        std::vector<int> dsegment_idxs;   // pointers to an ordering of outgoing segments (CCW) or (previous then next along spline)
         // matching CCW corner normals for outgoing segments (if is from control)
         // For non-control vertices this should have positive first, then negative normal
         std::vector<Eigen::Vector3d> adjacent_normals;
@@ -36,6 +38,15 @@ class dvert {
         int DC_origin = 0;      // 0 for dverts inherited from DC, 1 for dverts produced by splits
         int projection_element; // 0 if projected dvert lands on face, 1 if lands on edge, 2 if lands on vertex
         int element_index;      // The index of the face, edge or vertex in the mesh
+    private:
 };
-
+/*
+class dcontrol : public dvert {
+    public:
+        // Takes position and parent control index
+        dcontrol(Eigen::Vector3d position, int control);
+    protected:
+    private:
+}
+*/
 }   // namespace Curvenet

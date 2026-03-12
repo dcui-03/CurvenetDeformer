@@ -48,14 +48,14 @@ file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
 
 list(REMOVE_ITEM PROJECT_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 
-add_library(pf_core ${PROJECT_SOURCES})
-target_include_directories(pf_core PUBLIC
+add_library(pm_core ${PROJECT_SOURCES})
+target_include_directories(pm_core PUBLIC
   #"${CMAKE_CURRENT_SOURCE_DIR}/deps/polyscope/deps/args"
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
 # Link igl (and the glfw module) to your project
-target_link_libraries(pf_core PUBLIC 
+target_link_libraries(pm_core PUBLIC 
   igl::glfw
   ## Other modules you could link to
   # igl::embree
@@ -77,7 +77,7 @@ target_link_libraries(pf_core PUBLIC
 )
 
 # Add your project files
-add_executable(profile_former src/main.cpp)
+add_executable(profile_mover src/main.cpp)
 
 # 
-target_link_libraries(profile_former PRIVATE pf_core)
+target_link_libraries(profile_mover PRIVATE pm_core)

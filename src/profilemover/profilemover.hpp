@@ -1,30 +1,31 @@
-// profileformer.hpp
+// profilemover.hpp
 #pragma once
 
-
 #include "curvenet/curvenet.hpp"
-#include "cutmesh/cutmesh.hpp"
+#include "mesh/mesh.hpp"
+#include "mesh/cutmesh.hpp"
 #include "utils/decUtils.hpp"
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 
 
-namespace ProfileFormer {
+namespace ProfileMover {
 
-class profileformer {
+class profilemover {
     public:
         // Constructor, which takes the mesh vertices and connectivity, as well as the spline controls and their connectivities
         // NOTE: We should define each curve by [start, tangent1, tangent 2, end]
-        profileformer(std::vector<Eigen::Vector3d> meshV,
-                      std::vector<std::vector<int>> meshT,
+        profilemover(std::vector<Eigen::Vector3d>& meshV,
+                      std::vector<std::vector<int>>& meshT,
                       std::vector<Eigen::Vector3d> controlP,
                       std::vector<std::vector<int>> curveC);
+        profilemover(Mesh::mesh& m, Curvenet::curvenet& c);
 
         // Precompute cut-mesh and operators
-        precomputation();
+        void precomputation();
 
         // Apply deformation given the new control point locations (connectivity should be same)
-        deformation(std::vector<Eigen::Vector3d>& controlP);
+        void deformation(std::vector<Eigen::Vector3d>& controlP);
 
         // TODO: Initialize directly from existing mesh data struct (ex. GeometryCentral or minimesh)
 
@@ -34,7 +35,7 @@ class profileformer {
     private:
         // initialization functions called by constructor
         // TODO: We should probably compute vertex, edge, and face normals here and store them somewhere...
-        void initializeMesh(std::vector<Eigen::Vector3d> meshV, std::vector<std::vector<int>> meshT);
+        void initializeMesh(std::vector<Eigen::Vector3d>& meshV, std::vector<std::vector<int>>& meshT);
         void initializeCurvenet(std::vector<Eigen::Vector3d> controlP, std::vector<std::vector<int>> curveC);
 
 
@@ -48,15 +49,18 @@ class profileformer {
 
         // NOTE: no need to store updated states curvenet and dcurvenet, we have to create new copies at execution time
         // Store the neutral curvenet (spline)
+        // TODO: Do we need the original curvenet? --> Only for resets
+        // We do need the original nDCurvenet so that we can compute deformation gradients
         Curvenet::curvenet nCurvenet;
         // Store the neutral discrete curvenet
         DCurvenet::dcurvenet nDCurvenet;
         // Store neutral cut-mesh
-        CutMesh::cutmesh nCutmesh;
+        //CutMesh::cutmesh nCutmesh;
 
         
         // Store operators
         // TODO: Do we need to store L, V separately?
+        // TODO: Need functions to compute V and C
         Eigen::SparseMatrix<double> VtLV;
         Eigen::SparseMatrix<double> mVtL;
 
@@ -66,4 +70,4 @@ class profileformer {
         
 };
 
-}   // namespace ProfileFormer
+}   // namespace ProfileMover
