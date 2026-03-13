@@ -24,6 +24,8 @@ if(NOT TARGET nlohmann_json::nlohmann_json)
     INTERFACE_INCLUDE_DIRECTORIES "${NLOHMANN_JSON_INCLUDE_DIR}")
 endif()
 
+include(cmake/libigl.cmake)
+
 add_library(profileformer_core
   src/curvenet/components/control.cpp
   src/curvenet/components/spline.cpp
@@ -32,6 +34,7 @@ add_library(profileformer_core
   src/dcurvenet/components/dsegment.cpp
   src/dcurvenet/components/dspline.cpp
   src/dcurvenet/dcurvenet.cpp
+  src/dcurvenet/pdcurvenet.cpp
   src/profileformer/profileformer.cpp
   src/utils/jsonUtils.cpp
   src/utils/utils.cpp
@@ -44,6 +47,7 @@ target_include_directories(profileformer_core PUBLIC
 target_link_libraries(profileformer_core PUBLIC
   Eigen3::Eigen
   nlohmann_json::nlohmann_json
+  igl::core
 )
 
 if(PROFILEFORMER_WITH_POLYSCOPE)

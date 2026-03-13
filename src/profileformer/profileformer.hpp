@@ -3,6 +3,7 @@
 
 #include "curvenet/curvenet.hpp"
 #include "dcurvenet/dcurvenet.hpp"
+#include "dcurvenet/pdcurvenet.hpp"
 
 #include <Eigen/Core>
 #include <Eigen/Sparse>
@@ -36,8 +37,12 @@ public:
     // TODO: Needs getters so that the UI can ask for internals
     const Curvenet::curvenet& getNeutralCurvenet() const { return nCurvenet; }
     const DCurvenet::dcurvenet& getNeutralDCurvenet() const { return nDCurvenet; }
+    const DCurvenet::pdcurvenet& getNeutralPDCurvenet() const { return nPDCurvenet; }
     const std::vector<Eigen::Vector3d>& getNeutralMeshV() const { return nMeshV; }
     const std::vector<std::vector<int>>& getNeutralMeshT() const { return nMeshT; }
+    int getDCurveSamplesPerMeanEdge() const { return dcurve_samples_per_mean_edge; }
+    int getDCurveUniformRefineSamples() const { return dcurve_uniform_refine_samples; }
+    void setDiscretizationParameters(int samplesPerMeanEdge, int uniformRefineSamples);
 
 protected:
     // No class inheritance
@@ -49,6 +54,7 @@ private:
                             const std::vector<Eigen::Vector3d>& surfaceN,
                             const std::vector<std::vector<int>>& curveC);
     void initializeDCurvenet();
+    void initializePDCurvenet();
 
     // Computes deformations on the temporary discrete curvenet, then fills in a list of flattened deformation
     // gradients per vertex
@@ -64,6 +70,7 @@ private:
     Curvenet::curvenet nCurvenet;
     // Store the neutral discrete curvenet
     DCurvenet::dcurvenet nDCurvenet;
+    DCurvenet::pdcurvenet nPDCurvenet;
 
     // Discretization parameters / cached neutral statistics.
     int dcurve_samples_per_mean_edge = 5;

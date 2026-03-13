@@ -4,3 +4,4 @@
 *.Identifier
 *.ini
 /build-core
+/build-pdc

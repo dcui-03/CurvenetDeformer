@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace ProfileFormer {
 
@@ -16,6 +17,7 @@ profileformer::profileformer(const std::vector<Eigen::Vector3d>& meshV,
     initializeMesh(meshV, meshT);
     initializeCurvenet(controlP, surfaceN, curveC);
     initializeDCurvenet();
+    initializePDCurvenet();
 }
 
 void profileformer::initializeMesh(const std::vector<Eigen::Vector3d>& meshV,
@@ -49,9 +51,19 @@ void profileformer::initializeDCurvenet() {
         dcurve_uniform_refine_samples);
 }
 
+void profileformer::initializePDCurvenet() {
+    nPDCurvenet = DCurvenet::pdcurvenet(nDCurvenet, nMeshV, nMeshT);
+}
+
+void profileformer::setDiscretizationParameters(int samplesPerMeanEdge, int uniformRefineSamples) {
+    dcurve_samples_per_mean_edge = std::max(1, samplesPerMeanEdge);
+    dcurve_uniform_refine_samples = std::max(8, uniformRefineSamples);
+}
+
 int profileformer::precomputation() {
     // Keep this cheap for UI refreshes.
     initializeDCurvenet();
+    initializePDCurvenet();
     return 0;
 }
 

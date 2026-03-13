@@ -52,6 +52,13 @@ std::vector<glm::vec3> psDCurvenetControlP; // Control dcurvenet vertices
 polyscope::PointCloud* psDCurvenetInterior = nullptr;
 polyscope::PointCloud* psDCurvenetControls = nullptr;
 
+std::vector<glm::vec3> psProjectedVertexSamplesP;
+std::vector<glm::vec3> psProjectedEdgeSamplesP;
+std::vector<glm::vec3> psProjectedFaceSamplesP;
+polyscope::PointCloud* psProjectedVertexSamples = nullptr;
+polyscope::PointCloud* psProjectedEdgeSamples = nullptr;
+polyscope::PointCloud* psProjectedFaceSamples = nullptr;
+
 std::vector<glm::vec3> psControlNormalOriginsP; // Point list (origins for corner normals)
 std::vector<glm::vec3> psControlNormalVectors; // Vector list (corner normals)
 polyscope::PointCloud* psControlNormals = nullptr;
@@ -146,6 +153,28 @@ void refreshCurvenetVisuals() {
             psDCurvenetControlP.push_back(gp);
         } else {
             psDCurvenetInteriorP.push_back(gp);
+        }
+    }
+
+    psProjectedVertexSamplesP.clear();
+    psProjectedEdgeSamplesP.clear();
+    psProjectedFaceSamplesP.clear();
+    const auto& projectedSamples = PF->getNeutralPDCurvenet().projectedSamples();
+    psProjectedVertexSamplesP.reserve(projectedSamples.size());
+    psProjectedEdgeSamplesP.reserve(projectedSamples.size());
+    psProjectedFaceSamplesP.reserve(projectedSamples.size());
+    for (const auto& sample : projectedSamples) {
+        const glm::vec3 gp = toGlm(sample.projected_position);
+        switch (sample.attachment) {
+            case DCurvenet::MeshAttachmentType::Vertex:
+                psProjectedVertexSamplesP.push_back(gp);
+                break;
+            case DCurvenet::MeshAttachmentType::Edge:
+                psProjectedEdgeSamplesP.push_back(gp);
+                break;
+            case DCurvenet::MeshAttachmentType::Face:
+                psProjectedFaceSamplesP.push_back(gp);
+                break;
         }
     }
 
@@ -271,6 +300,18 @@ void refreshCurvenetVisuals() {
     psDCurvenetControls->setPointColor({1.00f, 0.40f, 0.10f});
     psDCurvenetControls->setPointRadius(0.0075, true);
 
+    psProjectedVertexSamples = polyscope::registerPointCloud("Projected Samples (Vertex)", psProjectedVertexSamplesP);
+    psProjectedVertexSamples->setPointColor({1.00f, 0.25f, 0.20f});
+    psProjectedVertexSamples->setPointRadius(0.0090, true);
+
+    psProjectedEdgeSamples = polyscope::registerPointCloud("Projected Samples (Edge)", psProjectedEdgeSamplesP);
+    psProjectedEdgeSamples->setPointColor({1.00f, 0.85f, 0.20f});
+    psProjectedEdgeSamples->setPointRadius(0.0080, true);
+
+    psProjectedFaceSamples = polyscope::registerPointCloud("Projected Samples (Face)", psProjectedFaceSamplesP);
+    psProjectedFaceSamples->setPointColor({0.15f, 0.95f, 0.45f});
+    psProjectedFaceSamples->setPointRadius(0.0070, true);
+
     psControls = polyscope::registerPointCloud("Controls", psControlsP);
     psControls->setPointRadius(0.0045, true);
     psControls->setPointColor({0.95f, 0.75f, 0.25f});
@@ -374,12 +415,34 @@ void resetMeshVertexPositions() {
 // https://github.com/ocornut/imgui/blob/master/imgui.h
 void myCallback() {
     ImGuiIO& io = ImGui::GetIO();
-    bool mouseDown = ImGui::IsMouseDown(0);
     bool mouseClicked = ImGui::IsMouseClicked(0);
-    bool mouseReleased = ImGui::IsMouseReleased(0);
     glm::vec2 screen{io.MousePos.x, io.MousePos.y};
 
     polyscope::PickResult pick = polyscope::pickAtScreenCoords(screen);
+
+    if (PF) {
+        int samplesPerMeanEdge = PF->getDCurveSamplesPerMeanEdge();
+        int uniformRefineSamples = PF->getDCurveUniformRefineSamples();
+        bool discretizationChanged = false;
+
+        ImGui::SeparatorText("Discrete Sampling");
+
+        if (ImGui::SliderInt("Samples / Mean Edge", &samplesPerMeanEdge, 1, 32)) {
+            discretizationChanged = true;
+        }
+        if (ImGui::SliderInt("Uniform Refine Samples", &uniformRefineSamples, 8, 512)) {
+            discretizationChanged = true;
+        }
+
+        if (discretizationChanged) {
+            PF->setDiscretizationParameters(samplesPerMeanEdge, uniformRefineSamples);
+            computePrecomp();
+        }
+
+        const auto& dcn = PF->getNeutralDCurvenet();
+        ImGui::Text("dVerts: %zu", dcn.verts().size());
+        ImGui::Text("dSegments: %zu", dcn.segments().size());
+    }
 
     if (ImGui::Button("Perform Pre-Computation")) {
         performPrecomp();
