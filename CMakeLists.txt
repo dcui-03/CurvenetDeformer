@@ -66,3 +66,38 @@ if(PROFILEFORMER_WITH_POLYSCOPE)
     polyscope
   )
 endif()
+list(REMOVE_ITEM PROJECT_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
+
+add_library(pm_core ${PROJECT_SOURCES})
+target_include_directories(pm_core PUBLIC
+  #"${CMAKE_CURRENT_SOURCE_DIR}/deps/polyscope/deps/args"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+# Link igl (and the glfw module) to your project
+target_link_libraries(pm_core PUBLIC 
+  igl::glfw
+  ## Other modules you could link to
+  # igl::embree
+  # igl::imgui
+  # igl::opengl
+  # igl::stb
+  # igl::predicates
+  # igl::xml
+  # igl_copyleft::cgal
+  # igl_copyleft::comiso
+  # igl_copyleft::core
+  # igl_copyleft::cork
+  #igl_copyleft::tetgen
+  # igl_restricted::matlab
+  # igl_restricted::mosek
+  #igl_restricted::triangle
+  polyscope
+  #geometry-central
+)
+
+# Add your project files
+add_executable(profile_mover src/main.cpp)
+
+# 
+target_link_libraries(profile_mover PRIVATE pm_core)

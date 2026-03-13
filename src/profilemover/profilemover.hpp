@@ -1,4 +1,4 @@
-// profileformer.hpp
+// profilemover.hpp
 #pragma once
 
 #include "curvenet/curvenet.hpp"
@@ -15,7 +15,7 @@
 #include "utils/decUtils.hpp"
 #endif
 
-namespace ProfileFormer {
+namespace ProfileMover {
 
 class profileformer {
 public:

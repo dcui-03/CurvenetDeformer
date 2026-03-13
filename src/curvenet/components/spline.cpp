@@ -5,7 +5,6 @@
 #include <limits>
 #include <stdexcept>
 
-
 namespace Curvenet {
 
 spline::spline(std::vector<int> splineP) {
@@ -85,6 +84,33 @@ std::vector<Eigen::Vector3d> spline::sampleUniformParameterization(int n) const 
     return out;
 }
 
+std::vector<Eigen::Vector3d> spline::nSamplesByArclength(int alpha, double meanE, bool include_ends) const {
+    std::vector<Eigen::Vector3d> samples = sampleParameterization(computeNumSamples(alpha, meanE));
+    if (include_ends || samples.size() <= 2) {
+        return samples;
+    }
+    return std::vector<Eigen::Vector3d>(samples.begin() + 1, samples.end() - 1);
+}
+
+double spline::UniformSampling(std::vector<Eigen::Vector3d>& samplePoints,
+                               bool include_ends,
+                               bool adaptiveSampling) const {
+    const int interiorSamples = adaptiveSampling ? adaptiveSamplingRule() : 40;
+    const std::vector<Eigen::Vector3d> full = sampleUniformParameterization(std::max(2, interiorSamples + 2));
+
+    if (include_ends || full.size() <= 2) {
+        samplePoints = full;
+    } else {
+        samplePoints.assign(full.begin() + 1, full.end() - 1);
+    }
+
+    double length = 0.0;
+    for (std::size_t i = 1; i < full.size(); ++i) {
+        length += (full[i] - full[i - 1]).norm();
+    }
+    return length;
+}
+
 double spline::controlPolylineLength() const {
     return (p0 - h0).norm() + (h0 - h1).norm() + (h1 - p1).norm();
 }
@@ -153,6 +179,20 @@ double spline::parameterAtArclength(double s) const {
 
     const double w = (s - s0) / (s1 - s0);
     return t0 + w * (t1v - t0);
+}
+
+int spline::adaptiveSamplingRule(double meanE) const {
+    const double enddiff = (p0 - p1).norm();
+    const double cageLen = controlPolylineLength();
+
+    int rule = 16;
+    if (enddiff > std::numeric_limits<double>::epsilon()) {
+        rule = std::max(rule, static_cast<int>(std::ceil((cageLen / enddiff) * 32.0)));
+    }
+    if (meanE > std::numeric_limits<double>::epsilon()) {
+        rule = std::max(rule, static_cast<int>(std::ceil(cageLen / meanE)));
+    }
+    return std::max(2, rule);
 }
 
 double spline::clamp01(double t) { return std::clamp(t, 0.0, 1.0); }

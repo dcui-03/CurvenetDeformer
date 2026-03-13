@@ -1,7 +1,26 @@
+# macOS
+.DS_Store
+
+# dependencies
+/deps/
+
+# build outputs
+build/
 /build-ui
 /build
-/deps/polyscope
-*.Identifier
-*.ini
 /build-core
 /build-pdc
+bin/
+out/
+
+# compiled objects
+*.o
+*.obj
+*.so
+*.a
+*.dylib
+*.Identifier
+*.ini
+
+# vscode
+.vscode/

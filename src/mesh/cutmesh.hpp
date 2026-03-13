@@ -1,16 +1,16 @@
 // cutmesh.hpp
 #pragma once
 
+#include "mesh.hpp"
 #include "dcurvenet/pdcurvenet.hpp"
 #include <Eigen/Core>
-#include <Eigen/Sparse>
 #include <map>
 #include <vector>
 
 
-namespace CutMesh {
+namespace Mesh {
 
-class cutmesh {
+class cutmesh : public mesh {
     public:
         // Constructor takes the projected curvenet and the mesh, and produces a cut-mesh
         // TODO: Add in the correct mesh data struct
@@ -20,17 +20,24 @@ class cutmesh {
 
         // Store map from cut-mesh indices to mesh indices
         std::map<int, int> cutVertToMeshVert;
+        // Store map from mesh vertices to their associated discrete curvenet segment(s)
+        std::map<int, int> cutVertToDCSegment;
     protected:
         // No class inheritance
     private:
+        // Copy in elements from input mesh
+        void copyFromMesh();
+
         // "rewire" the mesh by walking across each spline around corners
+        // Don't forget to recompute element normals after! (not important, just for completeness)
         void computeCuts();
 
-        // Mesh as a HE data structure
-        // TODO: Need to pick a HE mesh class (ex. GeometryCentral or minimesh)
+        // Inherits mesh object from parent
 
-        // Store map from mesh vertices to their associated discrete curvenet segment(s)
-        std::map<int, int> cutVertToDCSegment;
+        // Num of each vertex that we use in the solve
+        int num_V;
+        int num_C;
+        
 };
 
-}   // namespace CutMesh
+}   // namespace Mesh

@@ -7,6 +7,6 @@
 #include <vector>
 
 
-namespace CutMesh {
+namespace Mesh {
 
-}   // namespace CutMesh
+}   // namespace Mesh

@@ -2,7 +2,6 @@
 #pragma once
 
 #include "dcurvenet.hpp"
-
 #include <Eigen/Core>
 
 #include <array>
