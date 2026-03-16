@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ProfileFormer LANGUAGES CXX)
+project(ProfileMover LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,7 +9,23 @@ if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-option(PROFILEFORMER_WITH_POLYSCOPE "Build Polyscope frontend executable" ON)
+option(PROFILEMOVER_WITH_POLYSCOPE "Build the Polyscope frontend executable" ON)
+
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$" AND NOT DEFINED CMAKE_OSX_ARCHITECTURES)
+  set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Build architectures for macOS" FORCE)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  execute_process(
+    COMMAND uname -r
+    OUTPUT_VARIABLE PROFILEMOVER_UNAME_R
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(PROFILEMOVER_UNAME_R MATCHES "WSL|Microsoft")
+    set(PROFILEMOVER_IS_WSL TRUE)
+    message(STATUS "Configuring ProfileMover for WSL. GUI execution requires a working X11/Wayland bridge.")
+  endif()
+endif()
 
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
@@ -17,16 +33,19 @@ find_package(nlohmann_json CONFIG QUIET)
 if(NOT TARGET nlohmann_json::nlohmann_json)
   find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp)
   if(NOT NLOHMANN_JSON_INCLUDE_DIR)
-    message(FATAL_ERROR "Could not find nlohmann/json.hpp. Install nlohmann_json (apt/conda) or set include path.")
+    message(FATAL_ERROR
+      "Could not find nlohmann/json.hpp. Install nlohmann_json or provide its include path.")
   endif()
   add_library(nlohmann_json::nlohmann_json INTERFACE IMPORTED)
   set_target_properties(nlohmann_json::nlohmann_json PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${NLOHMANN_JSON_INCLUDE_DIR}")
+    INTERFACE_INCLUDE_DIRECTORIES "${NLOHMANN_JSON_INCLUDE_DIR}"
+  )
 endif()
 
 include(cmake/libigl.cmake)
 
-add_library(profileformer_core
+set(PROFILEMOVER_CORE_SOURCES
+  src/IO/io.cpp
   src/curvenet/components/control.cpp
   src/curvenet/components/spline.cpp
   src/curvenet/curvenet.cpp
@@ -35,69 +54,38 @@ add_library(profileformer_core
   src/dcurvenet/components/dspline.cpp
   src/dcurvenet/dcurvenet.cpp
   src/dcurvenet/pdcurvenet.cpp
-  src/profileformer/profileformer.cpp
+  src/mesh/cutmesh.cpp
+  src/mesh/mesh.cpp
+  src/mesh/polyHE/polyHE.cpp
+  src/profilemover/profilemover.cpp
+  src/utils/decUtils.cpp
   src/utils/jsonUtils.cpp
   src/utils/utils.cpp
 )
 
-target_include_directories(profileformer_core PUBLIC
+add_library(profilemover_core ${PROFILEMOVER_CORE_SOURCES})
+target_include_directories(profilemover_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
-
-target_link_libraries(profileformer_core PUBLIC
+target_link_libraries(profilemover_core PUBLIC
   Eigen3::Eigen
   nlohmann_json::nlohmann_json
   igl::core
 )
 
-if(PROFILEFORMER_WITH_POLYSCOPE)
+if(PROFILEMOVER_WITH_POLYSCOPE)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/polyscope/CMakeLists.txt")
     add_subdirectory(deps/polyscope)
   else()
     message(FATAL_ERROR
       "Polyscope dependency not found at deps/polyscope.\n"
-      "For WSL/Linux, clone it:\n"
+      "Clone it with:\n"
       "  git clone --recursive https://github.com/nmwsharp/polyscope.git deps/polyscope")
   endif()
 
-  add_executable(profile_former src/main.cpp)
-  target_link_libraries(profile_former PRIVATE
-    profileformer_core
+  add_executable(profile_mover src/main.cpp)
+  target_link_libraries(profile_mover PRIVATE
+    profilemover_core
     polyscope
   )
 endif()
-list(REMOVE_ITEM PROJECT_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
-
-add_library(pm_core ${PROJECT_SOURCES})
-target_include_directories(pm_core PUBLIC
-  #"${CMAKE_CURRENT_SOURCE_DIR}/deps/polyscope/deps/args"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src"
-)
-
-# Link igl (and the glfw module) to your project
-target_link_libraries(pm_core PUBLIC 
-  igl::glfw
-  ## Other modules you could link to
-  # igl::embree
-  # igl::imgui
-  # igl::opengl
-  # igl::stb
-  # igl::predicates
-  # igl::xml
-  # igl_copyleft::cgal
-  # igl_copyleft::comiso
-  # igl_copyleft::core
-  # igl_copyleft::cork
-  #igl_copyleft::tetgen
-  # igl_restricted::matlab
-  # igl_restricted::mosek
-  #igl_restricted::triangle
-  polyscope
-  #geometry-central
-)
-
-# Add your project files
-add_executable(profile_mover src/main.cpp)
-
-# 
-target_link_libraries(profile_mover PRIVATE pm_core)

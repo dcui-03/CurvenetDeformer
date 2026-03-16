@@ -37,12 +37,13 @@ SideInterpolationResult interpolateSideAlongPolyline(const std::vector<Eigen::Ve
     }
 
     std::vector<Eigen::Vector3d> omegaN(k, Eigen::Vector3d::Zero());
-    omegaN[0] = Utils::projectAndNormalizeToTangentPlane(startNormal, tangents[0]);
+    Utils::projectVectorOntoTangentPlane(tangents[0], startNormal, omegaN[0]);
     for (std::size_t i = 1; i < k; ++i) {
         const Eigen::Quaterniond q = Eigen::Quaterniond::FromTwoVectors(
             tangents[i - 1].normalized(),
             tangents[i].normalized());
-        omegaN[i] = Utils::projectAndNormalizeToTangentPlane(q * omegaN[i - 1], tangents[i]);
+        const Eigen::Vector3d rotated = q * omegaN[i - 1];
+        Utils::projectVectorOntoTangentPlane(tangents[i], rotated, omegaN[i]);
     }
 
     double totalLen = 0.0;
@@ -54,7 +55,8 @@ SideInterpolationResult interpolateSideAlongPolyline(const std::vector<Eigen::Ve
 
     double theta = 0.0;
     if (blendToEnd) {
-        const Eigen::Vector3d endTarget = Utils::projectAndNormalizeToTangentPlane(endNormal, tangents.back());
+        Eigen::Vector3d endTarget;
+        Utils::projectVectorOntoTangentPlane(tangents.back(), endNormal, endTarget);
         const Eigen::Vector3d tK = tangents.back().normalized();
         const Eigen::Vector3d nK = omegaN.back();
         const double num = nK.dot(endTarget.cross(tK));
@@ -66,7 +68,8 @@ SideInterpolationResult interpolateSideAlongPolyline(const std::vector<Eigen::Ve
         const Eigen::Vector3d ti = tangents[i].normalized();
         const double alpha = (totalLen > kEps) ? (prefixBefore[i] / totalLen) : 0.0;
         const Eigen::AngleAxisd torsion(alpha * theta, ti);
-        out.normals[i] = Utils::projectAndNormalizeToTangentPlane(torsion * omegaN[i], ti);
+        const Eigen::Vector3d rotatedN = torsion * omegaN[i];
+        Utils::projectVectorOntoTangentPlane(ti, rotatedN, out.normals[i]);
 
         if (blendToEnd) {
             out.widths[i] = std::max(kWidthEps, (1.0 - alpha) * startWidth + alpha * endWidth);

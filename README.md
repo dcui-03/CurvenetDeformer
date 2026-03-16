@@ -1,7 +1,7 @@
 # ProfileMover
 Implementation of Pixar's Profile Mover in C++/Python
 
-You will need to clone Polyscope into a folder called deps. I also haven't tested this setup on anything but Apple Silicon so the Cmakelists.txt might need some additional lines to support Windows. CMakelists.txt expects 
+You will need to clone Polyscope into `deps/polyscope`. The current CMake setup is configured for macOS Apple Silicon and Linux/WSL.
 
 
 **Update 3/12**
@@ -57,8 +57,8 @@ git clone --recursive https://github.com/nmwsharp/polyscope.git deps/polyscope
 From repo root:
 
 ```bash
-CC=/usr/bin/gcc CXX=/usr/bin/g++ cmake -S . -B build-ui -DPROFILEFORMER_WITH_POLYSCOPE=ON
-cmake --build build-ui -j
+CC=/usr/bin/gcc CXX=/usr/bin/g++ cmake -S . -B build-ui -DPROFILEMOVER_WITH_POLYSCOPE=ON
+cmake --build build -j
 ```
 
 Notes:
@@ -67,7 +67,7 @@ Notes:
 ### 4. Run
 
 ```bash
-./build-ui/profile_former ../curvenet/data/sphere.obj ../curvenet/data/sphere-curves.json
+./build/profile_mover data/sphere.obj data/sphere-curves.json
 ```
 
 Arguments:

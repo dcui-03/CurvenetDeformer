@@ -15,7 +15,6 @@
 #include <utility>
 #include <Eigen/Core>
 #include <Eigen/Dense>
-#include <glm/vec3.hpp>
 #include <vector>
 #include <random>
 
@@ -23,7 +22,8 @@ namespace Utils {
 
 // HELPERS FOR CONVERSION/COPYING
 
-// GLM::vec3 to Eigen::Vector3d converter
+#if 0
+// Legacy GLM conversion helpers — disabled to keep core free of GLM dependency.
 Eigen::Vector3d glmToEigen(const glm::vec3 input) {
     Eigen::Vector3d output;
     output(0) = static_cast<double>(input.x);
@@ -32,7 +32,6 @@ Eigen::Vector3d glmToEigen(const glm::vec3 input) {
     return output;
 }
 
-// Eigen::Vector3d to GLM::vec3 converter
 glm::vec3 eigenToGLM(const Eigen::Vector3d input) {
     glm::vec3 output;
     output.x = static_cast<float>(input(0));
@@ -44,7 +43,7 @@ glm::vec3 eigenToGLM(const Eigen::Vector3d input) {
 void meshConversionEigentoGLM(const std::vector<Eigen::Vector3d>& Eig, std::vector<glm::vec3>& GLM) {
     GLM.clear();
     GLM.resize(Eig.size());
-    for (int v = 0; v < static_cast<int>(Eig.size()); v++) {
+    for (int v = 0; v < Eig.size(); v++) {
         GLM[v] = eigenToGLM(Eig[v]);
     }
 }
@@ -52,10 +51,11 @@ void meshConversionEigentoGLM(const std::vector<Eigen::Vector3d>& Eig, std::vect
 void meshConversionGLMtoEigen(std::vector<Eigen::Vector3d>& Eig, const std::vector<glm::vec3>& GLM) {
     Eig.clear();
     Eig.resize(GLM.size());
-    for (int v = 0; v < static_cast<int>(GLM.size()); v++) {
+    for (int v = 0; v < GLM.size(); v++) {
         Eig[v] = glmToEigen(GLM[v]);
     }
 }
+#endif
 
 void copyPositions(const std::vector<Eigen::Vector3d>& oldV, std::vector<Eigen::Vector3d>& newV) { newV = oldV; }
 
@@ -80,94 +80,6 @@ Eigen::Vector3d anyPerpendicularUnit(const Eigen::Vector3d& tangent) {
     }
     return p.normalized();
 }
-
-Eigen::Vector3d projectAndNormalizeToTangentPlane(const Eigen::Vector3d& normal,
-                                                  const Eigen::Vector3d& tangent) {
-    const Eigen::Vector3d tn = tangent.normalized();
-    const Eigen::Vector3d projected = normal - tn * normal.dot(tn);
-    return projected.normalized();
-}
-
-namespace {
-std::uint64_t edgeKey(int a, int b) {
-    const std::uint32_t lo = static_cast<std::uint32_t>(std::min(a, b));
-    const std::uint32_t hi = static_cast<std::uint32_t>(std::max(a, b));
-    return (static_cast<std::uint64_t>(lo) << 32U) | static_cast<std::uint64_t>(hi);
-}
-}  // namespace
-
-double computeMeanMeshEdgeLength(const std::vector<Eigen::Vector3d>& verts,
-                                 const std::vector<std::vector<int>>& faces) {
-    std::unordered_set<std::uint64_t> seen;
-    double sum = 0.0;
-    std::size_t count = 0;
-
-    for (const auto& f : faces) {
-        if (f.size() < 2) {
-            continue;
-        }
-        const std::size_t m = f.size();
-        for (std::size_t i = 0; i < m; ++i) {
-            const int a = f[i];
-            const int b = f[(i + 1) % m];
-            if (a < 0 || b < 0 || static_cast<std::size_t>(a) >= verts.size() || static_cast<std::size_t>(b) >= verts.size() ||
-                a == b) {
-                continue;
-            }
-
-            const std::uint64_t key = edgeKey(a, b);
-            if (!seen.insert(key).second) {
-                continue;
-            }
-
-            sum += (verts[static_cast<std::size_t>(a)] - verts[static_cast<std::size_t>(b)]).norm();
-            ++count;
-        }
-// Entire mesh conversion routine Eigen to GLM
-void meshConversionEigentoGLM(const std::vector<Eigen::Vector3d>& Eig, std::vector<glm::vec3>& GLM) {
-    GLM.clear();
-    GLM.resize(Eig.size());
-    for (int v = 0; v < Eig.size(); v++) {
-        GLM[v] = eigenToGLM(Eig[v]);
-    }
-    return;
-}
-
-// Entire mesh conversion routine GLM to Eigen
-void meshConversionGLMtoEigen(std::vector<Eigen::Vector3d>& Eig, const std::vector<glm::vec3>& GLM) {
-    Eig.clear();
-    Eig.resize(GLM.size());
-    for (int v = 0; v < GLM.size(); v++) {
-        Eig[v] = glmToEigen(GLM[v]);
-    }
-    return;
-}
-
-// Copy positions and connectivity into a copied container
-void copyPositions(const std::vector<Eigen::Vector3d>& V_old, std::vector<Eigen::Vector3d>& V_new) {
-    V_new.clear();
-    V_new.resize(V_old.size());
-    for (int v = 0; v < V_old.size(); v++) {
-        Eigen::Vector3d new_v = {V_old[v](0), V_old[v](1), V_old[v](2)};
-        V_new[v] = new_v;
-    }
-    return;
-}
-
-void copyConnectivity(const std::vector<std::vector<int>>& T_old, std::vector<std::vector<int>>& T_new) {
-    T_new.clear();
-    T_new.resize(T_old.size());
-    for (int f = 0; f < T_old.size(); f++) {
-        std::vector<int> f_idxs;
-        for (int v = 0; v < T_old[f].size(); v++) {
-            f_idxs.push_back(T_old[f][v]);
-        }
-        T_new[f] = f_idxs;
-    }
-    return;
-}
-
-
 
 // VECTOR/PROJECTION HELPERS
 
@@ -277,70 +189,6 @@ Eigen::Vector3d closestPointOnSegment3D(const Eigen::Vector3d& p, const Eigen::V
         t = std::max(0.0, std::min(1.0, t));
     }
     return v0 + t * vec;
-}
-
-    if (count == 0) {
-        return 1.0;
-    }
-    return sum / static_cast<double>(count);
-}
-
-void loadObjMesh(const std::string& path,
-                 std::vector<Eigen::Vector3d>& vertices,
-                 std::vector<std::vector<int>>& faces) {
-    std::ifstream in(path);
-    if (!in) {
-        throw std::runtime_error("Failed to open OBJ: " + path);
-    }
-
-    vertices.clear();
-    faces.clear();
-
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
-
-        std::istringstream iss(line);
-        std::string tag;
-        iss >> tag;
-
-        if (tag == "v") {
-            double x = 0.0;
-            double y = 0.0;
-            double z = 0.0;
-            iss >> x >> y >> z;
-            vertices.emplace_back(x, y, z);
-        } else if (tag == "f") {
-            std::vector<int> face;
-            std::string tok;
-            while (iss >> tok) {
-                const std::size_t slash = tok.find('/');
-                const std::string idxStr = (slash == std::string::npos) ? tok : tok.substr(0, slash);
-                if (idxStr.empty()) {
-                    continue;
-                }
-
-                const int idxRaw = std::stoi(idxStr);
-                int idx = 0;
-                if (idxRaw > 0) {
-                    idx = idxRaw - 1;
-                } else {
-                    const int fromBack = -idxRaw;
-                    if (fromBack <= 0 || static_cast<std::size_t>(fromBack) > vertices.size()) {
-                        throw std::runtime_error("Invalid negative face index in OBJ");
-                    }
-                    idx = static_cast<int>(vertices.size()) - fromBack;
-                }
-                face.push_back(idx);
-            }
-
-            if (face.size() >= 3) {
-                faces.push_back(std::move(face));
-            }
-        }
-    }
 }
 
 void buildPolyscopeCurveNetwork(const Curvenet::curvenet& cn,

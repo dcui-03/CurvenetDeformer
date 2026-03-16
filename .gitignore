@@ -6,10 +6,6 @@
 
 # build outputs
 build/
-/build-ui
-/build
-/build-core
-/build-pdc
 bin/
 out/
 

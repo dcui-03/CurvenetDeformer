@@ -2,58 +2,94 @@
 #include "polyscope/surface_mesh.h"
 #include "polyscope/curve_network.h"
 #include "polyscope/point_cloud.h"
+#include "polyscope/point_cloud_vector_quantity.h"
 
 #include <Eigen/Core>
-#include <chrono>
-#include <iostream>
-#include <string>
-#include <cmath>
-#include <map>
-#include <tuple>
-#include <array>
-#include <vector>
-#include <stdexcept>
-#include <memory>
 #include <glm/glm.hpp>
 #include <glm/vec3.hpp>
 
-//#include "args/args.hxx"
+#include <array>
+#include <cstddef>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include "imgui.h"
 
-// My files
-#include "utils/jsonUtils.hpp"
-#include "profilemover/profilemover.hpp"
-#include "curvenet/components/spline.hpp"   // So we can segment splines on the fly for visualization
-#include "mesh/mesh.hpp"
-#include "utils/utils.hpp"
 #include "IO/io.hpp"
+#include "curvenet/curvenet.hpp"
+#include "profilemover/profilemover.hpp"
+#include "utils/jsonUtils.hpp"
+#include "utils/utils.hpp"
 
-// Main file for visualization with Polyscope
+namespace {
 
-/*
-NOTES:
-- We store two copies of each object. One is for Polyscope to mess with, the other is the "neutral"/original copy
-- TODO: When a control moves, the associated tangents should all move by the same amount
-        Write a function which converts a curvenet to a polyscope curve network/ point cloud object
-*/
+enum class EditTarget {
+    None,
+    Control,
+    Tangent
+};
 
-// VARIABLES FOR POLYSCOPE OBJECTS
-// Handles for the surface mesh
-Eigen::MatrixXd psV; // Vertex list
-std::vector<std::vector<int>> psF; // Face list: Note the inner list has arbitrary size for non-triangle faces
-polyscope::SurfaceMesh* psMesh;
+glm::vec3 toGlm(const Eigen::Vector3d& v) {
+    return glm::vec3(static_cast<float>(v.x()),
+                     static_cast<float>(v.y()),
+                     static_cast<float>(v.z()));
+}
 
-// Handles for curvenet and discrete curvenet
-std::vector<glm::vec3> psCurvenetP; // Point list (smooth curvenet)
-std::vector<std::array<size_t, 2>> psCurvenetE; // Edge list (smooth curvenet)
-polyscope::CurveNetwork* psCurvenet = nullptr;
+std::vector<glm::vec3> toGlmPoints(const std::vector<Eigen::Vector3d>& points) {
+    std::vector<glm::vec3> out;
+    out.reserve(points.size());
+    for (const auto& p : points) {
+        out.push_back(toGlm(p));
+    }
+    return out;
+}
 
-std::vector<glm::vec3> psDCurvenetP; // Point list (discrete curvenet)
-std::vector<std::array<size_t, 2>> psDCurvenetE; // Edge list (discrete curvenet)
+std::vector<std::array<std::size_t, 2>> toSizeTEdges(const std::vector<std::array<int, 2>>& edges) {
+    std::vector<std::array<std::size_t, 2>> out;
+    out.reserve(edges.size());
+    for (const auto& e : edges) {
+        out.push_back({static_cast<std::size_t>(e[0]), static_cast<std::size_t>(e[1])});
+    }
+    return out;
+}
+
+// Mesh
+std::vector<Eigen::Vector3d> meshV;
+std::vector<std::vector<int>> meshF;
+polyscope::SurfaceMesh* psMesh = nullptr;
+
+// Editable curvenet data
+Curvenet::curvenet neutralCurvenet;
+std::unique_ptr<Curvenet::curvenet> editableCurvenet;
+
+std::vector<glm::vec3> psEditableCurveP;
+std::vector<std::array<std::size_t, 2>> psEditableCurveE;
+polyscope::CurveNetwork* psEditableCurve = nullptr;
+
+std::vector<glm::vec3> psEditableControlsP;
+polyscope::PointCloud* psEditableControls = nullptr;
+
+std::vector<glm::vec3> psEditableTangentsP;
+polyscope::PointCloud* psEditableTangents = nullptr;
+
+std::vector<glm::vec3> psEditableHandlesP;
+std::vector<std::array<std::size_t, 2>> psEditableHandlesE;
+polyscope::CurveNetwork* psEditableHandles = nullptr;
+
+// Precompute cache + visuals
+std::unique_ptr<ProfileMover::profilemover> PF;
+bool precompValid = false;
+int samplesPerMeanEdge = 5;
+int uniformRefineSamples = 64;
+
+std::vector<glm::vec3> psDCurvenetP;
+std::vector<std::array<std::size_t, 2>> psDCurvenetE;
 polyscope::CurveNetwork* psDCurvenet = nullptr;
 
-std::vector<glm::vec3> psDCurvenetInteriorP; // Interior dcurvenet vertices
-std::vector<glm::vec3> psDCurvenetControlP; // Control dcurvenet vertices
+std::vector<glm::vec3> psDCurvenetInteriorP;
+std::vector<glm::vec3> psDCurvenetControlP;
 polyscope::PointCloud* psDCurvenetInterior = nullptr;
 polyscope::PointCloud* psDCurvenetControls = nullptr;
 
@@ -64,113 +100,155 @@ polyscope::PointCloud* psProjectedVertexSamples = nullptr;
 polyscope::PointCloud* psProjectedEdgeSamples = nullptr;
 polyscope::PointCloud* psProjectedFaceSamples = nullptr;
 
-std::vector<glm::vec3> psControlNormalOriginsP; // Point list (origins for corner normals)
-std::vector<glm::vec3> psControlNormalVectors; // Vector list (corner normals)
+std::vector<glm::vec3> psControlNormalOriginsP;
+std::vector<glm::vec3> psControlNormalVectors;
 polyscope::PointCloud* psControlNormals = nullptr;
+polyscope::PointCloudVectorQuantity* psControlNormalVectorsQ = nullptr;
 
-// Handles for controls (?)
-// Not sure what we need visualization-wise
-std::vector<glm::vec3> psControlsP; // Point list
-polyscope::PointCloud* psControls = nullptr;
-// Handles for discrete curvenet
-Eigen::MatrixXd psCurvenetP; // Point list
-std::vector<std::array<int, 2>> psCurvenetE; // Edge List
-polyscope::CurveNetwork* psCurvenet;
+std::vector<glm::vec3> psPlusSegmentFrameOriginsP;
+std::vector<glm::vec3> psPlusSegmentFrameTangents;
+std::vector<glm::vec3> psPlusSegmentFrameBinormals;
+std::vector<glm::vec3> psPlusSegmentFrameNormals;
+polyscope::PointCloud* psPlusSegmentFrames = nullptr;
+polyscope::PointCloudVectorQuantity* psPlusSegmentFrameTangentsQ = nullptr;
+polyscope::PointCloudVectorQuantity* psPlusSegmentFrameBinormalsQ = nullptr;
+polyscope::PointCloudVectorQuantity* psPlusSegmentFrameNormalsQ = nullptr;
 
-// Handles for controls (?)
-// Not sure what we need visualization-wise
-Eigen::MatrixXd psControlsP; // Controls
-Eigen::MatrixXd psTangentsP; // Tangents
-polyscope::PointCloud* psControlsPC;    // point cloud for controls
-polyscope::PointCloud* psTangentsPC;    // point cloud for tangents
+std::vector<glm::vec3> psMinusSegmentFrameOriginsP;
+std::vector<glm::vec3> psMinusSegmentFrameTangents;
+std::vector<glm::vec3> psMinusSegmentFrameBinormals;
+std::vector<glm::vec3> psMinusSegmentFrameNormals;
+polyscope::PointCloud* psMinusSegmentFrames = nullptr;
+polyscope::PointCloudVectorQuantity* psMinusSegmentFrameTangentsQ = nullptr;
+polyscope::PointCloudVectorQuantity* psMinusSegmentFrameBinormalsQ = nullptr;
+polyscope::PointCloudVectorQuantity* psMinusSegmentFrameNormalsQ = nullptr;
 
-Eigen::MatrixXd psControlsAndTangents; // Aggregate list of controls and tangents
-std::vector<std::array<int, 2>> psControlsAndTangentsE; // Edge List between controls and tangents
-std::map<int, int> tanListToCTList; // Maps points in the tangent list to points in the psControlsAndTangents list
-polyscope::CurveNetwork* psControlsCN;  // Connects controls to their tangents
+// UI state
+bool editControlsMode = false;
+bool editTangentsMode = false;
+bool constrainTangentsToPlane = true;
+bool showCornerNormals = false;
+bool showSegmentFrames = false;
+EditTarget activeTarget = EditTarget::None;
+int activeIndex = -1;
+bool gizmoActive = false;
+polyscope::TransformationGizmo* vertexGizmo = nullptr;
 
+std::string inputPath;
+std::string curvesPath;
 
-// VARIABLES FOR PARSING AND WRITING FILES
-std::string InputPath;
-std::string CurvesPath;
+void updatePrecomputeVisibility() {
+    const bool enabled = precompValid;
 
-// Core pipeline object
-std::unique_ptr<ProfileFormer::profileformer> PF;
-std::string OutputPath;
+    if (psDCurvenet != nullptr) psDCurvenet->setEnabled(enabled);
+    if (psDCurvenetInterior != nullptr) psDCurvenetInterior->setEnabled(enabled);
+    if (psDCurvenetControls != nullptr) psDCurvenetControls->setEnabled(enabled);
+    if (psProjectedVertexSamples != nullptr) psProjectedVertexSamples->setEnabled(enabled);
+    if (psProjectedEdgeSamples != nullptr) psProjectedEdgeSamples->setEnabled(enabled);
+    if (psProjectedFaceSamples != nullptr) psProjectedFaceSamples->setEnabled(enabled);
 
-// UI HELPERS
-bool precompDone = false;   // Once precomputation is done, we can no longer edit the curves
-bool gizmoMode = false; // This allows the user to create a gizmo
-bool createMode = false;  // Allows users to place control points
-bool tanMode = false;   // Allows users to modify controls and tangents
-bool removeMode = false;   // Allows users to remove control points
-bool recomputeCurvenet = false; // Whether we should recompute the ps curve networks
+    const bool normalsEnabled = enabled && showCornerNormals;
+    if (psControlNormals != nullptr) psControlNormals->setEnabled(normalsEnabled);
+    if (psControlNormalVectorsQ != nullptr) psControlNormalVectorsQ->setEnabled(normalsEnabled);
 
-// Spline creation/removal helpers
-int selectedIdx = -1;    // Index of selected vertex on mesh
-int num_selected = 0;   // Number valid entries selected so far
-std::array<Eigen::Vector3d, 2> selectedPair;
-std::array<Eigen::Vector3d, 2> selectedPairNormals;
-std::array<int, 2> selectedPairIdx;  // Flag vertices that come from the existing point cloud
+    const bool framesEnabled = enabled && showSegmentFrames;
+    if (psPlusSegmentFrames != nullptr) psPlusSegmentFrames->setEnabled(framesEnabled);
+    if (psPlusSegmentFrameTangentsQ != nullptr) psPlusSegmentFrameTangentsQ->setEnabled(framesEnabled);
+    if (psPlusSegmentFrameBinormalsQ != nullptr) psPlusSegmentFrameBinormalsQ->setEnabled(framesEnabled);
+    if (psPlusSegmentFrameNormalsQ != nullptr) psPlusSegmentFrameNormalsQ->setEnabled(framesEnabled);
+    if (psMinusSegmentFrames != nullptr) psMinusSegmentFrames->setEnabled(framesEnabled);
+    if (psMinusSegmentFrameTangentsQ != nullptr) psMinusSegmentFrameTangentsQ->setEnabled(framesEnabled);
+    if (psMinusSegmentFrameBinormalsQ != nullptr) psMinusSegmentFrameBinormalsQ->setEnabled(framesEnabled);
+    if (psMinusSegmentFrameNormalsQ != nullptr) psMinusSegmentFrameNormalsQ->setEnabled(framesEnabled);
+}
 
-// Editing helpers
-bool editObjectSelected = false;    // Whether we have selected a vertex to add a gizmo to
-int controlIdx = -1;    // Index of control selected OR control associated with tangent
-int tangentIdx = -1;    // Index of tangent selected to be edited
-bool tanConstraint = true;  // Constrain tangent movement to tangent plane only
-
-// Gizmo helpers
-bool activeGizmo = false; // This tells us if there is an active gizmo
-Eigen::Vector3d gizmoPos;
-static polyscope::TransformationGizmo* vertexGizmo = nullptr;
-
-// Pre-computation
-int samplingParam = 5;
-
-// INTERNAL OBJECT COPIES
-// Internal mesh copy (Eigen)
-// Neutral mesh state
-std::vector<Eigen::Vector3d> V;
-std::vector<std::vector<int>> F;
-std::unique_ptr<Mesh::mesh> neutralMesh;
-
-// Neutral discrete curvenet
-std::unique_ptr<Curvenet::curvenet> editableCurvenet; // Curvenet that polyscope will use for updates
-Curvenet::curvenet neutralCurvenet; // Copy of neutral curvenet to be initialized during pre-computation
-
-// Forward declarations for legacy callback aliases
-void removeGizmo();
-void resetMeshVertexPositions();
-// Profile Mover
-//ProfileMover::profilemover PM;
-
-
-// ----------------- FUNCTIONS BEGIN HERE -------------------------
-
-void refreshCurvenetVisuals() {
-    if (!PF) return;
-    auto toGlm = [](const Eigen::Vector3d& v) {
-        return glm::vec3(static_cast<float>(v.x()),
-                         static_cast<float>(v.y()),
-                         static_cast<float>(v.z()));
-    };
-
-    std::vector<std::array<double, 3>> curvePtsD;
-    std::vector<std::array<std::size_t, 2>> curveEdgesD;
-    Utils::buildPolyscopeCurveNetwork(PF->getNeutralCurvenet(), curvePtsD, curveEdgesD, 180);
-    psCurvenetP.clear();
-    psCurvenetP.reserve(curvePtsD.size());
-    for (const auto& p : curvePtsD) {
-        psCurvenetP.emplace_back(static_cast<float>(p[0]),
-                                 static_cast<float>(p[1]),
-                                 static_cast<float>(p[2]));
+void removeGizmo() {
+    if (vertexGizmo != nullptr) {
+        vertexGizmo->remove();
+        vertexGizmo = nullptr;
     }
-    psCurvenetE = curveEdgesD;
+    gizmoActive = false;
+}
+
+void clearActiveEdit() {
+    activeTarget = EditTarget::None;
+    activeIndex = -1;
+    removeGizmo();
+}
+
+void addGizmoAt(const Eigen::Vector3d& position) {
+    gizmoActive = true;
+    if (vertexGizmo == nullptr) {
+        vertexGizmo = polyscope::addTransformationGizmo("curve_edit_gizmo");
+        vertexGizmo->setAllowTranslation(true);
+        vertexGizmo->setAllowRotation(false);
+        vertexGizmo->setAllowScaling(false);
+        vertexGizmo->setInteractInLocalSpace(false);
+    }
+    vertexGizmo->setPosition(toGlm(position));
+}
+
+void hidePrecomputeVisuals() {
+    updatePrecomputeVisibility();
+}
+
+void invalidatePrecompute() {
+    precompValid = false;
+    PF.reset();
+    hidePrecomputeVisuals();
+}
+
+void refreshEditableCurvenetVisuals() {
+    if (!editableCurvenet) {
+        return;
+    }
+
+    std::vector<Eigen::Vector3d> curveSamples;
+    std::vector<std::array<int, 2>> curveEdges;
+    editableCurvenet->convertCurvnetToCN(curveSamples, curveEdges, 96);
+    psEditableCurveP = toGlmPoints(curveSamples);
+    psEditableCurveE = toSizeTEdges(curveEdges);
+    psEditableCurve = polyscope::registerCurveNetwork("Editable Curvenet", psEditableCurveP, psEditableCurveE);
+    psEditableCurve->setColor({0.92f, 0.55f, 0.14f});
+    psEditableCurve->setRadius(0.0025f, true);
+    psEditableCurve->setEnabled(true);
+
+    std::vector<Eigen::Vector3d> controls;
+    editableCurvenet->convertControlsToPC(controls);
+    psEditableControlsP = toGlmPoints(controls);
+    psEditableControls = polyscope::registerPointCloud("Editable Controls", psEditableControlsP);
+    psEditableControls->setPointColor({0.95f, 0.20f, 0.12f});
+    psEditableControls->setPointRadius(0.0080, true);
+    psEditableControls->setEnabled(true);
+
+    std::vector<Eigen::Vector3d> tangents;
+    editableCurvenet->convertTangentsToPC(tangents);
+    psEditableTangentsP = toGlmPoints(tangents);
+    psEditableTangents = polyscope::registerPointCloud("Editable Tangents", psEditableTangentsP);
+    psEditableTangents->setPointColor({0.12f, 0.82f, 0.30f});
+    psEditableTangents->setPointRadius(0.0060, true);
+    psEditableTangents->setEnabled(true);
+
+    std::vector<Eigen::Vector3d> handles;
+    std::vector<std::array<int, 2>> handleEdges;
+    editableCurvenet->convertControlsAndTangentsToCN(handles, handleEdges);
+    psEditableHandlesP = toGlmPoints(handles);
+    psEditableHandlesE = toSizeTEdges(handleEdges);
+    psEditableHandles = polyscope::registerCurveNetwork("Editable Handles", psEditableHandlesP, psEditableHandlesE);
+    psEditableHandles->setColor({0.55f, 0.70f, 0.12f});
+    psEditableHandles->setRadius(0.0012f, true);
+    psEditableHandles->setEnabled(true);
+}
+
+void refreshPrecomputeVisuals() {
+    if (!PF) {
+        hidePrecomputeVisuals();
+        return;
+    }
 
     std::vector<std::array<double, 3>> dcurvePtsD;
     std::vector<std::array<std::size_t, 2>> dcurveEdgesD;
     Utils::buildPolyscopeDiscreteCurveNetwork(PF->getNeutralDCurvenet(), dcurvePtsD, dcurveEdgesD);
-
     psDCurvenetP.clear();
     psDCurvenetP.reserve(dcurvePtsD.size());
     for (const auto& p : dcurvePtsD) {
@@ -179,30 +257,36 @@ void refreshCurvenetVisuals() {
                                   static_cast<float>(p[2]));
     }
     psDCurvenetE = dcurveEdgesD;
+    psDCurvenet = polyscope::registerCurveNetwork("Precompute: DCurveNet", psDCurvenetP, psDCurvenetE);
+    psDCurvenet->setColor({0.15f, 0.80f, 0.95f});
+    psDCurvenet->setRadius(0.0040f, true);
+    psDCurvenet->setEnabled(true);
 
     psDCurvenetInteriorP.clear();
     psDCurvenetControlP.clear();
     const auto& dVerts = PF->getNeutralDCurvenet().verts();
-    psDCurvenetInteriorP.reserve(dVerts.size());
-    psDCurvenetControlP.reserve(dVerts.size());
     for (const auto& v : dVerts) {
-        const auto& p = v.position();
-        const glm::vec3 gp(static_cast<float>(p.x()), static_cast<float>(p.y()), static_cast<float>(p.z()));
+        const glm::vec3 gp = toGlm(v.position());
         if (v.isControl()) {
             psDCurvenetControlP.push_back(gp);
         } else {
             psDCurvenetInteriorP.push_back(gp);
         }
     }
+    psDCurvenetInterior = polyscope::registerPointCloud("Precompute: DCurveNet Interior", psDCurvenetInteriorP);
+    psDCurvenetInterior->setPointColor({0.60f, 0.92f, 1.00f});
+    psDCurvenetInterior->setPointRadius(0.0035, true);
+    psDCurvenetInterior->setEnabled(true);
+
+    psDCurvenetControls = polyscope::registerPointCloud("Precompute: DCurveNet Controls", psDCurvenetControlP);
+    psDCurvenetControls->setPointColor({1.00f, 0.42f, 0.10f});
+    psDCurvenetControls->setPointRadius(0.0065, true);
+    psDCurvenetControls->setEnabled(true);
 
     psProjectedVertexSamplesP.clear();
     psProjectedEdgeSamplesP.clear();
     psProjectedFaceSamplesP.clear();
-    const auto& projectedSamples = PF->getNeutralPDCurvenet().projectedSamples();
-    psProjectedVertexSamplesP.reserve(projectedSamples.size());
-    psProjectedEdgeSamplesP.reserve(projectedSamples.size());
-    psProjectedFaceSamplesP.reserve(projectedSamples.size());
-    for (const auto& sample : projectedSamples) {
+    for (const auto& sample : PF->getNeutralPDCurvenet().projectedSamples()) {
         const glm::vec3 gp = toGlm(sample.projected_position);
         switch (sample.attachment) {
             case DCurvenet::MeshAttachmentType::Vertex:
@@ -217,725 +301,324 @@ void refreshCurvenetVisuals() {
         }
     }
 
+    psProjectedVertexSamples = polyscope::registerPointCloud("Precompute: Projected Vertex Samples", psProjectedVertexSamplesP);
+    psProjectedVertexSamples->setPointColor({1.00f, 0.25f, 0.20f});
+    psProjectedVertexSamples->setPointRadius(0.0090, true);
+    psProjectedVertexSamples->setEnabled(true);
+
+    psProjectedEdgeSamples = polyscope::registerPointCloud("Precompute: Projected Edge Samples", psProjectedEdgeSamplesP);
+    psProjectedEdgeSamples->setPointColor({1.00f, 0.85f, 0.20f});
+    psProjectedEdgeSamples->setPointRadius(0.0080, true);
+    psProjectedEdgeSamples->setEnabled(true);
+
+    psProjectedFaceSamples = polyscope::registerPointCloud("Precompute: Projected Face Samples", psProjectedFaceSamplesP);
+    psProjectedFaceSamples->setPointColor({0.15f, 0.95f, 0.45f});
+    psProjectedFaceSamples->setPointRadius(0.0070, true);
+    psProjectedFaceSamples->setEnabled(true);
+
     std::vector<std::array<double, 3>> controlNormalOriginsD;
     std::vector<std::array<double, 3>> controlNormalVectorsD;
     Utils::buildPolyscopeControlCornerNormals(PF->getNeutralDCurvenet(),
                                               controlNormalOriginsD,
                                               controlNormalVectorsD);
-
     psControlNormalOriginsP.clear();
     psControlNormalVectors.clear();
-    psControlNormalOriginsP.reserve(controlNormalOriginsD.size());
-    psControlNormalVectors.reserve(controlNormalVectorsD.size());
-    for (std::size_t i = 0; i < controlNormalOriginsD.size(); ++i) {
-        const auto& p = controlNormalOriginsD[i];
+    for (const auto& p : controlNormalOriginsD) {
         psControlNormalOriginsP.emplace_back(static_cast<float>(p[0]),
                                              static_cast<float>(p[1]),
                                              static_cast<float>(p[2]));
     }
-    for (std::size_t i = 0; i < controlNormalVectorsD.size(); ++i) {
-        const auto& v = controlNormalVectorsD[i];
+    for (const auto& v : controlNormalVectorsD) {
         psControlNormalVectors.emplace_back(static_cast<float>(v[0]),
                                             static_cast<float>(v[1]),
                                             static_cast<float>(v[2]));
     }
-
-    const auto controlsD = Utils::buildControlCloud(PF->getNeutralCurvenet());
-    psControlsP.clear();
-    psControlsP.reserve(controlsD.size());
-    for (const auto& p : controlsD) {
-        psControlsP.emplace_back(static_cast<float>(p[0]),
-                                 static_cast<float>(p[1]),
-                                 static_cast<float>(p[2]));
-    }
-
-    psCurvenet = polyscope::registerCurveNetwork("Curvenet", psCurvenetP, psCurvenetE);
-    psCurvenet->setColor({0.95f, 0.55f, 0.15f});
-    psCurvenet->setRadius(0.0018f, true);
-
-    psDCurvenet = polyscope::registerCurveNetwork("DCurveNet Segments", psDCurvenetP, psDCurvenetE);
-    psDCurvenet->setColor({0.15f, 0.80f, 0.95f});
-    psDCurvenet->setRadius(0.0045f, true);
-
-    std::vector<glm::vec3> plusT;
-    std::vector<glm::vec3> plusB;
-    std::vector<glm::vec3> plusN;
-    std::vector<glm::vec3> minusT;
-    std::vector<glm::vec3> minusB;
-    std::vector<glm::vec3> minusN;
-    const auto& dSegs = PF->getNeutralDCurvenet().segments();
-    plusT.reserve(dSegs.size());
-    plusB.reserve(dSegs.size());
-    plusN.reserve(dSegs.size());
-    minusT.reserve(dSegs.size());
-    minusB.reserve(dSegs.size());
-    minusN.reserve(dSegs.size());
-
-    for (const auto& seg : dSegs) {
-        if (seg.plusSide().valid) {
-            plusT.push_back(toGlm(seg.plusSide().BS.col(0)));
-            plusB.push_back(toGlm(seg.plusSide().BS.col(1)));
-            plusN.push_back(toGlm(seg.plusSide().BS.col(2)));
-        } else {
-            plusT.emplace_back(0.f, 0.f, 0.f);
-            plusB.emplace_back(0.f, 0.f, 0.f);
-            plusN.emplace_back(0.f, 0.f, 0.f);
-        }
-
-        if (seg.minusSide().valid) {
-            minusT.push_back(toGlm(seg.minusSide().BS.col(0)));
-            minusB.push_back(toGlm(seg.minusSide().BS.col(1)));
-            minusN.push_back(toGlm(seg.minusSide().BS.col(2)));
-        } else {
-            minusT.emplace_back(0.f, 0.f, 0.f);
-            minusB.emplace_back(0.f, 0.f, 0.f);
-            minusN.emplace_back(0.f, 0.f, 0.f);
-        }
-    }
-
-    constexpr double kFrameDisplayScale = 1.0; // true geometric length
-
-    auto* qPlusT = psDCurvenet->addEdgeVectorQuantity("Frame+ t (true)", plusT, polyscope::VectorType::STANDARD);
-    qPlusT->setVectorColor({0.98f, 0.65f, 0.10f});
-    qPlusT->setVectorLengthRange(1.0);
-    qPlusT->setVectorLengthScale(kFrameDisplayScale, false);
-    qPlusT->setEnabled(true);
-
-    auto* qPlusB = psDCurvenet->addEdgeVectorQuantity("Frame+ b (true)", plusB, polyscope::VectorType::STANDARD);
-    qPlusB->setVectorColor({0.95f, 0.20f, 0.45f});
-    qPlusB->setVectorLengthRange(1.0);
-    qPlusB->setVectorLengthScale(kFrameDisplayScale, false);
-    qPlusB->setEnabled(true);
-
-    auto* qPlusN = psDCurvenet->addEdgeVectorQuantity("Frame+ n (true)", plusN, polyscope::VectorType::STANDARD);
-    qPlusN->setVectorColor({0.15f, 0.95f, 0.30f});
-    qPlusN->setVectorLengthRange(1.0);
-    qPlusN->setVectorLengthScale(kFrameDisplayScale, false);
-    qPlusN->setEnabled(true);
-
-    auto* qMinusT = psDCurvenet->addEdgeVectorQuantity("Frame- t (true)", minusT, polyscope::VectorType::STANDARD);
-    qMinusT->setVectorColor({0.85f, 0.45f, 0.10f});
-    qMinusT->setVectorLengthRange(1.0);
-    qMinusT->setVectorLengthScale(kFrameDisplayScale, false);
-    qMinusT->setEnabled(true);
-
-    auto* qMinusB = psDCurvenet->addEdgeVectorQuantity("Frame- b (true)", minusB, polyscope::VectorType::STANDARD);
-    qMinusB->setVectorColor({0.55f, 0.40f, 1.00f});
-    qMinusB->setVectorLengthRange(1.0);
-    qMinusB->setVectorLengthScale(kFrameDisplayScale, false);
-    qMinusB->setEnabled(true);
-
-    auto* qMinusN = psDCurvenet->addEdgeVectorQuantity("Frame- n (true)", minusN, polyscope::VectorType::STANDARD);
-    qMinusN->setVectorColor({0.10f, 0.80f, 1.00f});
-    qMinusN->setVectorLengthRange(1.0);
-    qMinusN->setVectorLengthScale(kFrameDisplayScale, false);
-    qMinusN->setEnabled(true);
-
-    psDCurvenetInterior = polyscope::registerPointCloud("DCurveNet Vertices (Interior)", psDCurvenetInteriorP);
-    psDCurvenetInterior->setPointColor({0.65f, 0.90f, 1.00f});
-    psDCurvenetInterior->setPointRadius(0.0035, true);
-
-    psDCurvenetControls = polyscope::registerPointCloud("DCurveNet Vertices (Controls)", psDCurvenetControlP);
-    psDCurvenetControls->setPointColor({1.00f, 0.40f, 0.10f});
-    psDCurvenetControls->setPointRadius(0.0075, true);
-
-    psProjectedVertexSamples = polyscope::registerPointCloud("Projected Samples (Vertex)", psProjectedVertexSamplesP);
-    psProjectedVertexSamples->setPointColor({1.00f, 0.25f, 0.20f});
-    psProjectedVertexSamples->setPointRadius(0.0090, true);
-
-    psProjectedEdgeSamples = polyscope::registerPointCloud("Projected Samples (Edge)", psProjectedEdgeSamplesP);
-    psProjectedEdgeSamples->setPointColor({1.00f, 0.85f, 0.20f});
-    psProjectedEdgeSamples->setPointRadius(0.0080, true);
-
-    psProjectedFaceSamples = polyscope::registerPointCloud("Projected Samples (Face)", psProjectedFaceSamplesP);
-    psProjectedFaceSamples->setPointColor({0.15f, 0.95f, 0.45f});
-    psProjectedFaceSamples->setPointRadius(0.0070, true);
-
-    psControls = polyscope::registerPointCloud("Controls", psControlsP);
-    psControls->setPointRadius(0.0045, true);
-    psControls->setPointColor({0.95f, 0.75f, 0.25f});
-
-    psControlNormals = polyscope::registerPointCloud("Control Corner Normal Origins", psControlNormalOriginsP);
+    psControlNormals = polyscope::registerPointCloud("Precompute: Corner Normal Origins", psControlNormalOriginsP);
     psControlNormals->setPointColor({0.10f, 0.95f, 0.25f});
-    psControlNormals->setPointRadius(0.005, true);
-
+    psControlNormals->setPointRadius(0.0050, true);
+    psControlNormals->setEnabled(false);
+    psControlNormalVectorsQ = nullptr;
     if (!psControlNormalVectors.empty()) {
-        constexpr double kControlNormalDisplayScale = 0.08; // visualization-only multiplier
-        auto* nQ = psControlNormals->addVectorQuantity("Control Corner Normals",
-                                                       psControlNormalVectors,
-                                                       polyscope::VectorType::STANDARD);
-        nQ->setEnabled(true);
-        nQ->setVectorColor({0.10f, 0.95f, 0.25f});
-        nQ->setVectorLengthRange(1.0);
-        nQ->setVectorLengthScale(kControlNormalDisplayScale, false);
+        psControlNormalVectorsQ = psControlNormals->addVectorQuantity("Corner Normals",
+                                                                     psControlNormalVectors,
+                                                                     polyscope::VectorType::STANDARD);
+        psControlNormalVectorsQ->setVectorColor({0.10f, 0.95f, 0.25f});
+        psControlNormalVectorsQ->setVectorLengthRange(1.0);
+        psControlNormalVectorsQ->setVectorLengthScale(0.08, false);
+        psControlNormalVectorsQ->setEnabled(false);
     }
+
+    psPlusSegmentFrameOriginsP.clear();
+    psPlusSegmentFrameTangents.clear();
+    psPlusSegmentFrameBinormals.clear();
+    psPlusSegmentFrameNormals.clear();
+    psMinusSegmentFrameOriginsP.clear();
+    psMinusSegmentFrameTangents.clear();
+    psMinusSegmentFrameBinormals.clear();
+    psMinusSegmentFrameNormals.clear();
+    const auto& segs = PF->getNeutralDCurvenet().segments();
+    for (const auto& seg : segs) {
+        const Eigen::Vector3d midpoint =
+            0.5 * (dVerts[static_cast<std::size_t>(seg.startDvert())].position() +
+                   dVerts[static_cast<std::size_t>(seg.endDvert())].position());
+        if (seg.plusSide().valid) {
+            psPlusSegmentFrameOriginsP.push_back(toGlm(midpoint));
+            psPlusSegmentFrameTangents.push_back(toGlm(seg.plusSide().BS.col(0)));
+            psPlusSegmentFrameBinormals.push_back(toGlm(seg.plusSide().BS.col(1)));
+            psPlusSegmentFrameNormals.push_back(toGlm(seg.plusSide().BS.col(2)));
+        }
+        if (seg.minusSide().valid) {
+            psMinusSegmentFrameOriginsP.push_back(toGlm(midpoint));
+            psMinusSegmentFrameTangents.push_back(toGlm(seg.minusSide().BS.col(0)));
+            psMinusSegmentFrameBinormals.push_back(toGlm(seg.minusSide().BS.col(1)));
+            psMinusSegmentFrameNormals.push_back(toGlm(seg.minusSide().BS.col(2)));
+        }
+    }
+
+    psPlusSegmentFrames = polyscope::registerPointCloud("Precompute: + Frame Origins", psPlusSegmentFrameOriginsP);
+    psPlusSegmentFrames->setPointColor({0.92f, 0.92f, 0.92f});
+    psPlusSegmentFrames->setPointRadius(0.0035, true);
+    psPlusSegmentFrames->setEnabled(false);
+    psPlusSegmentFrameTangentsQ = nullptr;
+    psPlusSegmentFrameBinormalsQ = nullptr;
+    psPlusSegmentFrameNormalsQ = nullptr;
+    if (!psPlusSegmentFrameTangents.empty()) {
+        psPlusSegmentFrameTangentsQ = psPlusSegmentFrames->addVectorQuantity("+ Frame Tangent",
+                                                                            psPlusSegmentFrameTangents,
+                                                                            polyscope::VectorType::STANDARD);
+        psPlusSegmentFrameTangentsQ->setVectorColor({0.95f, 0.25f, 0.20f});
+        psPlusSegmentFrameTangentsQ->setVectorLengthRange(1.0);
+        psPlusSegmentFrameTangentsQ->setVectorLengthScale(1.0, false);
+        psPlusSegmentFrameTangentsQ->setEnabled(false);
+
+        psPlusSegmentFrameBinormalsQ = psPlusSegmentFrames->addVectorQuantity("+ Frame Binormal",
+                                                                             psPlusSegmentFrameBinormals,
+                                                                             polyscope::VectorType::STANDARD);
+        psPlusSegmentFrameBinormalsQ->setVectorColor({0.98f, 0.75f, 0.20f});
+        psPlusSegmentFrameBinormalsQ->setVectorLengthRange(1.0);
+        psPlusSegmentFrameBinormalsQ->setVectorLengthScale(1.0, false);
+        psPlusSegmentFrameBinormalsQ->setEnabled(false);
+
+        psPlusSegmentFrameNormalsQ = psPlusSegmentFrames->addVectorQuantity("+ Frame Normal",
+                                                                           psPlusSegmentFrameNormals,
+                                                                           polyscope::VectorType::STANDARD);
+        psPlusSegmentFrameNormalsQ->setVectorColor({0.12f, 0.95f, 0.35f});
+        psPlusSegmentFrameNormalsQ->setVectorLengthRange(1.0);
+        psPlusSegmentFrameNormalsQ->setVectorLengthScale(1.0, false);
+        psPlusSegmentFrameNormalsQ->setEnabled(false);
+    }
+
+    psMinusSegmentFrames = polyscope::registerPointCloud("Precompute: - Frame Origins", psMinusSegmentFrameOriginsP);
+    psMinusSegmentFrames->setPointColor({0.75f, 0.75f, 0.75f});
+    psMinusSegmentFrames->setPointRadius(0.0035, true);
+    psMinusSegmentFrames->setEnabled(false);
+    psMinusSegmentFrameTangentsQ = nullptr;
+    psMinusSegmentFrameBinormalsQ = nullptr;
+    psMinusSegmentFrameNormalsQ = nullptr;
+    if (!psMinusSegmentFrameTangents.empty()) {
+        psMinusSegmentFrameTangentsQ = psMinusSegmentFrames->addVectorQuantity("- Frame Tangent",
+                                                                              psMinusSegmentFrameTangents,
+                                                                              polyscope::VectorType::STANDARD);
+        psMinusSegmentFrameTangentsQ->setVectorColor({0.85f, 0.45f, 0.65f});
+        psMinusSegmentFrameTangentsQ->setVectorLengthRange(1.0);
+        psMinusSegmentFrameTangentsQ->setVectorLengthScale(1.0, false);
+        psMinusSegmentFrameTangentsQ->setEnabled(false);
+
+        psMinusSegmentFrameBinormalsQ = psMinusSegmentFrames->addVectorQuantity("- Frame Binormal",
+                                                                               psMinusSegmentFrameBinormals,
+                                                                               polyscope::VectorType::STANDARD);
+        psMinusSegmentFrameBinormalsQ->setVectorColor({0.45f, 0.80f, 0.95f});
+        psMinusSegmentFrameBinormalsQ->setVectorLengthRange(1.0);
+        psMinusSegmentFrameBinormalsQ->setVectorLengthScale(1.0, false);
+        psMinusSegmentFrameBinormalsQ->setEnabled(false);
+
+        psMinusSegmentFrameNormalsQ = psMinusSegmentFrames->addVectorQuantity("- Frame Normal",
+                                                                             psMinusSegmentFrameNormals,
+                                                                             polyscope::VectorType::STANDARD);
+        psMinusSegmentFrameNormalsQ->setVectorColor({0.35f, 0.65f, 1.00f});
+        psMinusSegmentFrameNormalsQ->setVectorLengthRange(1.0);
+        psMinusSegmentFrameNormalsQ->setVectorLengthScale(1.0, false);
+        psMinusSegmentFrameNormalsQ->setEnabled(false);
+    }
+
+    updatePrecomputeVisibility();
 }
 
-// Performs call to pre-computation of cut-mesh and operators
-int computePrecomp() {
-    if (!PF) {
-        std::cout << "Pre-computation skipped: profileformer not initialized." << std::endl;
-        return 1;
+void resetEditableCurvenet() {
+    if (!editableCurvenet) {
+        return;
     }
+    *editableCurvenet = neutralCurvenet;
+    clearActiveEdit();
+    refreshEditableCurvenetVisuals();
+    invalidatePrecompute();
+}
+
+void runPrecompute() {
+    if (!editableCurvenet) {
+        return;
+    }
+    PF = std::make_unique<ProfileMover::profilemover>(meshV, meshF, *editableCurvenet);
+    PF->setDiscretizationParameters(samplesPerMeanEdge, uniformRefineSamples);
     PF->precomputation();
-    refreshCurvenetVisuals();
-    return 0;
-int performPrecomp() {
-    // Make a hard copy of the neutral curvenet and pass it as the profile mover's copy
-    // That way we maintain one copy to that polyscope can edit
-    // TODO: Initialize global profile mover object
-
-    // TODO: Time the pre-computation to see how time-intensive it is.
-    return 1;
+    precompValid = true;
+    refreshPrecomputeVisuals();
 }
 
-// Performs call to surface deformation and updates PS mesh
-int computeDeformation() {
-    // TODO: Keep legacy entrypoint; deformation pipeline is not fully wired yet.
-    return 0;
+void markCurveEdited() {
+    refreshEditableCurvenetVisuals();
+    invalidatePrecompute();
 }
 
-// Legacy aliases to preserve callback naming used by existing scaffold.
-int performPrecomp() { return computePrecomp(); }
-void endVertexEdit() { removeGizmo(); }
-void resetVertexPositions() { resetMeshVertexPositions(); }
-
-
-// Creates gizmo at vertex
-void addGizmoAtVertex(int vert_idx) {
-    const Eigen::Vector3d& p = psV[static_cast<std::size_t>(vert_idx)];
-    glm::vec3 startpos(static_cast<float>(p.x()), static_cast<float>(p.y()), static_cast<float>(p.z()));
-
-// Saves current curvenet to some file format
-int saveCurvenet() {
-    std::cout << "Curvenet saved to file." << std::endl;
-    return 1;
-}
-
-// Creates gizmo at vertex
-void addGizmoAtLocation(Eigen::Vector3d& startpos) {
-    activeGizmo = true;
-    if (!vertexGizmo) {
-        vertexGizmo = polyscope::addTransformationGizmo("vertex_editor");
-        vertexGizmo->setAllowTranslation(true);
-        vertexGizmo->setAllowRotation(false);
-        vertexGizmo->setAllowScaling(false);
-        vertexGizmo->setInteractInLocalSpace(false);
-        //vertexGizmo->setGizmoSize(0.5f);
+void applyGizmoEdit() {
+    if (!gizmoActive || vertexGizmo == nullptr || !editableCurvenet) {
+        return;
     }
 
-    // place gizmo at vertex position
-    vertexGizmo->setPosition(Utils::eigenToGLM(startpos));
-    return;
-}
+    Eigen::Vector3d newPos(vertexGizmo->getPosition().x,
+                           vertexGizmo->getPosition().y,
+                           vertexGizmo->getPosition().z);
 
-void addGizmoAtLocation(Eigen::Vector3d& startpos, Eigen::Vector3d& ax1, Eigen::Vector3d& ax2, Eigen::Vector3d& ax3) {
-    activeGizmo = true;
-    if (!vertexGizmo) {
-        glm::mat4 T(1.0f);
-        T[0] = glm::vec4(Utils::eigenToGLM(ax1), 0.0f);
-        T[1] = glm::vec4(Utils::eigenToGLM(ax2), 0.0f);
-        T[2] = glm::vec4(Utils::eigenToGLM(ax3), 0.0f);
-        T[3] = glm::vec4(Utils::eigenToGLM(startpos), 1.0f);
-        vertexGizmo = polyscope::addTransformationGizmo("vertex_editor");
-        vertexGizmo->setTransform(T);
-        vertexGizmo->setAllowTranslation(true);
-        vertexGizmo->setAllowRotation(false);
-        vertexGizmo->setAllowScaling(false);
-        vertexGizmo->setInteractInLocalSpace(true); // TODO: Check this
-        //vertexGizmo->setGizmoSize(0.5f);
-    }
+    constexpr double kMoveEps = 1e-8;
 
-    // place gizmo at vertex position
-    vertexGizmo->setPosition(Utils::eigenToGLM(startpos));
-    gizmoPos = startpos;
-    return;
-}
-
-// Removes gizmo 
-void removeGizmo() {
-    if (!activeGizmo) return;
-
-    if (vertexGizmo) {
-        vertexGizmo->remove();
-        vertexGizmo = nullptr;
-    }
-    activeGizmo = false;
-    return;
-}
-
-// Modify a vertex position in polyscope
-void modifyVertexPositions(int vert_idx, glm::vec3 new_pos) {
-    psV[static_cast<std::size_t>(vert_idx)] =
-        Eigen::Vector3d(static_cast<double>(new_pos.x),
-                        static_cast<double>(new_pos.y),
-                        static_cast<double>(new_pos.z));
-    // Need a conversion function to change internal copy
-    return;
-}
-
-// Reset all control positions in Polyscope
-/*
-TODO: Do NOT let user reset mesh. Can only reset curvenet. Notice how resetting curvenet should reset mesh.
-*/
-void resetMeshVertexPositions() {
-    // Reset Mesh
-    Utils::copyPositions(V, psV);
-    Utils::copyConnectivity(T, psT);
-    psMesh = polyscope::registerSurfaceMesh("Surface Mesh", psV, psT);
-void resetVertexPositions() {
-    // Reset
-    return;
-}
-
-// clear all modes and their variables except for the specified mode
-int clearModes(int exception = -1, bool clear_selection = true) {
-    if (exception != 1) {
-        createMode = false;
-    }
-    if (exception != 2) {
-        removeMode = false;
-    }
-    if (exception != 3) {
-        tanMode = false;
-    }
-
-    if (clear_selection) {
-        removeGizmo();
-
-        editObjectSelected = false;
-        controlIdx = -1;
-        tangentIdx = -1;
-        gizmoPos.fill(0.0);
-
-        selectedIdx = -1;
-        num_selected = 0;
-        selectedPair.fill(Eigen::Vector3d::Zero());
-        selectedPairNormals.fill(Eigen::Vector3d::Zero());
-        selectedPairIdx.fill(-1);
-    }
-    return exception;
-}
-
-// A user-defined callback, for creating control panels (etc)
-// Use ImGUI commands to build whatever you want here, see
-// https://github.com/ocornut/imgui/blob/master/imgui.h
-void myCallback() {
-    ImGuiIO& io = ImGui::GetIO();
-    bool mouseClicked = ImGui::IsMouseClicked(0);
-    glm::vec2 screen{io.MousePos.x, io.MousePos.y};
-
-    polyscope::PickResult pick = polyscope::pickAtScreenCoords(screen);
-
-    if (PF) {
-        int samplesPerMeanEdge = PF->getDCurveSamplesPerMeanEdge();
-        int uniformRefineSamples = PF->getDCurveUniformRefineSamples();
-        bool discretizationChanged = false;
-
-        ImGui::SeparatorText("Discrete Sampling");
-
-        if (ImGui::SliderInt("Samples / Mean Edge", &samplesPerMeanEdge, 1, 32)) {
-            discretizationChanged = true;
-        }
-        if (ImGui::SliderInt("Uniform Refine Samples", &uniformRefineSamples, 8, 512)) {
-            discretizationChanged = true;
+    if (activeTarget == EditTarget::Tangent && activeIndex >= 0) {
+        const Curvenet::tangent& t = editableCurvenet->tangentAt(activeIndex);
+        const int parentControl = t.getParentControl();
+        if (constrainTangentsToPlane && parentControl >= 0) {
+            const Curvenet::control& c = editableCurvenet->controlAt(parentControl);
+            newPos = Utils::projectPointOntoPlane(c.getNormal(), c.getPosition(), newPos);
+            vertexGizmo->setPosition(toGlm(newPos));
         }
 
-        if (discretizationChanged) {
-            PF->setDiscretizationParameters(samplesPerMeanEdge, uniformRefineSamples);
-            computePrecomp();
+        if ((newPos - t.getPosition()).norm() > kMoveEps) {
+            editableCurvenet->setTangentPosition(activeIndex, newPos);
+            markCurveEdited();
         }
-
-        const auto& dcn = PF->getNeutralDCurvenet();
-        ImGui::Text("dVerts: %zu", dcn.verts().size());
-        ImGui::Text("dSegments: %zu", dcn.segments().size());
+        return;
     }
 
-    if (ImGui::Button("Perform Pre-Computation")) {
-        clearModes();
-        if (precompDone) {
-            std::cout << "Pre-computation on neutral pose already performed." << std::endl;
-        } else if (psCurvenetP.size() <= 1) {
-            std::cout << "No splines specified. Add one or more spline before pre-computing." << std::endl;
-        } else {
-            std::cout << "Performing pre-computation on neutral pose." << std::endl;
-            performPrecomp();
-            precompDone = true;
-        }
-    }
-
-    // Deformation stuff
-    if (ImGui::Button("Compute Deformation")) {
-        clearModes();
-        if (!precompDone) {
-            std::cout << "Perform pre-computation before applying deformation." << std::endl;
-        } else {
-            std::cout << "Computing Deformation." << std::endl;
-            computeDeformation();
-        }
-    }
-
-    // User parameter for sampling the spline
-    // ImGui::SliderInt("Sampling Param", &samplingParam, 1, 10);
-
-    // Save the current curvenet state
-    if (ImGui::Button("Save Curvenet")) {
-        clearModes();
-        saveCurvenet();
-    }
-
-    // Move a curvenet vertex
-    if (ImGui::Button(gizmoMode ? "Stop Moving Vertex" : "Move Vertex")) {
-        clearModes();
-        if (!precompDone) {
-            std::cout << "No pre-computation performed. Apply pre-computation first." << std::endl;
-        }
-        gizmoMode = !gizmoMode;
-    }
-
-    ImGui::SameLine();
-    // TODO: Do NOT let user modify underlying mesh. Can only modify the controls
-    // May need to store a copy of the rest curvenet
-    if (ImGui::Button("Reset Vertices")) {
-        std::cout << "Resetting Controls." << std::endl;
-        resetVertexPositions();
-        clearModes();
-        recomputeCurvenet = true;
-    }
-
-    // User can apply controls --> These need to be in pairs and user must be able
-    // to select previously selected controls
-    if (ImGui::Button(createMode ? "Stop Creating Splines" : "Create Spline")) {
-        clearModes(1);
-        createMode = !createMode;
-    }
-    
-    // NOTE: May want to remove this. Indexing becomes annoying.
-    ImGui::SameLine();
-    if (ImGui::Button(removeMode ? "Stop Removing Splines" : "Remove Spline")) {
-        // TODO: Implement spline removal
-        clearModes(2);
-        removeMode = !removeMode;
-    }
-
-    // Constraint mode activation
-    if (controlMode && mouseClicked && pick.isHit && pick.structure == psMesh) {
-        polyscope::SurfaceMeshPickResult meshPick = psMesh->interpretPickResult(pick);
-
-        // TODO: We should be able to click the mesh arbitrarily, not just at vertices
-        if (meshPick.elementType == polyscope::MeshElement::VERTEX) {
-            selectedVertex = static_cast<int>(meshPick.index);
-        } else {
-            std::cout << "Did not click on mesh." << std::endl;
-    // TODO: Before pre-comp, only allow editing of tangents. 
-    if (ImGui::Button(tanMode ? "Stop Editing" : "Edit Handles")) {
-        clearModes(3);
-        tanMode = !tanMode;
-    }
-    ImGui::SameLine();
-    ImGui::Checkbox("Constrain to Tan. Plane", &tanConstraint); // TODO: do not allow degenerate vectors --> Constrain tan vertex AND gizmo
-
-
-    // CREATE MODE CLICKS
-
-    // Clicked on mesh during create mode
-    // If use clicked away after selecting the first vertex, then clear it
-    /*if (createMode && mouseClicked && (!pick.isHit || (pick.structure != psMesh && pick.structure != psControlsPC))) {
-        if (num_selected == 1) {
-            std::cout << "User clicked away and pair has been cleared. Please select your first control point." << std::endl;
-            clearModes(1);
-        }
-    }*/
-
-    // Clicked on mesh during create mode
-    if (createMode && mouseClicked && pick.isHit) {
-        if (pick.structure == psControlsPC) {
-            polyscope::PointCloudPickResult pcPick = psControlsPC->interpretPickResult(pick);
-
-            selectedIdx = static_cast<int>(pcPick.index);
-            Eigen::Vector3d pick_pos = psControlsP.row(selectedIdx);
-            selectedPair[num_selected] = pick_pos;
-            selectedPairIdx[num_selected] = selectedIdx;
-            selectedPairNormals[num_selected] = (editableCurvenet->controlPoints)[selectedIdx].getNormal();
-            num_selected++;
-        } else if (pick.structure == psMesh) {
-            polyscope::SurfaceMeshPickResult meshPick = psMesh->interpretPickResult(pick);
-            // Check what mesh element type we hit
-            if (meshPick.elementType == polyscope::MeshElement::VERTEX) {
-                selectedIdx = static_cast<int>(meshPick.index);
-                Eigen::Vector3d pick_pos = psV.row(selectedIdx);
-                selectedPair[num_selected] = pick_pos;
-                selectedPairIdx[num_selected] = -1;
-                // Get vertex normal
-                selectedPairNormals[num_selected] = neutralMesh->getVNormal(selectedIdx);
-                num_selected++;
-            } else if (meshPick.elementType == polyscope::MeshElement::FACE) {
-                // Special exception for edges: need to compute nearest edge on the selected face
-                // NOTE: Since we don't have a true edge-picker, check if face-pick is within some threshold
-                Eigen::Vector3d pick_pos = Utils::glmToEigen(pick.position);
-                Eigen::Vector3d nearestPoint;
-                int tempIdx;
-                double dist = neutralMesh->computeNearestFaceEdge(static_cast<int>(meshPick.index),
-                                                                    pick_pos, tempIdx, nearestPoint);
-                selectedPairIdx[num_selected] = -1;
-                if (dist <= 1e-8 * neutralMesh->getMeanE()) {    // if sufficiently close to an edge
-                    selectedPair[num_selected] = nearestPoint;
-                    // Get edge normal
-                    selectedPairNormals[num_selected] = neutralMesh->getENormal(tempIdx);
-                } else {
-                    selectedIdx = static_cast<int>(meshPick.index);
-                    selectedPair[num_selected] = pick_pos;
-                    // Get face normal
-                    selectedPairNormals[num_selected] = neutralMesh->getFNormal(selectedIdx);
+    if (activeTarget == EditTarget::Control && activeIndex >= 0) {
+        auto& controls = editableCurvenet->controlsMutable();
+        auto& tangents = editableCurvenet->tangentsMutable();
+        Eigen::Vector3d oldPos = controls[static_cast<std::size_t>(activeIndex)].getPosition();
+        Eigen::Vector3d delta = newPos - oldPos;
+        if (delta.norm() > kMoveEps) {
+            controls[static_cast<std::size_t>(activeIndex)].setPosition(newPos);
+            for (auto& t : tangents) {
+                if (t.getParentControl() == activeIndex) {
+                    t.setPosition(t.getPosition() + delta);
                 }
-                num_selected++;
-            } else {
-                std::cout << "Selected non- face or vertex part of mesh. No action performed." << std::endl;
             }
-            /*
-        // NOTE: Polyscope does not properly support edge-picking for non-triangular faces
-        // so for safety I'm turning this off.
-        else if (meshPick.elementType == polyscope::MeshElement::EDGE) {
-            // Get edge normal
-            selectedPairNormals.push_back(neutralMesh->getENormal(selectedIdx));
+            editableCurvenet->recomputeAllSplines();
+            markCurveEdited();
         }
-        */
-            if (num_selected == 1) {
-                std::cout << "1st Point Selected: (" << selectedPair[0](0) << ", "
-                                                   << selectedPair[0](1) << ", " 
-                                                   << selectedPair[0](2) << ")" << std::endl;
-            }
-        } else {
-            std::cout << "Did not click on the mesh or an existing control. Please try again." << std::endl;
-        }
-    }
-
-    // If we have selected two verts to create, add them to spline
-    if (createMode && (num_selected == 2)) {
-        std::cout << "2nd Point Selected: (" << selectedPair[1](0) << ", "
-                                            << selectedPair[1](1) << ", "
-                                            << selectedPair[1](2) << "), " << std::endl;
-        // Create tangents by finding vector and adding it to point
-        Eigen::Vector3d toVec = selectedPair[1] - selectedPair[0];
-        double scale = toVec.norm() * (1.2e-1) * (neutralMesh->getBBoxDiag());
-        Eigen::Vector3d t0;
-        Utils::projectVectorOntoTangentPlane(selectedPairNormals[0], toVec, t0, scale);
-        t0 += selectedPair[0];
-        Eigen::Vector3d t1;
-        Utils::projectVectorOntoTangentPlane(selectedPairNormals[1], -1 * toVec, t1, scale);
-        t1 += selectedPair[1];
-        std::array<Eigen::Vector3d, 2> addedTangents = {t0, t1};
-        std::cout << "Tangent points: (" << addedTangents[0](0) << ", "
-                                            << addedTangents[0](1) << ", "
-                                            << addedTangents[0](2) << "), ("
-                                            << addedTangents[1](0) << ", "
-                                            << addedTangents[1](1) << ", "
-                                            << addedTangents[1](2) << ")" << std::endl;
-        
-        // Add spline to curvenet
-        
-        // Check if we have any existing control points
-        if ((selectedPairIdx[0] != -1) && (selectedPairIdx[1] != -1)) { // Both exist
-            editableCurvenet->addSpline(selectedPairIdx, addedTangents);
-        } else if ((selectedPairIdx[0] == -1) && (selectedPairIdx[1] == -1)) { // Neither exists
-            std::array<Eigen::Vector3d, 2> addedControls = {selectedPair[0], selectedPair[1]};
-            std::array<Eigen::Vector3d, 2> addedNormals = {selectedPairNormals[0], selectedPairNormals[1]};
-            editableCurvenet->addSpline(addedControls, addedNormals, addedTangents);
-        } else if (selectedPairIdx[0] == -1) {  // Only the second one exists
-            editableCurvenet->addSpline(selectedPair[0], selectedPairIdx[1], selectedPairNormals[0], addedTangents);
-        } else if (selectedPairIdx[1] == -1) {  // Only the first one exists
-            editableCurvenet->addSpline(selectedPairIdx[0], selectedPair[1], selectedPairNormals[1], addedTangents);
-        }
-        
-        recomputeCurvenet = true;
-        // clear relevant variables
-        clearModes();
-    }
-
-    // REMOVE MODE CLICKS
-
-    // Clicked on point during removeMode
-    if (removeMode && mouseClicked && pick.isHit && pick.structure == psControlsPC) {
-        polyscope::PointCloudPickResult pcPick = psControlsPC->interpretPickResult(pick);
-
-        // selectedIdx = static_cast<int>(pcPick.index);
-
-        // If we already selected one previously, then compute tangents
-        
-            // Check if such a spline exists between these two points
-
-            // If so,
-            // Remove the spline segments going between them + the tangents
-            // Check if either has any splines anymore
-            // If not, remove that control point and its tangents
-        // Otherwise, mark for removal
-    }
-
-    // EDIT MODE CLICKS
-    // TODO: Note that after pre-computation, we need to apply deformation
-    // For pre-computation, we just need to change the tangent locations in the curvenet. How do we index...?
-    if (tanMode && mouseClicked && pick.isHit && pick.structure == psTangentsPC) {
-        editObjectSelected = true;
-        // Index into tangent list. Get associated spline by integer dividing by 2.
-        // Then use the spline index to edit the tangent's position directly
-        polyscope::PointCloudPickResult pcPick = psTangentsPC->interpretPickResult(pick);
-
-        tangentIdx = static_cast<int>(pcPick.index);
-        Eigen::Vector3d pick_pos = psTangentsP.row(tangentIdx);
-        int splineIdx = tangentIdx / 2;
-        // Get parent control index
-        if ((editableCurvenet->splines)[splineIdx].t0 == tangentIdx) {
-            controlIdx = (editableCurvenet->splines)[splineIdx].c0;
-        } else {
-            controlIdx = (editableCurvenet->splines)[splineIdx].c1;
-        }
-        Eigen::Vector3d tanPos = psTangentsP.row(tangentIdx);
-        // add Gizmo at position
-        addGizmoAtLocation(tanPos);
-    } else if (tanMode && mouseClicked && pick.isHit && pick.structure != psTangentsPC) {
-        editObjectSelected = false;
-        removeGizmo();
-        clearModes(3);
-    }
-    // At each iter., update the position
-    if (tanMode && activeGizmo) {
-        // Get the gizmo's location at this frame
-        Eigen::Vector3d gizmoPosF = Utils::glmToEigen(vertexGizmo->getPosition());
-        Eigen::Vector3d controlPos = psControlsP.row(controlIdx);
-        if (tanConstraint) {
-            gizmoPosF = Utils::projectPointOntoPlane((editableCurvenet->controlPoints)[controlIdx].getNormal(), 
-                                                    (editableCurvenet->controlPoints)[controlIdx].getPos(),
-                                                    gizmoPosF);
-        }
-        // If we are too close to normal, copy in the old position.
-        if ((gizmoPosF - controlPos).norm() <= 5e-2) {
-            gizmoPosF = gizmoPos;
-        } else {    // Otherwise, update our current gizmo position
-            gizmoPos = gizmoPosF;
-        }
-        // Update the associate tangent point in the curvenet
-        vertexGizmo->setPosition(Utils::eigenToGLM(gizmoPosF));
-        (editableCurvenet->tangentPoints)[tangentIdx].setPos(gizmoPosF);
-
-        recomputeCurvenet = true;
-    }
-
-
-    // Recompute the curvenet based on the updated information
-    if (recomputeCurvenet) {
-        // Recompute sampled spline and update polyscope
-        // TODO: set vertex and edge sizes for various objects
-        std::vector<Eigen::Vector3d> P;
-        editableCurvenet->convertCurvnetToCN(P, psCurvenetE);
-        IO::convertVertsToMatrix(P, psCurvenetP);
-        psCurvenet = polyscope::registerCurveNetwork("Curvenet", psCurvenetP, psCurvenetE);
-        psCurvenet->setColor({0.0f, 0.0f, 0.0f});   // Curvenet is grey
-        psCurvenet->setMaterial("flat");
-        psCurvenet->setTransparency(0.65);
-        psCurvenet->setRadius(0.003);
-        psCurvenet->setEnabled(true);
-
-        editableCurvenet->convertControlsToPC(P);
-        IO::convertVertsToMatrix(P, psControlsP);
-        psControlsPC = polyscope::registerPointCloud("Controls", psControlsP);
-        psControlsPC->setPointColor({0.9f, 0.2f, 0.1f});    // Controls are red
-        psControlsPC->setMaterial("flat");
-        psControlsPC->setPointRadius(0.02);
-        psControlsCN->setEnabled(true);
-
-        editableCurvenet->convertTangentsToPC(P);
-        IO::convertVertsToMatrix(P, psTangentsP);
-        psTangentsPC = polyscope::registerPointCloud("Tangents", psTangentsP);
-        psTangentsPC->setPointColor({0.1f, 0.9f, 0.2f});    // Tangents are green
-        psTangentsPC->setMaterial("flat");
-        psTangentsPC->setPointRadius(0.012);
-        psControlsCN->setEnabled(true);
-
-        editableCurvenet->convertControlsAndTangentsToCN(P, psControlsAndTangentsE);
-        IO::convertVertsToMatrix(P, psControlsAndTangents);
-        psControlsCN = polyscope::registerCurveNetwork("Handles", psControlsAndTangents, psControlsAndTangentsE);
-        psControlsCN->setColor({0.5f, 0.55f, 0.15f});   // Handles are yellow-ish
-        psControlsCN->setMaterial("flat");
-        psControlsCN->setTransparency(0.8);
-        psControlsCN->setRadius(0.006);
-        psControlsCN->setEnabled(true);
-    
-        // std::cout << "Curvenet updated with selection." << std::endl;
-        recomputeCurvenet = false;
     }
 }
+
+void myCallback() {
+    const bool mouseClicked = ImGui::IsMouseClicked(0);
+    const glm::vec2 screen{ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y};
+    const polyscope::PickResult pick = polyscope::pickAtScreenCoords(screen);
+
+    ImGui::SeparatorText("Curve Edit");
+    if (ImGui::Button(editControlsMode ? "Stop Editing Controls" : "Edit Controls")) {
+        editControlsMode = !editControlsMode;
+        editTangentsMode = false;
+        clearActiveEdit();
+    }
+    if (ImGui::Button(editTangentsMode ? "Stop Editing Tangents" : "Edit Tangents")) {
+        editTangentsMode = !editTangentsMode;
+        editControlsMode = false;
+        clearActiveEdit();
+    }
+    ImGui::Checkbox("Constrain Tangents To Plane", &constrainTangentsToPlane);
+
+    if (ImGui::Button("Reset Curve")) {
+        resetEditableCurvenet();
+    }
+
+    ImGui::SeparatorText("Precompute");
+    if (ImGui::SliderInt("Samples / Mean Edge", &samplesPerMeanEdge, 1, 32) && precompValid) {
+        runPrecompute();
+    }
+    if (ImGui::SliderInt("Uniform Refine Samples", &uniformRefineSamples, 8, 512) && precompValid) {
+        runPrecompute();
+    }
+
+    if (ImGui::Button("Run Precompute")) {
+        runPrecompute();
+    }
+    if (ImGui::Button(showCornerNormals ? "Hide Corner Normals" : "Show Corner Normals")) {
+        showCornerNormals = !showCornerNormals;
+        updatePrecomputeVisibility();
+    }
+    if (ImGui::Button(showSegmentFrames ? "Hide Segment Frames" : "Show Segment Frames")) {
+        showSegmentFrames = !showSegmentFrames;
+        updatePrecomputeVisibility();
+    }
+
+    if (ImGui::Button("Compute Deformation")) {
+        std::cout << "Deformation mode is not implemented yet." << std::endl;
+    }
+
+    if (editableCurvenet) {
+        ImGui::Text("Controls: %zu", editableCurvenet->controls().size());
+        ImGui::Text("Tangents: %zu", editableCurvenet->tangents().size());
+        ImGui::Text("Splines: %zu", editableCurvenet->getSplines().size());
+    }
+    if (PF && precompValid) {
+        ImGui::Text("dVerts: %zu", PF->getNeutralDCurvenet().verts().size());
+        ImGui::Text("dSegments: %zu", PF->getNeutralDCurvenet().segments().size());
+    }
+
+    if (mouseClicked && editControlsMode && pick.isHit && pick.structure == psEditableControls) {
+        const polyscope::PointCloudPickResult pcPick = psEditableControls->interpretPickResult(pick);
+        activeTarget = EditTarget::Control;
+        activeIndex = static_cast<int>(pcPick.index);
+        addGizmoAt(editableCurvenet->controlAt(activeIndex).getPosition());
+    } else if (mouseClicked && editTangentsMode && pick.isHit && pick.structure == psEditableTangents) {
+        const polyscope::PointCloudPickResult pcPick = psEditableTangents->interpretPickResult(pick);
+        activeTarget = EditTarget::Tangent;
+        activeIndex = static_cast<int>(pcPick.index);
+        addGizmoAt(editableCurvenet->tangentAt(activeIndex).getPosition());
+    } else if (mouseClicked && (editControlsMode || editTangentsMode) &&
+               (!pick.isHit || (pick.structure != psEditableControls && pick.structure != psEditableTangents))) {
+        clearActiveEdit();
+    }
+
+    applyGizmoEdit();
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cout << "Too few arguments. Usage: ./profile_former <OBJ file path>" << std::endl;
+        std::cout << "Usage: ./profile_mover <mesh.obj> [curves.json]" << std::endl;
         return 1;
     }
-    InputPath = argv[1];
-    CurvesPath = (argc > 2) ? argv[2] : "../curvenet/data/sphere-curves.json";
-    OutputPath = argv[2];
 
-    // Initialize polyscope
-    polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None; // Disable ground plane
+    inputPath = argv[1];
+    curvesPath = (argc > 2) ? argv[2] : "data/sphere-curves.json";
 
-    // Set the callback function
+    if (!IO::readOBJ(inputPath, meshV, meshF)) {
+        std::cerr << "Failed to open OBJ: " << inputPath << std::endl;
+        return 1;
+    }
+    const JSONUtils::CurvenetInput cnInput = JSONUtils::loadBezierCurvenetInput(curvesPath);
+
+    neutralCurvenet = Curvenet::curvenet(cnInput.controlP, cnInput.surfaceN, cnInput.curveC);
+    editableCurvenet = std::make_unique<Curvenet::curvenet>(neutralCurvenet);
+
+    polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
     polyscope::state::userCallback = myCallback;
-
     polyscope::init();
 
-    // Set camera view
-    // polyscope::view::setUpDir(polyscope::UpDir::ZUp);      // Z up
-    // polyscope::view::setFrontDir(polyscope::FrontDir::NegYFront); // -Y forward
+    psMesh = polyscope::registerSurfaceMesh("Surface Mesh", meshV, meshF);
+    psMesh->setSurfaceColor({0.80f, 0.84f, 0.88f});
 
-    // Set projection to orthographic
-    polyscope::view::setProjectionMode(polyscope::ProjectionMode::Orthographic);
+    refreshEditableCurvenetVisuals();
+    hidePrecomputeVisuals();
 
-    // Load our mesh object
-    std::cout << "\nLoading surface mesh file" << std::endl;
-    // Legacy line preserved (disabled): igl::readOBJ(InputPath, V, T);
-    Utils::loadObjMesh(InputPath, V, T);
-
-    std::cout << "Loading curve JSON file" << std::endl;
-    JSONUtils::CurvenetInput cnInput = JSONUtils::loadBezierCurvenetInput(CurvesPath);
-
-    // Initialize profileformer + curvenet with existing project types.
-    PF = std::make_unique<ProfileFormer::profileformer>(V, T, cnInput.controlP, cnInput.surfaceN, cnInput.curveC);
-    computePrecomp();
-    IO::readOBJ(InputPath, V, F);
-    IO::readOBJ(InputPath, psV, psF);
-
-    // Register mesh with PS
-    std::cout << "Registering Surface Mesh to Polyscope" << std::endl;
-    psMesh = polyscope::registerSurfaceMesh("Surface Mesh", psV, psF);
-    psMesh->setSurfaceColor({0.3f, 0.2f, 1.0f});
-
-    // Create our own mesh object
-    neutralMesh = std::make_unique<Mesh::mesh>(V, F);
-    editableCurvenet = std::make_unique<Curvenet::curvenet>();
-    // Alter PS edge permutation so we can match it
-    // TODO: Check that this works.. PS doesn't seem to support non-triangular face edge picking
-    // If not, fall back on computing the polyHE_t edge which is closest to the picked point
-    // No need to clip t value in that case! Still, is quite costly...
-    //std::vector<size_t> psEdgePerm = buildPolyscopeEdgePermutation(F, neutralMesh->getHEMesh());
-    //psMesh->setEdgePermutation(psEdgePerm, neutralMesh->getHEMesh().numEdges());
-
-    // Empty curvenet
-    psCurvenet = polyscope::registerCurveNetwork("Curvenet", psCurvenetP, psCurvenetE);
-    //psCurvenet->setEnabled(true);
-
-    // Empty controls/tangent connectivity
-    psControlsCN = polyscope::registerCurveNetwork("Handles", psControlsAndTangents, psControlsAndTangentsE);
-    //psControlsCN->setEnabled(true);
-
-    // Empty controls
-    psControlsPC = polyscope::registerPointCloud("Controls", psControlsP);
-    //psControlsPC->setEnabled(true);
-
-    // Empty tangents
-    psTangentsPC = polyscope::registerPointCloud("Tangents", psTangentsP);
-    //psTangentsPC->setEnabled(true);
-
-    // Give control to the polyscope gui
     polyscope::show();
-
-    return EXIT_SUCCESS;
+    return 0;
 }
