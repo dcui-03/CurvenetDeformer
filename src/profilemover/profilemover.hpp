@@ -51,6 +51,8 @@ private:
 
     std::vector<Eigen::Vector3d> nMeshV;
     std::vector<std::vector<int>> nMeshT;
+    Eigen::MatrixXi nTriF;
+    Eigen::VectorXi nTriToFace;
     std::unique_ptr<Mesh::mesh> nMesh;
 
     Curvenet::curvenet nCurvenet;

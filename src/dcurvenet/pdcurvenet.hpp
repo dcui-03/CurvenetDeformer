@@ -46,6 +46,8 @@ public:
     pdcurvenet(const dcurvenet& parentDC,
                const std::vector<Eigen::Vector3d>& meshV,
                const std::vector<std::vector<int>>& meshF,
+               const Eigen::MatrixXi& triF,
+               const Eigen::VectorXi& triToFace,
                double eps = -1.0);
 
     void ComputePDC(double eps = -1.0);
@@ -59,7 +61,6 @@ public:
     double snapEpsilon() const { return snap_epsilon_; }
 
 private:
-    void buildTriangulatedSurface();
     void buildMeshEdgeTable();
     void projectToSurface();
     void snapToNearbyElements();

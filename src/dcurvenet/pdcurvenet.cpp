@@ -68,11 +68,26 @@ double pointSegmentSquaredDistance(const Eigen::Vector3d& p,
 pdcurvenet::pdcurvenet(const dcurvenet& parentDC,
                        const std::vector<Eigen::Vector3d>& meshV,
                        const std::vector<std::vector<int>>& meshF,
+                       const Eigen::MatrixXi& triF,
+                       const Eigen::VectorXi& triToFace,
                        double eps)
     : dcurvenet(parentDC),
       mesh_vertices_(meshV),
-      mesh_faces_(meshF) {
-    buildTriangulatedSurface();
+      mesh_faces_(meshF),
+      tri_f_matrix_(triF) {
+    tri_to_mesh_face_.assign(triToFace.data(), triToFace.data() + triToFace.size());
+
+    triangle_faces_.resize(static_cast<std::size_t>(tri_f_matrix_.rows()));
+    for (int i = 0; i < tri_f_matrix_.rows(); ++i) {
+        triangle_faces_[static_cast<std::size_t>(i)] = {
+            tri_f_matrix_(i, 0), tri_f_matrix_(i, 1), tri_f_matrix_(i, 2)};
+    }
+
+    mesh_v_matrix_.resize(static_cast<int>(mesh_vertices_.size()), 3);
+    for (std::size_t i = 0; i < mesh_vertices_.size(); ++i) {
+        mesh_v_matrix_.row(static_cast<int>(i)) = mesh_vertices_[i];
+    }
+
     buildMeshEdgeTable();
     ComputePDC(eps);
 }
@@ -90,45 +105,6 @@ void pdcurvenet::ComputePDC(double eps) {
     snapToNearbyElements();
 }
 
-void pdcurvenet::buildTriangulatedSurface() {
-    triangle_faces_.clear();
-    tri_to_mesh_face_.clear();
-
-    std::size_t triangle_count = 0;
-    for (const auto& face : mesh_faces_) {
-        if (face.size() >= 3) {
-            triangle_count += face.size() - 2;
-        }
-    }
-
-    triangle_faces_.reserve(triangle_count);
-    tri_to_mesh_face_.reserve(triangle_count);
-
-    for (std::size_t face_idx = 0; face_idx < mesh_faces_.size(); ++face_idx) {
-        const auto& face = mesh_faces_[face_idx];
-        if (face.size() < 3) {
-            continue;
-        }
-
-        const int v0 = face[0];
-        for (std::size_t i = 1; i + 1 < face.size(); ++i) {
-            triangle_faces_.push_back({v0, face[i], face[i + 1]});
-            tri_to_mesh_face_.push_back(static_cast<int>(face_idx));
-        }
-    }
-
-    mesh_v_matrix_.resize(static_cast<int>(mesh_vertices_.size()), 3);
-    for (std::size_t i = 0; i < mesh_vertices_.size(); ++i) {
-        mesh_v_matrix_.row(static_cast<int>(i)) = mesh_vertices_[i];
-    }
-
-    tri_f_matrix_.resize(static_cast<int>(triangle_faces_.size()), 3);
-    for (std::size_t i = 0; i < triangle_faces_.size(); ++i) {
-        tri_f_matrix_.row(static_cast<int>(i)) << triangle_faces_[i][0],
-                                                 triangle_faces_[i][1],
-                                                 triangle_faces_[i][2];
-    }
-}
 
 void pdcurvenet::buildMeshEdgeTable() {
     mesh_edges_.clear();

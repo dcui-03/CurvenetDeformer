@@ -2,6 +2,9 @@
 
 #include "mesh/mesh.hpp"
 
+#include "igl/polygon_corners.h"
+#include "igl/polygons_to_triangles.h"
+
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
@@ -40,6 +43,10 @@ void profilemover::initializeMesh(const std::vector<Eigen::Vector3d>& meshV,
     nMeshT = meshT;
     nMesh = std::make_unique<Mesh::mesh>(nMeshV, nMeshT);
     neutral_mean_edge_length = nMesh->getMeanE();
+
+    Eigen::VectorXi I, C;
+    igl::polygon_corners(nMeshT, I, C);
+    igl::polygons_to_triangles(I, C, nTriF, nTriToFace);
 }
 
 void profilemover::initializeCurvenet(const std::vector<Eigen::Vector3d>& controlP,
@@ -65,7 +72,7 @@ void profilemover::initializeDCurvenet() {
 }
 
 void profilemover::initializePDCurvenet() {
-    nPDCurvenet = DCurvenet::pdcurvenet(nDCurvenet, nMeshV, nMeshT);
+    nPDCurvenet = DCurvenet::pdcurvenet(nDCurvenet, nMeshV, nMeshT, nTriF, nTriToFace);
 }
 
 void profilemover::setDiscretizationParameters(int samplesPerMeanEdge, int uniformRefineSamples) {
