@@ -73,6 +73,24 @@ void copyConnectivity(const std::vector<std::vector<int>>& T_old, std::vector<st
     return;
 }
 
+// SORTING
+void sortAscending_IDsUsingValues(std::vector<int> idxs, std::vector<double> values) {
+    for (int i = 0; i < values.size(); ++i) {
+        int best = i;
+        for (int j = i + 1; j < values.size(); ++j) {
+            if (values[j] < values[best]) {
+                best = j;
+            }
+        }
+
+        if (best != i) {
+            std::swap(values[i], values[best]);
+            std::swap(idxs[i], idxs[best]);
+        }
+    }
+    return;
+}
+
 
 
 // VECTOR/PROJECTION HELPERS
@@ -171,6 +189,20 @@ Eigen::Vector2d closestPointOnSegment2D(const Eigen::Vector2d& p, const Eigen::V
     return v0 + t * vec;
 }
 
+bool raycastToSegment2D(const Eigen::Vector2d& p, const Eigen::Vector2d& direc, const Eigen::Vector2d& v0, const Eigen::Vector2d& v1,
+                        double& t, double& u) {
+    Eigen::Vector2d vec = v1 - v0;
+    double denom = vec.squaredNorm();
+    if (denom < 1e-16) {
+        return false;
+    }
+    double t = (p - v0).dot(vec) / denom;
+    if (clip) {
+        t = std::max(0.0, std::min(1.0, t));
+    }
+    return true;
+}
+
 // Get the closest point on a segment in 3D, where the endpoints are defined
 // To do this, project onto parameterized segment and snap t to [0, 1]
 Eigen::Vector3d closestPointOnSegment3D(const Eigen::Vector3d& p, const Eigen::Vector3d& v0, const Eigen::Vector3d& v1, bool clip) {
@@ -183,6 +215,206 @@ Eigen::Vector3d closestPointOnSegment3D(const Eigen::Vector3d& p, const Eigen::V
         t = std::max(0.0, std::min(1.0, t));
     }
     return v0 + t * vec;
+}
+
+// Computes the nearest point where a ray intersects with a face; returns false if no intersection
+// Note, we build the plane to be centered at the start point for simplicity
+// el_type describes if we hit an edge (1) or a vertex (2)
+// t is the scale along the ray, u is the scale along the specified edge (if we intersect an edge)
+// theta is the angle at the intersection (this is different for edge and vertex intersections)
+// tol should be the snapping criteria
+bool computeFaceIntersection(const std::vector<Eigen::Vector3d>& fVerts, const Eigen::Vector3d& fNormal,
+                             const Eigen::Vector3d& start, const Eigen::Vector3d& direc,
+                             double& t, int& el_type, int& local_idx, double& u, double& theta, double tol = 1e-6) {
+    // build a 2D basis
+    Eigen::Vector3d t1, t2;
+    buildPlaneBasis(fNormal, t1, t2);
+    // Project face into 2D
+    std::vector<Eigen::Vector2d> fVerts2D(fVerts.size());
+    for (int fv = 0; fv < fVerts.size(); fv++) {
+        Eigen::Vector3d fVertProj = projectPointOntoPlane(fNormal, start, fVerts[fv]);
+        fVerts2D[fv] = convertTo2D(fVertProj, start, t1, t2);
+    }
+    // Project start onto 2D: We can do this if we center our Newell face at the start
+    Eigen::Vector2d start2D = {0.0, 0.0};
+    Eigen::Vector3d direcProj;
+    double direcLen = projectVectorOntoTangentPlane(fNormal, direc, direcProj);
+    Eigen::Vector2d direc2D = convertTo2D(start+direcProj, start, t1, t2);  // TODO: maybe a cleaner way to get vector into basis.
+
+    // Iteratively raycast on all edges to find the smallest distance
+    t = std::numeric_limits<double>::infinity();
+    bool fHit = true;
+    for (int ei = 0; ei < fVerts2D.size(); ei++) {
+        double t_ei, u_ei;
+        int e_next = (ei+1)%fVerts2D.size();
+        bool eHit = raycastToSegment2D(start, direc2D, fVerts2D[ei], fVerts2D[e_next], t_ei, u_ei);
+        // We only track this one if it's closer than our current, and a valid intersection
+        if (eHit && t_ei > tol && t_ei < t) {  // TODO: this tol is not necessarily snapping criteria
+            fHit = true;
+            t = t_ei;
+            u = u_ei;
+            // Grab vertex or edge
+            // This is where vertex snapping occurs
+            if (u_ei <= tol) {
+                u_ei = 0.0;
+                el_type = 2;
+                local_idx = ei;
+            } else if (u_ei >= 1 - tol) {
+                u_ei = 1.0;
+                el_type = 2;
+                local_idx = e_next;
+            } else {
+                el_type = 1;
+                local_idx = ei;
+            }
+        }
+    }
+    // If no hits, then just return false
+    if (!fHit) {
+        return false;
+    }
+
+    // Otherwise, find the angle between the direc and the CCW face edge
+    Eigen::Vector2d edgeVec;
+    if (el_type == 1) { // edge case
+        theta = vectorAngle(start2D, start2D+direc2D, fVerts2D[local_idx], fVerts2D[(local_idx+1)%fVerts2D.size()]);
+    } else {    // vertex case
+        theta = vectorAngle(start2D, start2D+direc2D, fVerts2D[(local_idx + fVerts2D.size() - 1)%fVerts2D.size()], fVerts2D[local_idx]);
+    }
+
+    return true;
+}
+
+// Compute face intersection w.r.t. a target
+// NOTE: Unlike the regular face intersection, returns True IFF the target is closest, and False otherwise.
+// TODO: combine the two face intersection methods?
+// TODO: If intersects with a vertex, compute and store the ccw edge idx. Also lift direction to the plane formed by
+// intersection corner in 3D
+bool computeFaceIntersectionTarget(const std::vector<Eigen::Vector3d>& fVerts, const Eigen::Vector3d& fNormal,
+                             const Eigen::Vector3d& start, const Eigen::Vector3d& target,
+                             double& t, int& el_type, int& local_idx, double& u, double& theta, double tol = 1e-6) {
+    // build a 2D basis
+    Eigen::Vector3d direc = target - start;
+    Eigen::Vector3d t1, t2;
+    buildPlaneBasis(fNormal, t1, t2);
+    // Project face into 2D
+    std::vector<Eigen::Vector2d> fVerts2D(fVerts.size());
+    for (int fv = 0; fv < fVerts.size(); fv++) {
+        Eigen::Vector3d fVertProj = projectPointOntoPlane(fNormal, start, fVerts[fv]);
+        fVerts2D[fv] = convertTo2D(fVertProj, start, t1, t2);
+    }
+    // Project start onto 2D: We can do this if we center our Newell face at the start
+    Eigen::Vector2d start2D = {0.0, 0.0};
+    Eigen::Vector3d direcProj;
+    double direcLen = projectVectorOntoTangentPlane(fNormal, direc, direcProj);
+    Eigen::Vector2d direc2D = convertTo2D(start+direcProj, start, t1, t2);  // TODO: maybe a cleaner way to get vector into basis.
+
+    // Iteratively raycast on all edges to find the smallest distance
+    t = std::numeric_limits<double>::infinity();
+    bool fHit = true;
+    for (int ei = 0; ei < fVerts2D.size(); ei++) {
+        double t_ei, u_ei;
+        int e_next = (ei+1)%fVerts2D.size();
+        bool eHit = raycastToSegment2D(start, direc2D, fVerts2D[ei], fVerts2D[e_next], t_ei, u_ei);
+        // We only track this one if it's closer than our current, and a valid intersection
+        if (eHit && t_ei > tol && t_ei < t) {  // TODO: this tol is not necessarily snapping criteria
+            fHit = true;
+            t = t_ei;
+            u = u_ei;
+            // Grab vertex or edge
+            // This is where vertex snapping occurs
+            if (u_ei <= tol) {
+                el_type = 2;
+                local_idx = ei;
+            } else if (u_ei >= 1 - tol) {
+                el_type = 2;
+                local_idx = e_next;
+            } else {
+                el_type = 1;
+                local_idx = ei;
+            }
+        }
+    }
+
+    // Test if our target is closer than the intersection
+    if (direcLen <= t + tol) {
+        return true;
+    }
+
+    // Otherwise, find the angle between the direc and the CCW face edge
+    Eigen::Vector2d edgeVec;
+    if (el_type == 1) { // edge case
+        // We can just use the Newell plane to get the angle
+        theta = vectorAngle(start2D, start2D+direc2D, fVerts2D[local_idx], fVerts2D[(local_idx+1)%fVerts2D.size()]);
+    } else {    // vertex case
+        // We need to project back onto the original corner to get the "3D" corner angle
+        Eigen::Vector3d edge_vec_p1 = (fVerts[(local_idx + 1)%fVerts.size()] - fVerts[local_idx]).normalized();
+        Eigen::Vector3d edge_vec_m1 = (fVerts[(local_idx + fVerts.size() - 1)%fVerts.size()] - fVerts[local_idx]).normalized();
+        Eigen::Vector3d corner_normal = (edge_vec_p1).cross(edge_vec_m1);
+        Eigen::Vector3d corner_direc;
+        projectVectorOntoTangentPlane(corner_normal, -1 * direc, corner_direc);
+        corner_direc.normalize();
+        theta = std::acos(std::clamp(corner_direc.dot(edge_vec_m1), -1.0, 1.0));
+    }
+
+    return false;
+}
+
+// MEAN VALUE COORDINATES
+// Compute angle between any two 2D vectors given the four endpoints
+// Vectors are computed as p1 - p0, p3 - p2
+double vectorAngle(const Eigen::Vector2d& p0, const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, const Eigen::Vector2d& p3) {
+    Eigen::Vector2d v0 = p1 - p0;
+    Eigen::Vector2d v1 = p3 - p2;
+    return std::atan2(v0(0)*v1(1) - v0(1)*v1(0), v0(0)*v1(0) + v0(1)*v1(1));
+}
+
+// Compute the sign of a double value
+double computeSign(const double& value) {
+    if (value > 0.0) {
+        return 1.0;
+    } else if (value < 0.0) {
+        return -1.0;
+    }
+    return 0.0;
+}
+
+void meanValueCoordinates(const Eigen::Vector2d& target, const std::vector<Eigen::Vector2d>& cage, Eigen::VectorXd& weights) {
+    weights.setZero();
+
+    double W = 0.0;
+    std::vector<double> beta(cage.size());
+    std::vector<double> gamma(cage.size());
+    std::vector<double> s(cage.size());
+    std::vector<double> r(cage.size());
+    for (int v = 0; v < cage.size(); v++) {
+        beta[v] = vectorAngle(cage[v], cage[(v+1)%cage.size()], target, cage[v]);
+        gamma[v] = vectorAngle(cage[(v+1)%cage.size()], cage[v], cage[(v+1)%cage.size()], target);
+        s[v] = beta[v] + gamma[v];
+        r[v] = (cage[v] - target).norm();
+    }
+    std::vector<double> w(cage.size());
+    for (int v = 0; v < cage.size(); v++) {
+        int v_m1 = (v + cage.size() - 1)%cage.size();
+        double alpha_m1p1 = vectorAngle(target, cage[v_m1], target, cage[(v+1)%cage.size()]);
+        double s_m1p1 = M_PI * (computeSign(s[v_m1]) + computeSign(s[v])) - s[v_m1] - s[v];
+        if (computeSign(alpha_m1p1) != computeSign(s_m1p1)) {    // NOTE: Potential numerical issue here
+            alpha_m1p1 *= -1.0;
+        }
+        w[v] = r[v_m1] * std::sin(alpha_m1p1/2.0);
+        for (int u = 0; u < cage.size(); u++) {
+            if ((u != v_m1) && (u != v)) {
+                w[v] *= r[u] * std::sin(std::abs(s[v])/2.0);
+            }
+        }
+        W += w[v];
+    }
+    // Normalize to get final weights
+    for (int v = 0; v < cage.size(); v++) {
+        weights[v] = w[v]/W;
+    }
+
+    return;
 }
 
 } // namespace Utils

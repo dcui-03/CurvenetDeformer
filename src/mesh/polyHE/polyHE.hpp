@@ -98,12 +98,17 @@ public:
         
         const int start_hei = m_vertex_halfedges[ vertex_index ];
         int hei = start_hei;
-        while( true )
-        {
+        while( true ) {
             const halfedge_t& he = m_halfedges[ hei ];
             result.push_back( he.dest );
             
-            hei = m_halfedges[ he.twin ].next;
+            int hei_temp = he.twin;
+            // Modified to support arbitrary face size
+            while(true) {
+                if( m_halfedges[ hei_temp ].next == he.twin ) break;
+                hei_temp = m_halfedges[ hei_temp ].next;
+            }
+            //hei = m_halfedges[ he.twin ].next;
             if( hei == start_hei ) break;
         }
     }
@@ -170,9 +175,9 @@ public:
     // Get one halfedge of the edge
     int edgeHalfedge(int ei);
     // Get the pair of vertices for the edge
-    std::pair<int,int> edgeVertices(int ei);
+    void edgeVertices(int ei, std::vector<int>& result);
     // Get the pair of faces associated with the edge
-    std::pair<int,int> edgeFaces(int ei);
+    void edgeFaces(int ei, std::vector<int>& result);
 
     // Get edge index from a pair of vertices
     int edgeIdxFromVerts(int vi, int vj);

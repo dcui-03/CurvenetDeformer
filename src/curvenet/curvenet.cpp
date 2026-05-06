@@ -237,99 +237,96 @@ namespace Curvenet {
         return;
     }
     void curvenet::computeCCWOrdering(int ctrl_idx) {
-        Eigen::Vector3d ctrl_pos = controlPoints[ctrl_idx].getPos();
-        Eigen::Vector3d ctrl_Normal = controlPoints[ctrl_idx].getNormal();
-        std::vector<int> adjSplines = controlPoints[ctrl_idx].getSplineIdxs();
-        std::vector<Eigen::Vector2d> projectedVecs(adjSplines.size());
-        std::vector<int> reordering(adjSplines.size());
-        // pre-compute a basis
-        Eigen::Vector3d t0, t1;
-        Utils::buildPlaneBasis(ctrl_Normal, t0, t1);
-        // First, get projections and write them in new basis
-        for (int s = 0; s < adjSplines.size(); s++) {
-            // Check which endpoint we match and grab tangent vector
-            Eigen::Vector3d t;
-            if (splines[adjSplines[s]].c0 == ctrl_idx) {
-                t = tangentPoints[splines[adjSplines[s]].t0].getPos() - ctrl_pos;
-            } else {
-                t = tangentPoints[splines[adjSplines[s]].t0].getPos() - ctrl_pos;
-            }
-            Eigen::Vector3d proj;
-            // Project onto tangent plane
-            double success = Utils::projectVectorOntoTangentPlane(ctrl_Normal, t, proj);
-            if (success < 0.0) {    // degenerate vector
-                projectedVecs[s] = Eigen::Vector2d::Zero();
-            } else {                // Nondegenerate: rewrite in new basis
-                projectedVecs[s] = Utils::convertTo2D(proj, ctrl_pos, t0, t1);
-            }
+        double eps = 1e-12;
 
-        }
-        std::vector<int> nondegenerate;
-        std::vector<int> degenerate;    // Store a list of the degenerate projections (which are arbitrary in list index)
-        for (int s = 0; s < adjSplines.size(); s++) {
-            // check if degenerate
-            if (projectedVecs[s] == Eigen::Vector2d::Zero()) {
-                degenerate.push_back(s);    // store local index
-            } else {
-                nondegenerate.push_back(s);
-            }
-        }
-        // Add in the first nondegenerate vector
-        if (degenerate.size() == adjSplines.size()) {
-            // All projected vectors are degenerate; no need to reorder
+        Eigen::Vector3d ctrl_pos = controlPoints[ctrl_idx].getPos();
+        Eigen::Vector3d ctrl_normal = controlPoints[ctrl_idx].getNormal();
+        std::vector<int> adjSplines = controlPoints[ctrl_idx].getSplineIdxs();
+
+        if (adjSplines.empty()) {
             return;
         }
-        // Iterate over the nondegenerate vertices and do signed angle
-        std::vector<int> pos_increasing;    // Indices of increasing positive signed angle
-        std::vector<double> pos_SA;
-        std::vector<int> neg_increasing;    // Indices of increasing negative signed angle
-        std::vector<double> neg_SA;
-        for (int p = 1; p < nondegenerate.size(); p++) {
-            // Compute signed angle compared to the first nondegenerate vector
-            double dotprod = projectedVecs[nondegenerate[0]].dot(projectedVecs[nondegenerate[p]]);
-            double crossprod = projectedVecs[nondegenerate[0]](0) * projectedVecs[nondegenerate[p]](1) - 
-                               projectedVecs[nondegenerate[0]](1) * projectedVecs[nondegenerate[p]](0);
-            double sAngle = std::atan2(crossprod, dotprod);
-            // Insert into ordering based on signed angle
-            if (sAngle >= 0.0) {
-                std::vector<double>::iterator it = std::lower_bound(pos_SA.begin(), pos_SA.end(), sAngle);
-                pos_SA.insert(it, sAngle);
-                int insertion_idx = it - pos_SA.begin();
-                pos_increasing.insert(pos_increasing.begin() + insertion_idx, nondegenerate[p]);
+
+        std::vector<int> reordering;
+        reordering.reserve(adjSplines.size());
+
+        // Precompute tangent-plane basis
+        Eigen::Vector3d t0, t1;
+        Utils::buildPlaneBasis(ctrl_normal, t0, t1);
+
+        // Store local indices into adjSplines
+        std::vector<int> nondegenerateIdxs;
+        std::vector<double> nondegenerateAngles;
+        std::vector<int> degenerateIdxs;
+
+        for (int s = 0; s < (int)adjSplines.size(); ++s) {
+            int splineIdx = adjSplines[s];
+
+            // Get outgoing tangent direction
+            Eigen::Vector3d t;
+            if (splines[splineIdx].c0 == ctrl_idx) {
+                t = tangentPoints[splines[splineIdx].t0].getPos() - ctrl_pos;
             } else {
-                std::vector<double>::iterator it = std::lower_bound(neg_SA.begin(), neg_SA.end(), sAngle);
-                neg_SA.insert(it, sAngle);
-                int insertion_idx = it - neg_SA.begin();
-                neg_increasing.insert(neg_increasing.begin() + insertion_idx, nondegenerate[p]);
+                t = tangentPoints[splines[splineIdx].t1].getPos() - ctrl_pos;
             }
+
+            // Project onto tangent plane
+            Eigen::Vector3d proj;
+            int success = Utils::projectVectorOntoTangentPlane(ctrl_normal, t, proj);
+
+            if (success < 0 || proj.squaredNorm() < eps) {
+                degenerateIdxs.push_back(s);
+                continue;
+            }
+
+            // Coordinates in local tangent basis
+            double x = proj.dot(t0);
+            double y = proj.dot(t1);
+
+            double angle = std::atan2(y, x);
+            if (angle < 0.0) {
+                angle += 2.0 * M_PI;
+            }
+
+            nondegenerateIdxs.push_back(s);
+            nondegenerateAngles.push_back(angle);
         }
 
-        // Set adjacent nondegenerate splines in correct ordering
-        reordering[0] = adjSplines[nondegenerate[0]];   // Fix the first one
-        for (int s = 0; s < pos_SA.size(); s++) {   // Get positive signed angles (0 -> 180)
-            reordering[s + 1] = adjSplines[pos_SA[s]];
-        }
-        for (int s = 0; s < neg_SA.size(); s++) {   // Get negative signed angles (-180 -> 0)
-            reordering[pos_SA.size() + s] = adjSplines[pos_SA[s]];
-        }
-        for (int i = 0; i < degenerate.size(); i++) {   // Fill the rest with all the degenerate vectors
-            reordering[nondegenerate.size() + i] = adjSplines[degenerate[i]];
+        // If everything is degenerate, do nothing
+        if (nondegenerateIdxs.empty()) {
+            return;
         }
 
-        // Set equivalence
+        // Sort nondegenerate splines by CCW angle
+        Utils::sortAscending_IDsUsingValues(nondegenerateIdxs, nondegenerateAngles);
+
+        // Build new ordering
+        for (int i = 0; i < (int)nondegenerateIdxs.size(); ++i) {
+            reordering.push_back(adjSplines[nondegenerateIdxs[i]]);
+        }
+
+        // Append degenerate ones at the end in arbitrary order
+        for (int i = 0; i < (int)degenerateIdxs.size(); ++i) {
+            reordering.push_back(adjSplines[degenerateIdxs[i]]);
+        }
+
+        // TODO: Test and remove
+        /*
+        // Debug print
         std::cout << ctrl_idx << " Old Spline ordering:";
-        for (int s = 0; s < adjSplines.size(); s++) {
+        for (int s = 0; s < (int)adjSplines.size(); ++s) {
             std::cout << " " << adjSplines[s];
         }
         std::cout << std::endl;
+        */
         controlPoints[ctrl_idx].setSplineIdxs(reordering);
+        /*
         std::cout << ctrl_idx << " New Spline ordering:";
-        for (int s = 0; s < reordering.size(); s++) {
+        for (int s = 0; s < (int)reordering.size(); ++s) {
             std::cout << " " << reordering[s];
         }
         std::cout << std::endl;
-        return;
-
+        */
     }
 
 }   // namespace Curvenet

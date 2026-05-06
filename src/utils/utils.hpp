@@ -24,6 +24,9 @@ namespace Utils {
     void copyPositions(const std::vector<Eigen::Vector3d>& V_old, std::vector<Eigen::Vector3d>& V_new);
 
     void copyConnectivity(const std::vector<std::vector<int>>& T_old, std::vector<std::vector<int>>& T_new);
+
+    // SORTING
+    void sortAscending_IDsUsingValues(std::vector<int> idxs, std::vector<double> values);
     
 
     // VECTOR/PROJECTION HELPERS
@@ -54,7 +57,22 @@ namespace Utils {
     Eigen::Vector2d closestPointOnSegment2D(const Eigen::Vector2d& p, const Eigen::Vector2d& v0, const Eigen::Vector2d& v1, bool clip = true);
 
     Eigen::Vector3d closestPointOnSegment3D(const Eigen::Vector3d& p, const Eigen::Vector3d& v0, const Eigen::Vector3d& v1, bool clip = true);
-    // Given a set of projected vectors, order them CCW
-    // TODO: How do we indicate degenerate vectors?
+
+    // Given points on a face, plus a ray, compute the intersection of the ray with the face, if one exists
+    bool computeFaceIntersection(const std::vector<Eigen::Vector3d>& fVerts, const Eigen::Vector3d& fNormal,
+                             const Eigen::Vector3d& start, const Eigen::Vector3d& direc,
+                             double& t, int& el_type, int& local_idx, double& u, double& theta, double tol = 1e-6);
+    bool computeFaceIntersectionTarget(const std::vector<Eigen::Vector3d>& fVerts, const Eigen::Vector3d& fNormal,
+                             const Eigen::Vector3d& start, const Eigen::Vector3d& target,
+                             double& t, int& el_type, int& local_idx, double& u, double& theta, double tol = 1e-6);
+
+    // MEAN VALUE COORDINATES
+    // Helpers
+    double vectorAngle(const Eigen::Vector2d& p0, const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, const Eigen::Vector2d& p3);
+    double computeSign(const double& value);
+
+    // Returns the weights only
+    // Follows method of Fuda and Hormann [2024]
+    void meanValueCoordinates(const Eigen::Vector2d& target, const std::vector<Eigen::Vector2d>& cage, Eigen::VectorXd& weights);
 
 } // namespace Utils

@@ -43,6 +43,8 @@ class mesh {
         int num_v;
 
     protected:
+        // Internal function to precompute height functions on both planar/nonplanar faces and their convexity
+        virtual void computeHeightFuncsAndConvexity();
         // Internal function to precompute normals and areas on all mesh structures
         virtual void computeFNormalsAreas();
         // weight_fN weights by area
@@ -57,8 +59,10 @@ class mesh {
         // Neutral mesh state
         // Note: Do we need to store edge/face data or can we just let polyHE handle it?
         std::vector<Eigen::Vector3d>& V;
-        std::vector<std::array<int, 2>> E;
+        std::vector<std::array<int, 2>> E;  // TODO: remove?
         std::vector<std::vector<int>>& F;
+        std::vector<Eigen::VectorXd> H; // Height functions on faces as a VectorXd (let's us compute MVC result using a dot prod)
+        std::vector<bool> Convex;   // Convexity of faces in the function (used for querying for Straightest Geodesic)
 
         // Local areas
         std::vector<double> vAreas;

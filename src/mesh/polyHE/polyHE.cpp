@@ -256,19 +256,23 @@ int polyHE_t::edgeHalfedge(int ei) {
 }
 
 // Get the pair of vertices for the edge
-std::pair<int,int> polyHE_t::edgeVertices(int ei) {
+void polyHE_t::edgeVertices(int ei, std::vector<int>& result) {
     int hei = m_edge_halfedges.at(ei);
     const halfedge_t& he = m_halfedges.at(hei);
     const halfedge_t& ht = m_halfedges.at(he.twin);
-    return std::make_pair(ht.dest, he.dest);
+    result.push_back(ht.dest);
+    result.push_back(he.dest);
+    return;
 }
 
 // Get the pair of faces associated with the edge
-std::pair<int,int> polyHE_t::edgeFaces(int ei) {
+void polyHE_t::edgeFaces(int ei, std::vector<int>& result) {
     int hei = m_edge_halfedges.at(ei);
     const halfedge_t& he = m_halfedges.at(hei);
     const halfedge_t& ht = m_halfedges.at(he.twin);
-    return std::make_pair(he.face, ht.face);
+    result.push_back(he.face);
+    result.push_back(ht.face);
+    return;
 }
 
 

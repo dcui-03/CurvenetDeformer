@@ -19,6 +19,7 @@ mesh::mesh(std::vector<Eigen::Vector3d>& V, std::vector<std::vector<int>>& F): V
     computeFNormalsAreas();
     computeENormals();
     computeVNormalsAreas();
+    computeHeightFuncsAndConvexity();
     computeMeanE();
     computeBBoxDiag();
 }
@@ -48,6 +49,64 @@ double mesh::getBBoxDiag() {
     return bboxDiag;
 }
 
+// Internal function to compute height functions and convexity
+void mesh::computeHeightFuncsAndConvexity() {
+    // Iterate over faces 
+    H.clear();
+    H.resize(num_f);
+    Convex.clear();
+    Convex.resize(num_f);
+    for (int f = 0; f < num_f; f++) {
+        Convex[f] = true;
+        // Special handling for triangles
+        if (F[f].size() == 3) {
+            H[f] = Eigen::VectorXd({0.0, 0.0, 0.0});
+            continue;
+        }
+        std::vector<Eigen::Vector3d> face_v(F[f].size());
+        // Fit Newell Plane. First grab all vertices of face
+        for (int v = 0; v < F[f].size(); v++) {
+            face_v[v] = V[F[f][v]];
+        }
+        // 1. compute barycenter and face normal
+        Eigen::Vector3d faceCenter = DECUtils::computeBarycenter(face_v);
+        Eigen::Vector3d faceN = fNormals[f];
+        // 2. Project face vertices onto the Newell plane and grab height
+        Eigen::VectorXd faceH = Eigen::VectorXd::Zero(F[f].size());
+        std::vector<Eigen::Vector2d> proj_v(F[f].size());
+        // Build a basis
+        Eigen::Vector3d t1;
+        Eigen::Vector3d t2;
+        Utils::buildPlaneBasis(faceN, t1, t2);
+        for (int v = 0; v < face_v.size(); v++) {
+            Eigen::Vector3d proj3d = Utils::projectPointOntoPlane(faceN, faceCenter, face_v[v]);
+            // vector from old point to plane point
+            Eigen::Vector3d heightVec = face_v[v] - proj3d;
+            // Get 2D version
+            proj_v[v] = Utils::convertTo2D(proj3d, faceCenter, t1, t2);
+            double height = heightVec.norm();   // How far we are from the plane
+            if (height <= 1e-6) {   // If we are on/close to the surface, just snap to the plane
+                faceH(v) = 0.0;
+            } else if ((heightVec.normalized()).dot(faceN) > 0.0) { // We are above the plane
+                faceH(v) = height;
+            } else {    // We are below the plane
+                faceH(v) = -1.0 * height;
+            }
+        }
+        // Compute signed angles
+        for (int v = 0; v < face_v.size(); v++) {
+            int v_next = (v+1)%face_v.size();
+            int v_prev = (v+face_v.size()-1)%face_v.size();
+            double signedAngle = Utils::vectorAngle(proj_v[v], proj_v[v_next], proj_v[v], proj_v[v_prev]);
+            // If signed angle is negative AND the signed angle is not close to 180, then probably non-convex
+            if ((signedAngle <= 0.0) && (M_PI - signedAngle > 1e-6)) {
+                Convex[f] = true;
+            }
+        }
+    }
+    return;
+}
+
 // Internal function to precompute normals on all mesh structures
 void mesh::computeFNormalsAreas() {
     fNormals.clear();
@@ -70,23 +129,24 @@ void mesh::computeENormals(bool weight_fN) {
     eNormals.clear();
     eNormals.resize(heMesh.numEdges());
     for (int e = 0; e < heMesh.numEdges(); ++e) {
-        std::pair<int, int> eFaces = heMesh.edgeFaces(e);
-        int f0 = eFaces.first;
-        int f1 = eFaces.second;
+        std::vector<int> eFaces;
+        heMesh.edgeFaces(e, eFaces);
+        int f0 = eFaces[0];
+        int f1 = eFaces[1];
         Eigen::Vector3d eN = Eigen::Vector3d::Zero();
         if (weight_fN) {
             if (f0 != -1) {
-                eN += fAreas[f1] * fNormals[f1];
-            } 
-            if (f1 == -1) {
                 eN += fAreas[f0] * fNormals[f0];
+            } 
+            if (f1 != -1) {
+                eN += fAreas[f1] * fNormals[f1];
             }
         } else {
-            if (f0 == -1) {
-                eN += fNormals[f1];
-            }
-            if (f1 == -1) {
+            if (f0 != -1) {
                 eN += fNormals[f0];
+            }
+            if (f1 != -1) {
+                eN += fNormals[f1];
             }
         }
         eN.normalize();
@@ -128,9 +188,10 @@ void mesh::computeVNormalsAreas(bool weight_fN) {
 void mesh::computeMeanE() {
     meanE = 0.0;
     for (int e = 0; e < heMesh.numEdges(); ++e) {
-        std::pair<int, int> eVerts = heMesh.edgeVertices(e);
-        int v0 = eVerts.first;
-        int v1 = eVerts.second;
+        std::vector<int> eVerts;
+        heMesh.edgeVertices(e, eVerts);
+        int v0 = eVerts[0];
+        int v1 = eVerts[1];
         meanE += (V[v0] - V[v1]).norm();
     }
     meanE /= heMesh.numEdges();
@@ -179,6 +240,9 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     int closest_f = -1;
     elIdx = -1;
     // First find closest face by iterating over faces
+    // NOTE: For triangles, this can be done much more simply using
+    // barycentric coordinates w/ a linear solve. For arbitrary non-planar polygons,
+    // this isn't possible, since polygons may not be convex
     for (int f = 0; f < F.size(); f++) {
         int local_elType = 2;
         int local_elIdx = -1;
@@ -239,6 +303,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     }
 
     // Snap to nearby vertex or edge if we are too close
+    // NOTE: using GLOBAL, not geodesic distance, since this is too hard for non-planar faces
     if (snap) {
         // For the face that was landed on, check if we are close to a vertex on that face
         std::vector<Eigen::Vector3d> fVertList(F[elIdx].size());
@@ -268,7 +333,49 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
             }
         }
     }
-    
+
+    // If not snapping, then we must be on a face
+    // Check if we are on a non-planar face. If so, pin-point the location using MVC
+    Eigen::VectorXd fHeight = H[elIdx];
+    bool planar = true;
+    for (int v = 0; v < fHeight.size(); v++) {
+        if (std::abs(fHeight(v)) >= 1e-6) {
+            planar = false;
+        }
+    }
+    if (planar || fHeight.size() == 3) {   // Planar face, no MVC interpolation to be done
+        return 2;
+    }
+
+    // Otherwise, we need to compute mean value coordinates to get projection location
+    // First, project all points into Newell plane
+    std::vector<Eigen::Vector3d> fVertList(F[elIdx].size());
+    for (int fv = 0; fv < F[elIdx].size(); fv++) {
+        fVertList[fv] = V[F[elIdx][fv]];
+    }
+    Eigen::Vector3d barycenter = DECUtils::computeBarycenter(fVertList);
+    // Get vector area normal
+    Eigen::Vector3d fNormal = fNormals[elIdx];
+    // Build local 2D basis
+    Eigen::Vector3d t1;
+    Eigen::Vector3d t2;
+    Utils::buildPlaneBasis(fNormals[elIdx], t1, t2);
+    Eigen::Vector2d v_proj2d = Utils::convertTo2D(proj, barycenter, t1, t2);
+
+    std::vector<Eigen::Vector2d> fVert2D(F[elIdx].size());
+    for (int fv = 0; fv < fVertList.size(); fv++) {
+        Eigen::Vector3d fv_proj3D = Utils::projectPointOntoPlane(fNormal, barycenter, fVertList[fv]);
+        fVert2D[fv] = Utils::convertTo2D(fv_proj3D, barycenter, t1, t2);
+    }
+    // Second, apply mean value coordinates to get height function weights
+    Eigen::VectorXd MVCWeights(fHeight.size());
+    Utils::meanValueCoordinates(v_proj2d, fVert2D, MVCWeights);
+
+    // Now recover the height using MVC weights
+    double h = MVCWeights.dot(fHeight);
+    // Add height to current Newell projection
+    proj += h * fNormal;
+
     return 2;
 }
 
