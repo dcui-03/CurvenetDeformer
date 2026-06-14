@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <glm/vec3.hpp>
 #include <vector>
+#include <algorithm>
 #include <random>
 #include <cmath>
 
@@ -91,11 +92,116 @@ void sortAscending_IDsUsingValues(std::vector<int> idxs, std::vector<double> val
     return;
 }
 
+// Insert an integer entry in a list between two specified values
+bool insertIdxBetweenPair(std::vector<int>& idxList, int a, int b, int new_idx) {
+    for (int i = 0; i < idxList.size(); ++i) {
+        int j = (i + 1) % idxList.size();
+        if (idxList[i] == a && idxList[j] == b) {
+            idxList.insert(idxList.begin() + j, new_idx);
+            return true;
+        }
+    }
+    return false;
+}
 
+// GEOMETRY HELPERS
 
-// VECTOR/PROJECTION HELPERS
+// Find the closest point to a triangle
+Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts, const Eigen::Vector3d p) {
+    const double eps = 1e-8;
+    const Eigen::Vector3d& a = triVerts[0];
+    const Eigen::Vector3d& b = triVerts[1];
+    const Eigen::Vector3d& c = triVerts[2];
+
+    const Eigen::Vector3d ab = b - a;
+    const Eigen::Vector3d ac = c - a;
+    const Eigen::Vector3d ap = p - a;
+
+    const double d1 = ab.dot(ap);
+    const double d2 = ac.dot(ap);
+
+    // Vertex region outside A
+    if (d1 <= 0.0 && d2 <= 0.0) {
+        return a;
+    }
+
+    const Eigen::Vector3d bp = p - b;
+    const double d3 = ab.dot(bp);
+    const double d4 = ac.dot(bp);
+
+    // Vertex region outside B
+    if (d3 >= 0.0 && d4 <= d3) {
+        return b;
+    }
+
+    // Edge region AB
+    const double vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0) {
+        const double denom = d1 - d3;
+        if (std::abs(denom) <= eps) {
+            return Utils::closestPointOnSegment3D(p, a, b, true);
+        }
+
+        const double t = d1 / denom;
+        return a + t * ab;
+    }
+
+    const Eigen::Vector3d cp = p - c;
+    const double d5 = ab.dot(cp);
+    const double d6 = ac.dot(cp);
+
+    // Vertex region outside C
+    if (d6 >= 0.0 && d5 <= d6) {
+        return c;
+    }
+
+    // Edge region AC
+    const double vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0) {
+        const double denom = d2 - d6;
+        if (std::abs(denom) <= eps) {
+            return Utils::closestPointOnSegment3D(p, a, c, true);
+        }
+        const double t = d2 / denom;
+        return a + t * ac;
+    }
+
+    // Edge region BC
+    const double va = d3 * d6 - d5 * d4;
+    if (va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0) {
+        const double denom = (d4 - d3) + (d5 - d6);
+        if (std::abs(denom) <= eps) {
+            return Utils::closestPointOnSegment3D(p, b, c, true);
+        }
+        const double t = (d4 - d3) / denom;
+        return b + t * (c - b);
+    }
+
+    // Inside face region
+    const double denom = va + vb + vc;
+    if (std::abs(denom) <= eps) {
+        // Degenerate triangle fallback: closest point among three edges.
+        Eigen::Vector3d pab = Utils::closestPointOnSegment3D(p, a, b, true);
+        Eigen::Vector3d pac = Utils::closestPointOnSegment3D(p, a, c, true);
+        Eigen::Vector3d pbc = Utils::closestPointOnSegment3D(p, b, c, true);
+
+        double dab = (p - pab).squaredNorm();
+        double dac = (p - pac).squaredNorm();
+        double dbc = (p - pbc).squaredNorm();
+
+        if (dab <= dac && dab <= dbc) return pab;
+        if (dac <= dab && dac <= dbc) return pac;
+        return pbc;
+    }
+
+    const double invDenom = 1.0 / denom;
+    const double vBary = vb * invDenom;
+    const double wBary = vc * invDenom;
+    return a + vBary * ab + wBary * ac;
+}
 
 // Find basis vectors for a planar region (ex. tangent plane)
+// Build plane basis given only n, and unitialized t1, t2
 void buildPlaneBasis(const Eigen::Vector3d& n, Eigen::Vector3d& t1, Eigen::Vector3d& t2) {
     if (std::abs(n(0)) < 0.9)
         t1 = n.cross(Eigen::Vector3d::UnitX()).normalized();
@@ -190,7 +296,7 @@ Eigen::Vector2d closestPointOnSegment2D(const Eigen::Vector2d& p, const Eigen::V
 }
 
 bool raycastToSegment2D(const Eigen::Vector2d& p, const Eigen::Vector2d& direc, const Eigen::Vector2d& v0, const Eigen::Vector2d& v1,
-                        double& t, double& u) {
+                        double& t, double& u, bool clip) {
     Eigen::Vector2d vec = v1 - v0;
     double denom = vec.squaredNorm();
     if (denom < 1e-16) {

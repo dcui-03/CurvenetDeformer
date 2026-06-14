@@ -27,9 +27,15 @@ namespace Utils {
 
     // SORTING
     void sortAscending_IDsUsingValues(std::vector<int> idxs, std::vector<double> values);
+
+    // Insert at index between a pair of indices in a list
+    bool insertIdxBetweenPair(std::vector<int>& idxList, int a, int b, int new_idx);
     
 
     // VECTOR/PROJECTION HELPERS
+    
+    // Computes the closest point to a triangle
+    Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts, const Eigen::Vector3d p);
 
     // Project a vector onto a tangent plane, given the normal to the plane
     // Returns -1 if degenerate (shouldn't happen but we should handle it)
@@ -50,6 +56,8 @@ namespace Utils {
     // Check if a 2D point is in a 2D polygon
     // To do this, we do raycasting to the segment
     bool pointInPolygon2D(const Eigen::Vector2d& p, const std::vector<Eigen::Vector2d>& poly);
+
+    bool raycastToSegment2D(const Eigen::Vector2d& p, const Eigen::Vector2d& direc, const Eigen::Vector2d& v0, const Eigen::Vector2d& v1, double& t, double& u, bool clip = true);
 
     // Get the closest point on a segment in 2D and 3D, where the endpoints are defined
     // To do this, project onto parameterized segment and snap t to [0, 1]

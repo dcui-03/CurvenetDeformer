@@ -1,7 +1,6 @@
 #include "mesh.hpp"
 
-#include "dcurvenet/pdcurvenet.hpp"
-#include "polyHE/polyHE.hpp"
+#include "dcurvenet/dcurvenet.hpp"
 #include "../utils/decUtils.hpp"
 #include "../utils/utils.hpp"
 #include <Eigen/Core>
@@ -10,176 +9,348 @@
 #include <limits>
 #include <utility>
 
+// Mesh class functions for initialization
 
 namespace Mesh {
 
 // Constructor takes the projected curvenet and the mesh, and produces a cut-mesh
-mesh::mesh(std::vector<Eigen::Vector3d>& V, std::vector<std::vector<int>>& F): V(V), F(F), num_f(F.size()), num_v(V.size()) {
-    heMesh.build_from_face_list(V.size(), F);
+mesh::mesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::vector<int>>& F_List) {
+    if (!initHalfEdgeMesh(V_List, F_List)) {
+        throw std::runtime_error("Failed to initialize halfedge mesh.");
+    }
     computeFNormalsAreas();
-    computeENormals();
     computeVNormalsAreas();
-    computeHeightFuncsAndConvexity();
+    computeHeightFuncs();
     computeMeanE();
     computeBBoxDiag();
+    return;
+}
+
+// Add a discrete Curvenetwork Pointer
+bool mesh::applyDiscreteCurvenet(DCurvenet::dcurvenet* dCurvenet) {
+    dCN = dCurvenet;
+    dCN_initialized = true;
+    return true;
+}
+
+// Assign a discrete curvenet index to a halfedge
+bool mesh::assignDCNtoHE(int he, const int dCN_idx, bool positive) {
+    HE[he].dCN_idx = dCN_idx;
+    HE[he].dCN_sign = positive;
+    return true;
+}
+
+bool mesh::applyMeshRef(mesh* MRef) {
+    M_ref = MRef;
+    M_ref_initialized = true;
+    return true;
+}
+
+// Initializes the half edge mesh (Verts, Edges, Faces, Halfedges) from a vertex and face list
+bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::vector<int>>& F_List) {
+    clearMesh();
+    // Guard against empty meshes
+    if (V_List.empty()) {
+        return false;
+    }
+
+    // 1. Initialize All Vertices
+    V.resize(V_List.size());
+    for (int v = 0; v < V_List.size(); v++) {
+        V[v].pos = V_List[v];
+    }
+    active_v = V.size();
+
+    // 2. Initialize faces, edges, and interior halfedges
+    F.resize(F_List.size());
+    // The number of face corners is a maximum on the number of edges needed
+    int numFaceCorners = 0;
+    for (const std::vector<int>& faceVerts : F_List) {
+        if (faceVerts.size() < 3) { // Not a valid face
+            return false;
+        }
+        numFaceCorners += faceVerts.size();
+    }
+    HE.reserve(2 * numFaceCorners);
+    E.reserve(numFaceCorners);
+
+    for (int f = 0; f < F_List.size(); f++) {
+        const std::vector<int>& fVerts = F_List[f];
+        const int fSize = static_cast<int>(fVerts.size());
+
+        // Check if each vertex in the face has a valid index
+        for (int i = 0; i < fSize; ++i) {
+            int vi = fVerts[i];
+            int vj = fVerts[(i + 1) % fSize];
+            if (vi < 0 || vi >= V.size()) {
+                return false;
+            }
+            if (vj < 0 || vj >= V.size()) {
+                return false;
+            }
+            if (vi == vj) { // Degenerate face
+                return false;
+            }
+        }
+        F[f].verts = fVerts;
+
+        // Temporary list of face HE's
+        std::vector<int> faceHEs(fSize, -1);
+        // Create interior halfedges for this face
+        for (int i = 0; i < fSize; i++) {
+            int vi = fVerts[i];
+            int vj = fVerts[(i + 1) % fSize];
+            // Keys for the vertex pair to HE map
+            std::pair<int, int> dirKey = std::make_pair(vi, vj);
+            std::pair<int, int> oppKey = std::make_pair(vj, vi);
+            // Check that we don't already have this edge. If so, then there's a duplicate
+            if (vertPairToHE.find(dirKey) != vertPairToHE.end()) {
+                return false;
+            }
+            // Insert the new halfedge into the list and set its attributes
+            int heIdx = HE.size();
+            HE.emplace_back();
+
+            HE[heIdx].dest = vj;
+            HE[heIdx].face = f;
+
+            faceHEs[i] = heIdx;
+            vertPairToHE[dirKey] = heIdx;
+
+            // Store one outgoing halfedge for vi
+            if (V[vi].he == -1) {
+                V[vi].he = heIdx;
+            }
+
+            // Check whether the opposite direction already exists
+            auto oppIt = vertPairToHE.find(oppKey);
+            if (oppIt != vertPairToHE.end()) {  // If so, then hook the two halfedges up
+                int oppHE = oppIt->second;
+                // If the opposite halfedge already has a twin, then more than 2 face touch the edge (non-manifold)
+                if (HE[oppHE].twin != -1) {
+                    return false;
+                }
+                // If we run into an invalid or non-existent edge, then something is also wrong
+                int eIdx = HE[oppHE].edge;
+                if (eIdx < 0 || eIdx >= E.size()) {
+                    return false;
+                }
+                HE[heIdx].twin = oppHE;
+                HE[oppHE].twin = heIdx;
+                HE[heIdx].edge = eIdx;
+            } else {    // If not, add in this new edge.
+                int eIdx = E.size();
+                E.emplace_back();
+
+                E[eIdx].he = heIdx;
+                HE[heIdx].edge = eIdx;
+            }
+        }
+
+        // Wire next/prev HE's around the face.
+        for (int i = 0; i < fSize; ++i) {
+            int he = faceHEs[i];
+
+            HE[he].next = faceHEs[(i + 1) % fSize];
+            HE[he].prev = faceHEs[(i + fSize - 1) % fSize];
+        }
+
+        F[f].he = faceHEs[0];
+    }
+
+    // 3. Create boundary halfedges
+    std::vector<int> boundaryHEs;
+    const int numInteriorHEs = HE.size();
+    // Iterate over interior halfedges and find any that have no twin (i.e., twin = -1)
+    for (int he = 0; he < numInteriorHEs; ++he) {
+        if (HE[he].twin != -1) {
+            continue;
+        }
+        // Get the starting and ending vertices
+        int u = HE[HE[he].prev].dest;
+        int v = HE[he].dest;
+        // Get an index and insert the new boundary half edge in + attributes
+        int bhe = HE.size();
+        HE.emplace_back();
+
+        HE[bhe].dest = u;
+        HE[bhe].twin = he;
+        HE[bhe].edge = HE[he].edge;
+
+        HE[he].twin = bhe;
+
+        // Prefer boundary outgoing halfedge for boundary vertices (for easy querying)
+        V[v].he = bhe;
+
+        std::pair<int, int> bKey = std::make_pair(v, u);
+        // If the boundary halfedge already exists somehow, then something is wrong
+        if (vertPairToHE.find(bKey) != vertPairToHE.end()) {
+            return false;
+        }
+        vertPairToHE[bKey] = bhe;
+        boundaryHEs.push_back(bhe);
+    }
+
+    // 4. Connect next/prev for boundary halfedges
+    std::map<int, int> boundaryOutgoingFromVertex;  // Store a map with the outgoing HE from each bdy vertex
+    // Iterate over boundary halfedges
+    for (int bhe : boundaryHEs) {
+        // Boundary halfedge origin is the dest of its twin
+        int origin = HE[HE[bhe].twin].dest;
+        // If a vertex has more than one outgoing boundary halfedge, then it must be nonmanifold
+        if (boundaryOutgoingFromVertex.find(origin) != boundaryOutgoingFromVertex.end()) {
+            return false;
+        }
+        boundaryOutgoingFromVertex[origin] = bhe;
+    }
+    // Iterate over boundary vertices and find the associated next/prev
+    for (int bhe : boundaryHEs) {
+        int dest = HE[bhe].dest;
+        // make sure that there exists an associated next vertex (i.e., valid boundary configuration)
+        auto nextIt = boundaryOutgoingFromVertex.find(dest);
+        if (nextIt == boundaryOutgoingFromVertex.end()) {
+            return false;
+        }
+        int nextBHE = nextIt->second;
+
+        HE[bhe].next = nextBHE;
+        HE[nextBHE].prev = bhe;
+    }
+
+    active_e = E.size();
+    active_f = F.size();
+
+    return true;    // success!
+}
+
+// Clear all mesh attributes
+bool mesh::clearMesh() {
+    // Clear all lists
+    V.clear();
+    HE.clear();
+    E.clear();
+    F.clear();
+    vertPairToHE.clear();
+    // Reset number of vertices
+    active_v = 0;
+    active_e = 0;
+    active_f = 0;
+    // Reset mesh qualities
+    meanE = 0.0;
+    bboxDiag = 0.0;
+    dCN = nullptr;
+    return;
 }
 
 // Getters
-Eigen::Vector3d& mesh::getVNormal(int vidx) {
-    return vNormals[vidx];
+Eigen::Vector3d& mesh::getVPos(int v) const {
+    Eigen::Vector3d pos = V[v].pos;
+    return pos;
 }
-Eigen::Vector3d& mesh::getENormal(int eidx) {
-    return eNormals[eidx];
+Eigen::Vector3d& mesh::getVNormal(int v) const {
+    Eigen::Vector3d n = V[v].n;
+    return n;
 }
-Eigen::Vector3d& mesh::getFNormal(int fidx) {
-    return fNormals[fidx];
-}
-// Get pointer to he mesh
-polyHE::polyHE_t& mesh::getHEMesh() {
-    return heMesh;
+Eigen::Vector3d& mesh::getFNormal(int f) const {
+    Eigen::Vector3d n = F[f].n;
+    return n;
 }
 
 // Get mean edge length
-double mesh::getMeanE() {
+double mesh::getMeanE() const {
     return meanE;
 }
 
  // Get bbox diagonal
-double mesh::getBBoxDiag() {
+double mesh::getBBoxDiag() const {
     return bboxDiag;
 }
 
-// Internal function to compute height functions and convexity
-void mesh::computeHeightFuncsAndConvexity() {
-    // Iterate over faces 
-    H.clear();
-    H.resize(num_f);
-    Convex.clear();
-    Convex.resize(num_f);
-    for (int f = 0; f < num_f; f++) {
-        Convex[f] = true;
-        // Special handling for triangles
-        if (F[f].size() == 3) {
-            H[f] = Eigen::VectorXd({0.0, 0.0, 0.0});
-            continue;
-        }
-        std::vector<Eigen::Vector3d> face_v(F[f].size());
-        // Fit Newell Plane. First grab all vertices of face
-        for (int v = 0; v < F[f].size(); v++) {
-            face_v[v] = V[F[f][v]];
-        }
-        // 1. compute barycenter and face normal
-        Eigen::Vector3d faceCenter = DECUtils::computeBarycenter(face_v);
-        Eigen::Vector3d faceN = fNormals[f];
-        // 2. Project face vertices onto the Newell plane and grab height
-        Eigen::VectorXd faceH = Eigen::VectorXd::Zero(F[f].size());
-        std::vector<Eigen::Vector2d> proj_v(F[f].size());
-        // Build a basis
-        Eigen::Vector3d t1;
-        Eigen::Vector3d t2;
-        Utils::buildPlaneBasis(faceN, t1, t2);
-        for (int v = 0; v < face_v.size(); v++) {
-            Eigen::Vector3d proj3d = Utils::projectPointOntoPlane(faceN, faceCenter, face_v[v]);
-            // vector from old point to plane point
-            Eigen::Vector3d heightVec = face_v[v] - proj3d;
-            // Get 2D version
-            proj_v[v] = Utils::convertTo2D(proj3d, faceCenter, t1, t2);
-            double height = heightVec.norm();   // How far we are from the plane
-            if (height <= 1e-6) {   // If we are on/close to the surface, just snap to the plane
-                faceH(v) = 0.0;
-            } else if ((heightVec.normalized()).dot(faceN) > 0.0) { // We are above the plane
-                faceH(v) = height;
-            } else {    // We are below the plane
-                faceH(v) = -1.0 * height;
-            }
-        }
-        // Compute signed angles
-        for (int v = 0; v < face_v.size(); v++) {
-            int v_next = (v+1)%face_v.size();
-            int v_prev = (v+face_v.size()-1)%face_v.size();
-            double signedAngle = Utils::vectorAngle(proj_v[v], proj_v[v_next], proj_v[v], proj_v[v_prev]);
-            // If signed angle is negative AND the signed angle is not close to 180, then probably non-convex
-            if ((signedAngle <= 0.0) && (M_PI - signedAngle > 1e-6)) {
-                Convex[f] = true;
-            }
+Eigen::VectorXd mesh::computeFaceHeight(int f) {
+    const std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(f);
+    int fSize = fVertsPos.size();
+    Eigen::VectorXd faceH = Eigen::VectorXd::Zero(fSize);
+    // Special handling for triangles (must be planar)
+    if (fSize == 3) {
+        faceH = Eigen::VectorXd({0.0, 0.0, 0.0});
+        return faceH;
+    }
+    // 1. compute barycenter and face normal
+    Eigen::Vector3d faceCenter = DECUtils::computeBarycenter(fVertsPos);
+    Eigen::Vector3d faceN = F[f].n;
+    // 2. Project face vertices onto the Newell plane and grab height
+    std::vector<Eigen::Vector2d> proj_v(fSize);
+    // Build a basis
+    Eigen::Vector3d t1;
+    Eigen::Vector3d t2;
+    Utils::buildPlaneBasis(faceN, t1, t2);
+    for (int v = 0; v < fSize; v++) {
+        Eigen::Vector3d proj3d = Utils::projectPointOntoPlane(faceN, faceCenter, fVertsPos[v]);
+        // vector from old point to plane point
+        Eigen::Vector3d heightVec = fVertsPos[v] - proj3d;
+        // Get 2D version
+        proj_v[v] = Utils::convertTo2D(proj3d, faceCenter, t1, t2);
+        double height = heightVec.norm();   // How far we are from the plane
+        if (height <= 1e-6) {   // If we are on/close to the surface, just snap to the plane
+            faceH(v) = 0.0;
+        } else if ((heightVec.normalized()).dot(faceN) > 0.0) { // We are above the plane
+            faceH(v) = height;
+        } else {    // We are below the plane
+            faceH(v) = -1.0 * height;
         }
     }
-    return;
+    return faceH;
+}
+
+// Function which computes a single face's normal/area
+double mesh::computeFVectorArea(int f, Eigen::Vector3d& fN) {
+    std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(f);
+    return DECUtils::vectorArea(fVertsPos, fN);
 }
 
 // Internal function to precompute normals on all mesh structures
 void mesh::computeFNormalsAreas() {
-    fNormals.clear();
-    fNormals.resize(num_f);
-    fAreas.clear();
-    fAreas.resize(num_f);
-    for (int f = 0; f < num_f; f++) {
-        // create vector of vertices
-        std::vector<Eigen::Vector3d> fList;
-        for (int v = 0; v < F[f].size(); v++) {
-            fList.push_back(V[F[f][v]]);
+    for (int f = 0; f < F.size(); f++) {
+        if(!F[f].active) {
+            continue;
         }
         Eigen::Vector3d fN = Eigen::Vector3d::Zero();
-        fAreas[f] = DECUtils::vectorArea(fList, fN);
-        fNormals[f] = fN;
+        F[f].fArea = computeFVectorArea(f, fN);
+        F[f].n = fN;
     }
     return;
 }
-void mesh::computeENormals(bool weight_fN) {
-    eNormals.clear();
-    eNormals.resize(heMesh.numEdges());
-    for (int e = 0; e < heMesh.numEdges(); ++e) {
-        std::vector<int> eFaces;
-        heMesh.edgeFaces(e, eFaces);
-        int f0 = eFaces[0];
-        int f1 = eFaces[1];
-        Eigen::Vector3d eN = Eigen::Vector3d::Zero();
+
+// Function which computes a single vertex's normal/area
+double mesh::computeVNormalArea(int v, Eigen::Vector3d& vN, bool weight_fN) {
+    // Iterate around the adjacent faces
+    std::vector<int> fList = vertAdjFaces(v);
+    vN = Eigen::Vector3d::Zero();
+    double vArea = 0.0;
+    // Iterate over face list and accumulate areas and normals
+    for (int i = 0; i < fList.size(); i++) {
+        int f = fList[f];
+        double fArea = F[f].fArea/(F[f].verts.size());
         if (weight_fN) {
-            if (f0 != -1) {
-                eN += fAreas[f0] * fNormals[f0];
-            } 
-            if (f1 != -1) {
-                eN += fAreas[f1] * fNormals[f1];
-            }
+            vN += fArea * F[f].n;
         } else {
-            if (f0 != -1) {
-                eN += fNormals[f0];
-            }
-            if (f1 != -1) {
-                eN += fNormals[f1];
-            }
+            vN += F[f].n;
         }
-        eN.normalize();
-        eNormals[e] = eN;
+        vArea += fArea;
     }
-    return;
+    vN.normalize();
+    return vArea;
 }
+
 void mesh::computeVNormalsAreas(bool weight_fN) {
-    vNormals.clear();
-    vNormals.resize(num_v);
-    vAreas.clear();
-    vAreas.resize(num_v);
-    int num_v = V.size();
-    for (int v = 0; v < num_v; v++) {
-        // create vector of vertices
-        std::vector<int> fList;
-        heMesh.vertex_face_neighbors(v, fList);
-        Eigen::Vector3d vN = Eigen::Vector3d::Zero();
-        double vArea = 0.0;
-        // Iterate over face list and accumulate areas and normals
-        for (int f = 0; f < fList.size(); f++) {
-            int fi = fList[f];
-            double fArea = fAreas[fi]/(F[fi].size());
-            if (weight_fN) {
-                vN += fArea * fNormals[fi];
-            } else {
-                vN += fNormals[fi];
-            }
-            vArea += fArea;
+    for (int v = 0; v < active_v; v++) {
+        if (!V[v].active) {
+            continue;
         }
-        vN.normalize();
-        vNormals[v] = vN;
-        vAreas[v] = vArea;
+        Eigen::Vector3d vN = Eigen::Vector3d::Zero();
+        double vArea = computeVNormalArea(v, vN, weight_fN);
+        V[v].n = vN;
+        V[v].vArea = vArea;
     }
     return;
 }
@@ -187,196 +358,46 @@ void mesh::computeVNormalsAreas(bool weight_fN) {
 // Computes mean edge length on the mesh
 void mesh::computeMeanE() {
     meanE = 0.0;
-    for (int e = 0; e < heMesh.numEdges(); ++e) {
-        std::vector<int> eVerts;
-        heMesh.edgeVertices(e, eVerts);
-        int v0 = eVerts[0];
-        int v1 = eVerts[1];
-        meanE += (V[v0] - V[v1]).norm();
+    if (active_e == 0) {
+        return;
     }
-    meanE /= heMesh.numEdges();
+    for (int e = 0; e < E.size(); ++e) {
+        if (!E[e].active) {
+            continue;
+        }
+        std::pair<int, int> eVerts = edgeAdjVerts(e);
+        meanE += (V[eVerts.first].pos - V[eVerts.second].pos).norm();
+    }
+    meanE /= active_e;
     return;
 }
 
 // Computes the diagonal length of the mesh's AABB
 void mesh::computeBBoxDiag() {
-    Eigen::Vector3d minV = V[0];
-    Eigen::Vector3d maxV = V[0];
+    int start = 0;
+    Eigen::Vector3d minV;
+    Eigen::Vector3d maxV;
+    for (int v = 0; v < V.size() - 1; v++) {
+        start = v;
+        if (V[v].active) {
+            minV = V[v].pos;
+            maxV = V[v].pos;
+            break;
+        }
+    }
+    // Note: 0 or 1 point will collapse the bbox. Return an error for debug
+    if ((active_v == 0) || (start >= V.size() - 1)) {
+        // std::cout << "No BBox computable. Too few active vertices." << std::endl;
+        return;
+    }
     // Find most extreme points in mesh
-    for (int v = 1; v < V.size(); v++) {
-        minV = minV.cwiseMin(V[v]);
-        maxV = maxV.cwiseMax(V[v]);
+    for (int v = start + 1; v < V.size(); v++) {
+        minV = minV.cwiseMin(V[v].pos);
+        maxV = maxV.cwiseMax(V[v].pos);
     }
     // get norm of the most extreme points
     bboxDiag = (maxV - minV).norm();
     return;
-}
-
-// Given a point in space, computes the index of the nearest edge to that point
-double mesh::computeNearestFaceEdge(const int face, const Eigen::Vector3d& p, int& nearestIdx, Eigen::Vector3d& nearestPnt) {
-    double min_dist = std::numeric_limits<double>::infinity();
-    nearestIdx = -1;
-    // Iterate over edges
-    std::vector<int> fVList = F[face];
-    for (int v = 0; v < fVList.size(); v++) {
-        Eigen::Vector3d proj = Utils::closestPointOnSegment3D(p, V[fVList[v]], V[fVList[(v+1)%fVList.size()]]);
-        double dist = (proj - p).norm();
-        if (dist < min_dist) {
-            min_dist = dist;
-            nearestIdx = heMesh.edgeIdxFromVerts(fVList[v], fVList[v+1]%fVList.size());
-            nearestPnt = proj;
-        }
-    }
-    return min_dist;
-}
-
-// Project a vertex onto the mesh. If multiple, just picks the first one.
-// Also returns the element type that was landed on
-// For simplicity, I am just going to fit a Newell plane using the barycenter and vector area
-int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap) {
-    double tol = 1e-6 * bboxDiag;
-    double min_dist = std::numeric_limits<double>::infinity();
-
-    int closest_f = -1;
-    elIdx = -1;
-    // First find closest face by iterating over faces
-    // NOTE: For triangles, this can be done much more simply using
-    // barycentric coordinates w/ a linear solve. For arbitrary non-planar polygons,
-    // this isn't possible, since polygons may not be convex
-    for (int f = 0; f < F.size(); f++) {
-        int local_elType = 2;
-        int local_elIdx = -1;
-        
-        // Get barycenter 
-        std::vector<Eigen::Vector3d> fVertList(F[f].size());
-        for (int fv = 0; fv < F[f].size(); fv++) {
-            fVertList[fv] = V[F[f][fv]];
-        }
-        Eigen::Vector3d barycenter = DECUtils::computeBarycenter(fVertList);
-        // Get vector area normal
-        Eigen::Vector3d fNormal = fNormals[f];
-
-        // Build local 2D basis
-        Eigen::Vector3d t1;
-        Eigen::Vector3d t2;
-        Utils::buildPlaneBasis(fNormal, t1, t2);
-        // Project p onto Newell plane and get its 2D coordinate
-        Eigen::Vector3d v_proj3d = Utils::projectPointOntoPlane(fNormal, barycenter, v);
-        Eigen::Vector2d v_proj2d = Utils::convertTo2D(v_proj3d, barycenter, t1, t2);
-
-        // Project face vertices onto Newell plane using basis vectors
-        std::vector<Eigen::Vector2d> fVert2D(F[f].size());
-        for (int fv = 0; fv < fVertList.size(); fv++) {
-            Eigen::Vector3d fv_proj3D = Utils::projectPointOntoPlane(fNormal, barycenter, fVertList[fv]);
-            fVert2D[fv] = Utils::convertTo2D(fv_proj3D, barycenter, t1, t2);
-        }
-        
-        Eigen::Vector2d v_cp;
-        // Check if 2D point is in Newell polygon
-        // If so, take that one
-        if (Utils::pointInPolygon2D(v_proj2d, fVert2D)) {
-            v_cp = v_proj2d;
-        } else {
-            // Project onto all edges to find closest point in 2D
-            double min_eDist = std::numeric_limits<double>::infinity();
-            for (int i = 0; i < fVert2D.size(); i++) {
-                int j = (i + 1) % fVert2D.size();
-                Eigen::Vector2d cp = Utils::closestPointOnSegment2D(v_proj2d, fVert2D[i], fVert2D[j]);
-                double eDist = (cp - v_proj2d).squaredNorm();
-                if (eDist < min_eDist) {
-                    min_eDist = eDist;
-                    v_cp = cp;
-                }
-            }
-        }
-
-        Eigen::Vector3d v_proj = Utils::revertTo3D(v_cp, barycenter, t1, t2);
-
-        // True distance in 3D from query point
-        double dist = (v - v_proj).norm();
-
-        if (dist < min_dist) {
-            min_dist = dist;
-            proj = v_proj;
-            elIdx = f;
-        }
-    }
-
-    // Snap to nearby vertex or edge if we are too close
-    // NOTE: using GLOBAL, not geodesic distance, since this is too hard for non-planar faces
-    if (snap) {
-        // For the face that was landed on, check if we are close to a vertex on that face
-        std::vector<Eigen::Vector3d> fVertList(F[elIdx].size());
-        for (int fv = 0; fv < F[elIdx].size(); fv++) {
-            fVertList[fv] = V[F[elIdx][fv]];
-        }
-        
-        // Vertex check
-        for (int fv = 0; fv < F[elIdx].size(); fv++) {
-            // Once found, we can just return immediately
-            if ((proj - fVertList[fv]).norm() <= tol) {
-                proj = fVertList[fv];
-                elIdx = F[elIdx][fv];
-                return 0;
-            }
-        }
-
-        // If not, check if we are close to an edge in 3D
-        for (int fv = 0; fv < F[elIdx].size(); fv++) {
-            int fv1 = (fv + 1) % F[elIdx].size();
-            Eigen::Vector3d v_projE = Utils::closestPointOnSegment3D(proj, fVertList[fv], fVertList[fv1]);
-            // Once found, we can just return immediately
-            if ((proj - v_projE).norm() <= tol) {
-                proj = fVertList[fv];
-                elIdx = heMesh.edgeIdxFromVerts(F[elIdx][fv], F[elIdx][fv1]);
-                return 1;
-            }
-        }
-    }
-
-    // If not snapping, then we must be on a face
-    // Check if we are on a non-planar face. If so, pin-point the location using MVC
-    Eigen::VectorXd fHeight = H[elIdx];
-    bool planar = true;
-    for (int v = 0; v < fHeight.size(); v++) {
-        if (std::abs(fHeight(v)) >= 1e-6) {
-            planar = false;
-        }
-    }
-    if (planar || fHeight.size() == 3) {   // Planar face, no MVC interpolation to be done
-        return 2;
-    }
-
-    // Otherwise, we need to compute mean value coordinates to get projection location
-    // First, project all points into Newell plane
-    std::vector<Eigen::Vector3d> fVertList(F[elIdx].size());
-    for (int fv = 0; fv < F[elIdx].size(); fv++) {
-        fVertList[fv] = V[F[elIdx][fv]];
-    }
-    Eigen::Vector3d barycenter = DECUtils::computeBarycenter(fVertList);
-    // Get vector area normal
-    Eigen::Vector3d fNormal = fNormals[elIdx];
-    // Build local 2D basis
-    Eigen::Vector3d t1;
-    Eigen::Vector3d t2;
-    Utils::buildPlaneBasis(fNormals[elIdx], t1, t2);
-    Eigen::Vector2d v_proj2d = Utils::convertTo2D(proj, barycenter, t1, t2);
-
-    std::vector<Eigen::Vector2d> fVert2D(F[elIdx].size());
-    for (int fv = 0; fv < fVertList.size(); fv++) {
-        Eigen::Vector3d fv_proj3D = Utils::projectPointOntoPlane(fNormal, barycenter, fVertList[fv]);
-        fVert2D[fv] = Utils::convertTo2D(fv_proj3D, barycenter, t1, t2);
-    }
-    // Second, apply mean value coordinates to get height function weights
-    Eigen::VectorXd MVCWeights(fHeight.size());
-    Utils::meanValueCoordinates(v_proj2d, fVert2D, MVCWeights);
-
-    // Now recover the height using MVC weights
-    double h = MVCWeights.dot(fHeight);
-    // Add height to current Newell projection
-    proj += h * fNormal;
-
-    return 2;
 }
 
 }   // namespace Mesh
