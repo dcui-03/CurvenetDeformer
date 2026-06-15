@@ -237,7 +237,7 @@ bool directionAngleInPlane(
 }
 
 // Returns true if two angular values are effectively the same direction.
-bool anglesCoincident(double a, double b) {
+bool anglesCoincident(double a, double b, double eps) {
     double diff = std::abs(a - b);
     diff = std::min(diff, 2.0 * M_PI - diff);
     return diff <= eps;
