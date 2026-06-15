@@ -37,6 +37,19 @@ namespace Utils {
     // Computes the closest point to a triangle
     Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts, const Eigen::Vector3d p);
 
+    // Compute the angle between 
+    bool directionAngleInPlane(
+        const Eigen::Vector3d& origin,
+        const Eigen::Vector3d& target,
+        const Eigen::Vector3d& normal,
+        const Eigen::Vector3d& t1,
+        const Eigen::Vector3d& t2,
+        double& theta
+    );
+
+    // Returns true if two angular values are effectively the same direction.
+    bool anglesCoincident(double a, double b, double eps = 1e-10);
+
     // Project a vector onto a tangent plane, given the normal to the plane
     // Returns -1 if degenerate (shouldn't happen but we should handle it)
     double projectVectorOntoTangentPlane(const Eigen::Vector3d& normal, const Eigen::Vector3d& vec, Eigen::Vector3d& proj, double scale = 1.0);

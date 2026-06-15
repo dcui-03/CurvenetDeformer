@@ -200,6 +200,49 @@ Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts
     return a + vBary * ab + wBary * ac;
 }
 
+// Converts a 3D direction into an angle in the tangent plane spanned by t1, t2.
+// Returns false if the projected direction is degenerate.
+bool directionAngleInPlane(
+    const Eigen::Vector3d& origin,
+    const Eigen::Vector3d& target,
+    const Eigen::Vector3d& normal,
+    const Eigen::Vector3d& t1,
+    const Eigen::Vector3d& t2,
+    double& theta
+) {
+    const double eps = 1e-12;
+
+    Eigen::Vector3d n = normal;
+    if (n.squaredNorm() <= eps) {
+        return false;
+    }
+    n.normalize();
+
+    Eigen::Vector3d d = target - origin;
+    d = d - d.dot(n) * n;
+
+    if (d.squaredNorm() <= eps) {
+        return false;
+    }
+
+    const double x = d.dot(t1);
+    const double y = d.dot(t2);
+
+    theta = std::atan2(y, x);
+    if (theta < 0.0) {
+        theta += 2.0 * M_PI;
+    }
+
+    return true;
+}
+
+// Returns true if two angular values are effectively the same direction.
+bool anglesCoincident(double a, double b) {
+    double diff = std::abs(a - b);
+    diff = std::min(diff, 2.0 * M_PI - diff);
+    return diff <= eps;
+}
+
 // Find basis vectors for a planar region (ex. tangent plane)
 // Build plane basis given only n, and unitialized t1, t2
 void buildPlaneBasis(const Eigen::Vector3d& n, Eigen::Vector3d& t1, Eigen::Vector3d& t2) {

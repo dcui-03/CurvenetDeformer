@@ -8,6 +8,7 @@
 #include <vector>
 #include <limits>
 #include <utility>
+#include <algorithm>
 
 // Utility functions for mesh (projection, insertion, etc.)
 
@@ -37,7 +38,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
         if (!F[f].active) {
             continue;
         }
-        std::vector<int> fVerts = F[f].verts;
+        std::vector<int> fVerts = faceAdjVertIdxs(f);
         int fSize = fVerts.size();
         Eigen::Vector3d fNormal = F[f].n;
         std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(f);
@@ -93,9 +94,9 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     }
 
     // Definitive closest face's data
-    std::vector<int> fVerts = F[elIdx].verts;
+    std::vector<int> fVerts = faceAdjVertIdxs(elIdx);
     int fSize = fVerts.size();
-    std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(elIdx);
+    std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(fVerts);
     Eigen::Vector3d fN = F[elIdx].n;
 
     // Snap to nearby vertex or edge if we are too close
@@ -141,7 +142,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     // Otherwise, we need to compute mean value coordinates to get projection location
     Eigen::Vector3d barycenter = DECUtils::computeBarycenter(fVertsPos);
     // Build local 2D basis
-    Eigen::Vector3d t1 = (fVertsPos[1]- fVertsPos[0]).normalized();
+    Eigen::Vector3d t1 = (fVertsPos[1] - fVertsPos[0]).normalized();
     Eigen::Vector3d t2;
     Utils::buildPlaneBasis(fN, t1, t2);
     Eigen::Vector2d v_proj2d = Utils::convertTo2D(proj, barycenter, t1, t2);
@@ -164,19 +165,20 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
 }
 
 
-// Inserts a vertex at a location into a data structure
+// Inserts a vertex at a location and face
 // Returns the index of the new vertex
-// If no face information is provided, just -1
 // NOTE: The new vertex has no normal information or associated halfedge.
 int mesh::insertVertex(Eigen::Vector3d pos, int f, int dCN_idx) {
+    // Augment the associated face
+    // Do not accept any invalid or inactive faces
+    if (f < 0 || f >= F.size() || !F[f].active) {
+        return -1;
+    }
     int v = V.size();
     V.emplace_back();
     V[v].pos = pos;
     active_v++;
-    // Augment the associated face
-    if (f != -1) {
-        F[f].verts.push_back(v);
-    }
+    F[f].verts.push_back(v);
     // Add in the dCN info
     if (dCN_idx != -1) {
         V[v].dCN_idx = dCN_idx;
@@ -191,12 +193,30 @@ int mesh::splitEdge(int e, Eigen::Vector3d split_pos) {
     // Make and modify a copy of the current halfedges
     int he0_idx = E[e].he;
     int he1_idx = HE[he0_idx].twin;
+    int f0_idx = HE[he0_idx].face;
+    int f1_idx = HE[he1_idx].face;
     HalfEdge he0 = HE[he0_idx];
     HalfEdge he1 = HE[he1_idx];
     int u = HE[he1_idx].dest;
     int v = HE[he0_idx].dest;
+
     // Insert the new vertex into the mesh
-    int new_v = insertVertex(split_pos);
+    int new_v;
+    if ((f0_idx == f1_idx) && (f0_idx >= 0)) {  // No duplicate insertions
+        new_v = insertVertex(split_pos, f0_idx);
+    } else if (f0_idx >= 0) {
+        new_v = insertVertex(split_pos, f0_idx);
+        if (f1_idx >= 0) {
+            F[f1_idx].verts.push_back(new_v);
+        }
+    } else if (f1_idx >= 0) {
+        new_v = insertVertex(split_pos, f1_idx);
+        if (f0_idx >= 0) {
+            F[f0_idx].verts.push_back(new_v);
+        }
+    } else {
+        return -1;  // i.e., not a valid edge to split
+    }
     // Insert the new halfedges
     int he0_new = HE.size();
     int he1_new = he0_new + 1;
@@ -211,6 +231,7 @@ int mesh::splitEdge(int e, Eigen::Vector3d split_pos) {
     active_e++;
 
     // Re-wire the halfedges
+    // NOTE: Since it's copied from he0 and he1, we don't need to rewire halfedge faces
     HE[he0_new].twin = he1_new;
     HE[he1_new].twin = he0_new;
     HE[he0_new].edge = new_e;
@@ -255,16 +276,12 @@ int mesh::splitEdge(int e, Eigen::Vector3d split_pos) {
     vertPairToHE[{new_v, v}] = he0_new;
     vertPairToHE[{v, new_v}] = he1_new;
 
-    // Update adjacent non-boundary faces' loops and recompute normals and areas
-    if (HE[he0_idx].face != -1) {
-        F[HE[he0_idx].face].verts.push_back(new_v);
+    // Recompute adjacent face normals and areas
+    if (f0_idx != -1) {
         Eigen::Vector3d n;
-        F[HE[he0_idx].face].fArea = computeFVectorArea(HE[he0_idx].face, n);
-        F[HE[he0_idx].face].n = n;
-    } if (HE[he1_idx].face != -1) {
-        if (HE[he0_idx].face != HE[he1_idx].face) { // Do not insert duplicate vertices
-            F[HE[he1_idx].face].verts.push_back(new_v);
-        }
+        F[f0_idx].fArea = computeFVectorArea(HE[he0_idx].face, n);
+        F[f0_idx].n = n;
+    } if (f1_idx != -1) {
         Eigen::Vector3d n;
         F[HE[he1_idx].face].fArea = computeFVectorArea(HE[he1_idx].face, n);
         F[HE[he1_idx].face].n = n;
@@ -273,36 +290,331 @@ int mesh::splitEdge(int e, Eigen::Vector3d split_pos) {
     return new_v;
 }
 
-// Inserts a new edge connecting two vertices on a specified face
-// Returns the index of the new edge
-int insertEdge(int f, int v0, int v1, int dCN_idx, int dCN_idx0, int dCN_idx1, bool positive0) {
-    // Check if both vertices actually share the specified face and do not have an existing edge (or if at least one of the vertices has no halfedge)
+int mesh::insertEdge(int f, int v0, int v1, int dCN_idx0, int dCN_idx1, bool positive0) {
+    // Validate inputs
+    if (f < 0 || f >= F.size() || !F[f].active) {   // valid face
+        return -1;
+    }
+    if (v0 < 0 || v0 >= V.size() || !V[v0].active) {    // valid v0
+        return -1;
+    }
+    if (v1 < 0 || v1 >= V.size() || !V[v1].active) {    // valid v1
+        return -1;
+    }
+    if (v0 == v1) { // cannot draw edge from a point to itself
+        return -1;
+    }
 
-    // If so, create new halfedges he0 and he1 connecting the two
+    // Check if edge already exists
+    if (vertPairToHE.find({v0, v1}) != vertPairToHE.end() || vertPairToHE.find({v1, v0}) != vertPairToHE.end()) {
+        return -1;
+    }
 
-    // Create a new edge for the halfedges
+    // Check that both verts belong to this face
+    bool v0_inF = false;
+    bool v1_inF = false;
+    for (int fv : F[f].verts) {
+        if (fv == v0) {
+            v0_inF = true;
+        }
+        if (fv == v1) {
+            v1_inF = true;
+        }
+    }
+    if (!v0_inF || !v1_inF) {   // If they don't belong to the face, then return
+        return -1;
+    }
 
-    // Copy the old next0, prev0; old next1, prev1 and reconnect using the new he0 and he1
-    // BE CAREFUL: if next0.twin == prev1 of next1.twin == prev0, then that means we are adding an edge off an endpoint --> CANNOT close the face
-    // Another case here?
+    // Note if any vertices are isolated
+    const bool v0_isolated = (V[v0].he == -1);
+    const bool v1_isolated = (V[v1].he == -1);  
+    int he0_prev = -1;
+    int he1_prev = -1;
 
-    // Starting from he0, trace the new halfedge path until either he1 is reached, or he0 is reached.
-    // If he0 is reached first, then trace he1 as well. Split into two faces.
-    // If he1 is reached first, then we have some sort of endpoint structure or an enclosed shape --> no split
-    //      Finish the loop and keep track of the entire loop.
-    //      ???
-    //      I think checking for enclosed new faces might be too expensive. Warn user not to produce this bad behavior
+    // ------------------------------------------------------------
+    // Slot selection
+    // ------------------------------------------------------------
+    if (!v0_isolated) {
+        if (!chooseEdgeInsertHE(f, v0, v1, he0_prev)) {
+            return -1;
+        }
+    }
+    if (!v1_isolated) {
+        if (!chooseEdgeInsertHE(f, v1, v0, he1_prev)) {
+            return -1;
+        }
+    }
 
-    // Face splitting
-    // 1. Create a new face for h1. For every single HE in this loop, change its face index to the new face index
-    //      For the new face index, add in all of the new vertices that are dest points of the HE loop.
-    // 2. For the old face, simply remove all of the vertices that are dest points of the new face.
-
-    // If NOT splitting, make sure to add any new vertices to the face's vertex list.
-
-    // return the new edge index
-    return 1;
+    // Based on these, apply edge insertion
+    return insertEdgeBetweenHEs(
+        f,
+        v0,
+        v1,
+        he0_prev,
+        v0_isolated,
+        he1_prev,
+        v1_isolated,
+        dCN_idx0,
+        dCN_idx1,
+        positive0
+    );
 }
 
+// Inserts a new edge connecting two vertices on a specified face
+// Returns the index of the new edge
+// NOTE: This should only mainly be used as a helper for insertEdge()
+int mesh::insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isolated, int he1_prev, int v1_isolated, int dCN_idx0, int dCN_idx1, bool positive0) {
+    // Create new halfedges he0 and he1 connecting the two vertices
+    int he0 = HE.size();
+    int he1 = he0+1;
+    HE.emplace_back();
+    HE.emplace_back();
+    // Convention: u->v is the pos/0 side, and v->u is the neg/1 side
+    HE[he0].dest = v1;
+    HE[he1].dest = v0;
+    HE[he0].twin = he1;
+    HE[he1].twin = he0;
+    // Replace vertex halfedges if not already pointing to a boundary
+    if (v0_isolated || !vertIsBoundary(v0)) {
+        V[v0].he = he0;
+    }
+    if (v1_isolated || !vertIsBoundary(v1)) {
+        V[v1].he = he1;
+    }
+    // For safety, set initial face to f
+    HE[he0].face = f;
+    HE[he1].face = f;
+    // Separate the index assignment of dCN for both halfedges
+    if (dCN_idx0 != -1) {
+        HE[he0].dCN_idx = dCN_idx0;
+        HE[he0].dCN_sign = positive0;
+    }
+    if (dCN_idx1 != -1) {
+        HE[he1].dCN_idx = dCN_idx1;
+        HE[he1].dCN_sign = !positive0;
+    }
+    vertPairToHE[{v0, v1}] = he0;
+    vertPairToHE[{v1, v0}] = he1;
+    // Create a new edge for the halfedges
+    int e = E.size();
+    E.emplace_back();
+    E[e].he = he0;
+    HE[he0].edge = e;
+    HE[he1].edge = e;
+    active_e++;
+
+    // Case 1: both vertices are isolated
+    if (v0_isolated && v1_isolated) {
+        HE[he0].next = he1;
+        HE[he0].prev = he1;
+        HE[he1].next = he0;
+        HE[he1].prev = he0;
+        return e;
+    }
+
+    // NOTE: The following if statements can likely be streamlined
+    // Case 2: v0 is isolated but v1 is not
+    else if (v0_isolated && !v1_isolated) {
+        HE[he0].next = HE[he1_prev].next;
+        HE[HE[he1_prev].next].prev = he0;
+
+        HE[he0].prev = he1;
+        HE[he1].next = he0;
+
+        HE[he1].prev = he1_prev;
+        HE[he1_prev].next = he1;
+        return e;
+    } else if (!v0_isolated && v1_isolated) {
+        HE[he1].next = HE[he0_prev].next;
+        HE[HE[he0_prev].next].prev = he1;
+
+        HE[he0].next = he1;
+        HE[he1].prev = he0;
+
+        HE[he0].prev = he0_prev;
+        HE[he0_prev].next = he0;
+        return e;
+    } else {
+        // Otherwise, both are not isolated
+        HE[he0].next = HE[he1_prev].next;
+        HE[he0].prev = he0_prev;
+        HE[he1].next = HE[he0_prev].next;
+        HE[he1].prev = he1_prev;
+
+        HE[he0_prev].next = he0;
+        HE[HE[he1].next].prev = he1;
+        HE[he1_prev].next = he1;
+        HE[HE[he0].next].prev = he0;
+
+        // Check if we need to split the face
+        // If we trace a loop from he0 and can recover he1, then we must form a closed face
+        // Otherwise, the two must be disconnected
+        bool split_face = true;
+        std::vector<int> f0_HEloop = halfedgeLoop(he0);
+        for (int i = 0; i < f0_HEloop.size(); i++) {
+            if (f0_HEloop[i] == he1) {
+                split_face = false;
+                break;
+            }
+        }
+        if (split_face) {
+            // Face Split strategy: Let he0 and its loop keep the original face
+            // Create a new face for he1's loop. Then remove the vertices in the new face from the vert list of the original.
+            int new_f = F.size();
+            F.emplace_back();
+            F[new_f].he = he1;  // Always give the new face to the cycle containing he1
+            HE[he1].face = new_f;
+
+            std::vector<int> f1_HEloop = halfedgeLoop(he1);
+            // Get new face's vertices
+            std::vector<int> f1_Vloop(f1_HEloop.size());
+            for (int i = 0; i < f1_HEloop.size(); i++) {
+                f1_Vloop[i] = HE[f1_HEloop[i]].dest;
+            }
+            // Remove unique vertices in new face from the first face
+            for (int f1_he = 0; f1_he < f1_HEloop.size(); f1_he++) {
+                HE[f1_HEloop[f1_he]].face = new_f;
+                int he_vert = HE[f1_HEloop[f1_he]].dest;
+                // Check if the vertex is shared by f0 (i.e., twin's face)
+                if (HE[HE[f1_HEloop[f1_he]].twin].face == f) {
+                    continue;   // Skip, do not delete
+                }
+                int rm_idx = -1;
+                // Find removal index
+                for (int f0_v = 0; f0_v < F[f].verts.size(); f0_v++) {
+                    if (he_vert == F[f].verts[f0_v]) { // Check if the vertex list in f contains f1_v
+                        rm_idx = f0_v;
+                    }
+                }
+                if (rm_idx != -1) { // Remove
+                    F[f].verts.erase(F[f].verts.begin() + rm_idx);
+                }
+            }
+            // Assign the new face its vertex loop
+            F[new_f].verts = f1_Vloop;
+            F[new_f].he = he1;
+            F[f].he = he0;
+            active_f++;
+            // Recompute face normal and area for adjacent faces
+            Eigen::Vector3d f0_n, f1_n;
+            double f0_area = computeFVectorArea(f, f0_n);
+            double f1_area = computeFVectorArea(new_f, f1_n);
+            F[f].fArea = f0_area;
+            F[f].n = f0_n;
+            F[new_f].fArea = f1_area;
+            F[new_f].n = f1_n;
+            return e;
+        }
+
+        // If NOT splitting, make sure to add any new vertices to the face's vertex list.
+        for (int i = 0; i < f0_HEloop.size(); i++) {
+            int he_vert = HE[f0_HEloop[i]].dest;
+            bool exists = false;
+            // Check if vert already exists in the current face's list.
+            for (int f0_v = 0; f0_v < F[f].verts.size(); f0_v++) {
+                if (he_vert == F[f].verts[f0_v]) { // Check if the vertex list in f contains the vert
+                    exists = true;
+                }
+            }
+            if (!exists) {
+                F[f].verts.push_back(he_vert);
+            }
+        }
+    }
+    // Recompute face normal and area
+    Eigen::Vector3d f_n;
+    double f_area = computeFVectorArea(f, f_n);
+    F[f].fArea = f_area;
+    F[f].n = f_n;
+
+    // return the new edge index
+    return e;
+}
+
+// Helper for edge insertion. Chooses best insertion point
+bool mesh::chooseEdgeInsertHE(int f, int v, int target, int& he_prev_out) {
+    he_prev_out = -1;
+
+    // Basic validation
+    if (f < 0 || f >= F.size() || !F[f].active) {
+        return false;
+    }
+    if (v < 0 || v >= V.size() || !V[v].active) {
+        return false;
+    }
+    if (target < 0 || target >= V.size() || !V[target].active) {
+        return false;
+    }
+    // If a vertex is isolated, immediately return nothing.
+    if (V[v].he == -1) {
+        return false;
+    }
+
+    // Gather outgoing halfedges from v that are incident to face f.
+    std::vector<int> adjHEs = vertAdjHEs(v);
+    std::vector<int> faceOutgoingHEs;
+    for (int he : adjHEs) {
+        if (!HE[he].active) {
+            continue;
+        }
+        if (HE[he].face == f) {
+            faceOutgoingHEs.push_back(he);
+        }
+    }
+    if (faceOutgoingHEs.empty()) {
+        return false;
+    }
+
+    // If there's only one incident halfedge to this face, then just grab the previous and return
+    if (faceOutgoingHEs.size() == 1) {
+        int nextHE = faceOutgoingHEs[0];
+        int prevHE = HE[nextHE].prev;
+        he_prev_out = prevHE;
+        return true;
+    }
+
+    // OTHERWISE: We need to do an angle check to figure out
+    // where to insert the new halfedge
+    const double eps = 1e-12;
+    Eigen::Vector3d n = F[f].n;
+    // Build 2D basis for Newell plane
+    Eigen::Vector3d t1, t2;
+    Utils::buildPlaneBasis(n, t1, t2);
+    const Eigen::Vector3d& p = V[v].pos;
+    // Compute angles on the plane relative to bases and store as a list
+    double thetaNew = 0.0;
+    if (!Utils::directionAngleInPlane(p, V[target].pos, n, t1, t2, thetaNew)) {
+        return false;
+    }
+    std::vector<std::pair<double, int>> candidateAngles;
+    candidateAngles.reserve(faceOutgoingHEs.size());
+
+    for (int he : faceOutgoingHEs) {
+        int dst = HE[he].dest;
+        double theta = 0.0;
+        if (!Utils::directionAngleInPlane(p, V[dst].pos, n, t1, t2, theta)) {
+            return false;
+        }
+        if (Utils::anglesCoincident(theta, thetaNew)) {
+            return false;
+        }
+        candidateAngles.push_back({theta, he});
+    }
+    // Sort the list by angle
+    std::sort(candidateAngles.begin(), candidateAngles.end(),
+              [](const std::pair<double, int>& a, const std::pair<double, int>& b) {return a.first < b.first;});
+
+    // Find first existing outgoing halfedge CCW after the new direction.
+    int nextOutgoing = candidateAngles[0].second;
+    for (const std::pair<double, int> candidate : candidateAngles) {
+        if (candidate.first > thetaNew) {
+            nextOutgoing = candidate.second;
+            break;
+        }
+    }
+    // Grab the previous halfedge as the one we want
+    he_prev_out = HE[nextOutgoing].prev;
+    return true;
+}
 
 }   // namespace Mesh

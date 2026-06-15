@@ -15,7 +15,7 @@ std::vector<int> mesh::vertAdjHEs(int v) {
     int he_curr = he0;
     do {
         outgoingHEs.push_back(he_curr);
-        he_curr = HE[HE[he0].prev].twin;
+        he_curr = HE[HE[he_curr].prev].twin;
     } while (he_curr != he0);
     return outgoingHEs;
 }
@@ -53,6 +53,20 @@ std::vector<int> mesh::vertAdjFaces(int v) {
     return adjFaces;
 }
 
+// Get an arbitrary vertex loop starting from a certain halfedge index
+std::vector<int> mesh::vertLoop(int he) {
+    int max_search = active_e/2;
+    int iter = 0;
+    std::vector<int> vLoop;
+    int he_curr = he;
+    do {
+        vLoop.push_back(HE[he_curr].dest);
+        he_curr = HE[he_curr].next;
+        iter++;
+    } while((he_curr != he) && (iter <= max_search));
+    return vLoop;
+}
+
 // Returns the endpoints of an edge in an arbitrary order.
 std::pair<int, int> mesh::edgeAdjVerts(int e) {
     int he = E[e].he;
@@ -77,6 +91,21 @@ int mesh::halfedgeAtFaceEdge(int f, int e) {
         return he0;
     }
     return he1;
+}
+
+// Get an arbitrary halfedge loop starting from a certain index
+std::vector<int> mesh::halfedgeLoop(int he) {
+    int max_search = active_e/2;
+    int iter = 0;
+    std::vector<int> heLoop;
+    int he_curr = he;
+    do {
+        heLoop.push_back(he_curr);
+        he_curr = HE[he_curr].next;
+        iter++;
+    } while((he_curr != he) && (iter <= max_search));
+    
+    return heLoop;
 }
 
 // Returns a CCW list of a face's vertices

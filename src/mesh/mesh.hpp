@@ -70,15 +70,20 @@ class mesh {
         // ------------- UTILITIES (mesh_utils.cpp) -----------------
 
         // Inserts a vertex at a location into a data structure and appends to a corresponding face
+        // NOTE: For safety, REQUIRE that vertex is attached to a real face
         // Returns the index of the new vertex
-        int insertVertex(Eigen::Vector3d pos, int f = -1, int dCN_idx = -1);
+        int insertVertex(Eigen::Vector3d pos, int f, int dCN_idx = -1);
         // Topologically splits an existing edge by adding a new vertex.
         // NOTE: Added vertex does NOT need to lie on the edge
         // Returns index of the new vertex
         int splitEdge(int e, Eigen::Vector3d split_pos);
-        // Inserts a new edge connecting two vertices on a specified face
+        // Main function that inserts a new edge connecting two vertices on a specified face
         // Returns the index of the new edge
         int insertEdge(int f, int v0, int v1, int dCN_idx0 = -1, int dCN_idx1 = -1, bool positive0 = true);
+        // Helper that actually does the new edge insertion at an exact halfedge location
+        int insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isolated, int he1_prev, int v1_isolated, int dCN_idx0, int dCN_idx1, bool positive0);
+        // Helper that determines which halfedge to insert the new edge at.
+        bool chooseEdgeInsertHE(int f, int v, int target, int& he_prev_out);
 
         // ------------- ITERATORS + QUERYING (mesh_iter.cpp) -----------------
 
@@ -86,6 +91,8 @@ class mesh {
         std::vector<int> vertAdjHEs(int v);
         // Returns a CCW list of a vertex's adjacent vertices
         std::vector<int> vertAdjVerts(int v);
+        // Returns a list of vertices in a loop from a given halfedge
+        std::vector<int> mesh::vertLoop(int he);
         // Returns a CCW list of a vertex's adjacent faces
         std::vector<int> vertAdjFaces(int v);
 
@@ -96,6 +103,8 @@ class mesh {
 
         // Returns the halfedge index given the face index and edge index
         int halfedgeAtFaceEdge(int f, int e);
+        // Get an arbitrary halfedge loop
+        std::vector<int> halfedgeLoop(int he);
 
         // Returns a CCW list of a face's vertices
         std::vector<Eigen::Vector3d> faceAdjVerts(int f);
