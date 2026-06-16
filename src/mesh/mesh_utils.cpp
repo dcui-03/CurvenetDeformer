@@ -58,7 +58,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
             Eigen::Vector2d v_proj2d = Utils::convertTo2D(v_proj3d, barycenter, t1, t2);
 
             // Project face vertices onto Newell plane using basis vectors
-            std::vector<Eigen::Vector2d> fVert2D(fSize);
+            vector2dList fVert2D(fSize);
             for (int fv = 0; fv < fSize; fv++) {
                 Eigen::Vector3d fv_proj3D = Utils::projectPointOntoPlane(fNormal, barycenter, fVertsPos[fv]);
                 fVert2D[fv] = Utils::convertTo2D(fv_proj3D, barycenter, t1, t2);
@@ -147,7 +147,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     Utils::buildPlaneBasis(fN, t1, t2);
     Eigen::Vector2d v_proj2d = Utils::convertTo2D(proj, barycenter, t1, t2);
 
-    std::vector<Eigen::Vector2d> fVerts2D(fSize);
+    vector2dList fVerts2D(fSize);
     for (int fv = 0; fv < fSize; fv++) {
         Eigen::Vector3d fv_proj3D = Utils::projectPointOntoPlane(fN, barycenter, fVertsPos[fv]);
         fVerts2D[fv] = Utils::convertTo2D(fv_proj3D, barycenter, t1, t2);

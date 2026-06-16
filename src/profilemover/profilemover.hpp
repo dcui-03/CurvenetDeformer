@@ -16,9 +16,10 @@ class profilemover {
         // Constructor, which takes the mesh vertices and connectivity, as well as the spline controls and their connectivities
         // NOTE: We should define each curve by [start, tangent1, tangent 2, end]
         profilemover(std::vector<Eigen::Vector3d>& meshV,
-                      std::vector<std::vector<int>>& meshT,
-                      std::vector<Eigen::Vector3d> controlP,
-                      std::vector<std::vector<int>> curveC);
+                     std::vector<std::vector<int>>& meshT,
+                     std::vector<Eigen::Vector3d> controlP,
+                     std::vector<std::vector<int>> curveC,
+                     int alpha = 5);
         profilemover(Mesh::mesh& m, Curvenet::curvenet& c);
 
         // Precompute cut-mesh and operators
@@ -38,13 +39,19 @@ class profilemover {
         void initializeMesh(std::vector<Eigen::Vector3d>& meshV, std::vector<std::vector<int>>& meshT);
         void initializeCurvenet(std::vector<Eigen::Vector3d> controlP, std::vector<std::vector<int>> curveC);
 
+        // TODO: Figure out what to do with the num samples func
+        int spline::computeNumSamples(int alpha, double meanE, double arclength) {
+            return std::max(2, static_cast<int>(alpha * (arclength)/meanE));
+        }
+
 
         // Computes deformations on the temporary discrete curvenet, then fills in a list of flattened deformation
         // gradients per vertex
         void computeDeformationGradients(DCurvenet::dcurvenet& tempDC, std::vector<Eigen::VectorXd>& defGrads);
 
         // Store copy of initial mesh
-        // TODO: Need to pick a HE mesh class (ex. GeometryCentral or minimesh)
+        Mesh::mesh cutMesh;
+        
         
 
         // NOTE: no need to store updated states curvenet and dcurvenet, we have to create new copies at execution time

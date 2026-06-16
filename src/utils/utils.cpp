@@ -75,21 +75,28 @@ void copyConnectivity(const std::vector<std::vector<int>>& T_old, std::vector<st
 }
 
 // SORTING
-void sortAscending_IDsUsingValues(std::vector<int> idxs, std::vector<double> values) {
-    for (int i = 0; i < values.size(); ++i) {
-        int best = i;
-        for (int j = i + 1; j < values.size(); ++j) {
-            if (values[j] < values[best]) {
-                best = j;
+void doubleListIdxSort(std::vector<double>& ref_List, std::vector<int>& idx_List) {
+    if (ref_List.size() != idx_List.size()) {
+        return;
+    }
+
+    const int n = static_cast<int>(ref_List.size());
+
+    for (int i = 0; i < n - 1; ++i) {
+        bool swapped = false;
+
+        for (int j = 0; j < n - i - 1; ++j) {
+            if (ref_List[j] > ref_List[j + 1]) {
+                std::swap(ref_List[j], ref_List[j + 1]);
+                std::swap(idx_List[j], idx_List[j + 1]);
+                swapped = true;
             }
         }
 
-        if (best != i) {
-            std::swap(values[i], values[best]);
-            std::swap(idxs[i], idxs[best]);
+        if (!swapped) {
+            break;
         }
     }
-    return;
 }
 
 // Insert an integer entry in a list between two specified values
@@ -304,7 +311,7 @@ Eigen::Vector3d projectPointOntoPlane(const Eigen::Vector3d& normal, const Eigen
 
 // Check if a 2D point is in a 2D polygon
 // To do this, we do raycasting to the segment
-bool pointInPolygon2D(const Eigen::Vector2d& p, const std::vector<Eigen::Vector2d>& poly) {
+bool pointInPolygon2D(const Eigen::Vector2d& p, const vector2dList& poly) {
     bool inside = false;
     int n = poly.size();
 
@@ -379,7 +386,7 @@ bool computeFaceIntersection(const std::vector<Eigen::Vector3d>& fVerts, const E
     Eigen::Vector3d t1, t2;
     buildPlaneBasis(fNormal, t1, t2);
     // Project face into 2D
-    std::vector<Eigen::Vector2d> fVerts2D(fVerts.size());
+    vector2dList fVerts2D(fVerts.size());
     for (int fv = 0; fv < fVerts.size(); fv++) {
         Eigen::Vector3d fVertProj = projectPointOntoPlane(fNormal, start, fVerts[fv]);
         fVerts2D[fv] = convertTo2D(fVertProj, start, t1, t2);
@@ -447,7 +454,7 @@ bool computeFaceIntersectionTarget(const std::vector<Eigen::Vector3d>& fVerts, c
     Eigen::Vector3d t1, t2;
     buildPlaneBasis(fNormal, t1, t2);
     // Project face into 2D
-    std::vector<Eigen::Vector2d> fVerts2D(fVerts.size());
+    vector2dList fVerts2D(fVerts.size());
     for (int fv = 0; fv < fVerts.size(); fv++) {
         Eigen::Vector3d fVertProj = projectPointOntoPlane(fNormal, start, fVerts[fv]);
         fVerts2D[fv] = convertTo2D(fVertProj, start, t1, t2);
@@ -528,7 +535,7 @@ double computeSign(const double& value) {
     return 0.0;
 }
 
-void meanValueCoordinates(const Eigen::Vector2d& target, const std::vector<Eigen::Vector2d>& cage, Eigen::VectorXd& weights) {
+void meanValueCoordinates(const Eigen::Vector2d& target, const vector2dList& cage, Eigen::VectorXd& weights) {
     weights.setZero();
 
     double W = 0.0;

@@ -279,7 +279,7 @@ Eigen::VectorXd mesh::computeFaceHeight(int f) {
     Eigen::Vector3d faceCenter = DECUtils::computeBarycenter(fVertsPos);
     Eigen::Vector3d faceN = F[f].n;
     // 2. Project face vertices onto the Newell plane and grab height
-    std::vector<Eigen::Vector2d> proj_v(fSize);
+    vector2dList proj_v(fSize);
     // Build a basis
     Eigen::Vector3d t1;
     Eigen::Vector3d t2;

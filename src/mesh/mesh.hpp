@@ -4,11 +4,14 @@
 #include "dcurvenet/dcurvenet.hpp"
 #include "mesh_types.hpp"
 #include <Eigen/Core>
+#include <Eigen/StdVector>
 #include <vector>
-#include <unordered_map>
+#include <map>
 
 
 namespace Mesh {
+
+using vector2dList = std::vector<Eigen::Vector2d, Eigen::aligned_allocator<std::vector<Eigen::Vector2d>>>;
 
 // Template mesh class that augments our standard mesh setup with some quantities we need
 /* 

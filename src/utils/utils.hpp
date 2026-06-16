@@ -2,10 +2,18 @@
 #pragma once
 
 #include <Eigen/Core>
+#include <Eigen/StdVector>
 #include <glm/vec3.hpp>
 #include <vector>
 
+// MAJOR TODO: For any instance of a vector2dList, you MUST add an Eigen allocator to prevent bad behavior when 
+// compiling with c++11 or c++14. See documentation: https://libeigen.gitlab.io/eigen/docs-nightly/group__TopicStlContainers.html
+// While default compiler is c++17, this prevents annoyances if other people want to work on the code with a different c++.
+
 namespace Utils {
+    using vector2dList = std::vector<Eigen::Vector2d, Eigen::aligned_allocator<std::vector<Eigen::Vector2d>>>;
+
+
     // GLM::vec3 to Eigen::Vector3d converter
     Eigen::Vector3d glmToEigen(const glm::vec3 input);
 
@@ -26,7 +34,7 @@ namespace Utils {
     void copyConnectivity(const std::vector<std::vector<int>>& T_old, std::vector<std::vector<int>>& T_new);
 
     // SORTING
-    void sortAscending_IDsUsingValues(std::vector<int> idxs, std::vector<double> values);
+    void doubleListIdxSort(std::vector<double>& ref_List, std::vector<int>& idx_List);
 
     // Insert at index between a pair of indices in a list
     bool insertIdxBetweenPair(std::vector<int>& idxList, int a, int b, int new_idx);
@@ -68,7 +76,7 @@ namespace Utils {
 
     // Check if a 2D point is in a 2D polygon
     // To do this, we do raycasting to the segment
-    bool pointInPolygon2D(const Eigen::Vector2d& p, const std::vector<Eigen::Vector2d>& poly);
+    bool pointInPolygon2D(const Eigen::Vector2d& p, const vector2dList& poly);
 
     bool raycastToSegment2D(const Eigen::Vector2d& p, const Eigen::Vector2d& direc, const Eigen::Vector2d& v0, const Eigen::Vector2d& v1, double& t, double& u, bool clip = true);
 
@@ -94,6 +102,6 @@ namespace Utils {
 
     // Returns the weights only
     // Follows method of Fuda and Hormann [2024]
-    void meanValueCoordinates(const Eigen::Vector2d& target, const std::vector<Eigen::Vector2d>& cage, Eigen::VectorXd& weights);
+    void meanValueCoordinates(const Eigen::Vector2d& target, const vector2dList& cage, Eigen::VectorXd& weights);
 
 } // namespace Utils
