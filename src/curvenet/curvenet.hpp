@@ -2,7 +2,9 @@
 #pragma once
 
 #include "curvenet_types.hpp"
+#include "mesh/mesh.hpp"
 #include <Eigen/Core>
+#include <vector>
 #include <array>
 
 namespace Curvenet {
@@ -19,28 +21,29 @@ class curvenet {
 
         // --------- SAMPLING -----------
         // Sample a bezier curve at time t
-        Eigen::Vector3d tSampleBezier(Eigen::Vector3d c0, Eigen::Vector3d c1, Eigen::Vector3d c2, Eigen::Vector3d c3, double t);
-        Eigen::Vector3d tSampleBezier(int s, double t);
+        Eigen::Vector3d tSampleBezier(const Eigen::Vector3d& c0, const Eigen::Vector3d& c1, const Eigen::Vector3d& c2, const Eigen::Vector3d& c3, double t) const;
+        Eigen::Vector3d tSampleBezier(int s, double t) const;
         // NOTE: This is a naive, fast sampler that uniformly samples t's. Re-implement if desired
-        // Returns n_samples+1 points on the curve, including the endpoints
-        std::vector<Eigen::Vector3d> sampleBezierNaive(int s, int n_samples = 50);
+        // Returns n_samples points on the curve, including the endpoints
+        std::vector<Eigen::Vector3d> sampleBezierNaive(int s, int n_samples = 50) const;
         // Estimate the arclength
-        double arclenEst(int s, int n_samples = 50);
-        double arclenEst(std::vector<Eigen::Vector3d>);
+        double arclenEst(int s, int n_samples = 50) const;
+        double arclenEst(const std::vector<Eigen::Vector3d>& samples) const;
         // Uniformly sample based on arclength estimator
         // Takes a user parameter alpha which helps control sampling
-        std::vector<Eigen::Vector3d> unifSample(int s, int n_samples = 50);
+        std::vector<Eigen::Vector3d> unifSample(int s, int n_samples = 50) const;
 
         // --------- EDITING -----------
         // Exposed position edits
-        int editControlPos(int c, const Eigen::Vector3d pos);
+        int editControlPos(int c, Eigen::Vector3d pos);
         // Exposed normal augmentation
         // NOTE: Normals should only applied to vertices once, by projection onto the mesh
         int editControlN(int c, Eigen::Vector3d normal);
 
         // --------- OTHER -----------
+        int ctrlNormalsFromMesh(const Mesh::mesh& m);
         int sortAdjHEAll();
-        int assignCtrlTypeAll(int c);
+        int assignCtrlTypeAll();
     protected:
         // No class inheritance
     private:
@@ -53,14 +56,13 @@ class curvenet {
 
         // --------- ITERATORS -----------
         // Get the adjacent tangent vectors to a control vertex
-        std::vector<Eigen::Vector3d> ctrlAdjTans(int c);
+        std::vector<Eigen::Vector3d> ctrlAdjTans(int c) const;
 
         // Returns a list of the splines adjacent to a control 
-        // If no self loops, then these are CCW
-        std::vector<int> ctrlAdjSplines(int c);
+        std::vector<int> ctrlAdjSplines(int c) const;
 
         // Returns vertices adjacent to a spline
-        std::vector<int> curvenet::splineAdjCtrls(int s);
+        std::vector<int> splineAdjCtrls(int s) const;
 
         //  --------- OTHER -----------
         // Sort the halfedges of a control to be CCW
@@ -73,7 +75,6 @@ class curvenet {
         std::vector<Control> C;
         std::vector<HalfEdge> HE;
         std::vector<CubicSpline> S;
-        
 };
 
 }   // namespace Curvenet

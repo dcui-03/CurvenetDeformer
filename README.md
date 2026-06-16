@@ -8,13 +8,15 @@ Polyscope and libigl deps planned to be removed in the future.
 
 Re-written curvenet class stripped to the bare minimum. The paradigm for the curvenet class is that it takes an existing curve network of bezier splines from some other editing software and statically builds it, meaning we don't need too many complicated functions for adding and removing, etc. These are the job of the front-end bezier curve data structure.
 
+Began drafting discrete curvenet. Still some minor tweaks that need to be made to mesh class and curvenet class.
+
 **NOTES**
 
 Important note about Eigen. For Eigen fixed-size containers that are a multiple of 16 in size (ex. Vector2d, Matrix4d), they cannot be directly placed into a std::vector<> if compiling with c++11 or 14, since they need to be placed at fixed sizes in memory. See utils.hpp or mesh.hpp for how to deal with this (i.e., allocator).
 
 This does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects, though. In addition, c++17 handles this implicitly, so no need to handle if using c++17. However, it's good to put the allocators in for fixed-size 16 data types anyways for reliability.
 
-**Big TODO's**:
+**Big TODOs**:
 
 - *Discrete Curvenet*: Re-do discrete curvenet class. Treat as a halfedge data structure, which makes indices into the dCN on the cut-mesh easier.
 
@@ -26,10 +28,14 @@ This does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects
 
 - *Debugging and Cleaning*: Try to avoid constructing 2D basis + redundancy.
 
+- *Curve Network Saving*: Save an initialized spline curvenetwork to some sparse file type (OBJ for splines???) so they can be loaded and reused.
+
+- *Projection Posing*: As mentioned in paper, compute cut-mesh from rest pose, then move all dcurvenet vertices and cut-mesh to the new configuration. Seems like curvenet is unusable like this??? Maybe only if you have pre-defined poses for the curvenet, you can transfer them? Maybe there's a scheme for editing the dcurvenet directly that I can look into?
+
 **Small Steps**:
 
-- Debug and check the 
+- The paper says not to update the vector area of each face in the cut-mesh during insertion.... Also, need to do a check to remove edge chains that are fully within a face.
 
-- Re-implement discrete curvenet as a "half-edge" type data structure where each "edge" has two directional halfedges and each halfedge can store its own scaled frame. Verts, half edges, edges, and splines can all be structs in this case, where each points to the others in a principled way. Provide functions for iterators (vertAdjHEs, vertAdjSplines), basic spline insertion, vertPairToHE map.
+- Re-implement discrete curvenet as a "half-edge" type data structure.
 
 - Add IO function to visualize mesh edits in polyscope and debug mesh class.

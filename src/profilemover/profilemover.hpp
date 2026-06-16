@@ -13,14 +13,8 @@ namespace ProfileMover {
 
 class profilemover {
     public:
-        // Constructor, which takes the mesh vertices and connectivity, as well as the spline controls and their connectivities
-        // NOTE: We should define each curve by [start, tangent1, tangent 2, end]
-        profilemover(std::vector<Eigen::Vector3d>& meshV,
-                     std::vector<std::vector<int>>& meshT,
-                     std::vector<Eigen::Vector3d> controlP,
-                     std::vector<std::vector<int>> curveC,
-                     int alpha = 5);
-        profilemover(Mesh::mesh& m, Curvenet::curvenet& c);
+        // Constructor, which first builds the mesh
+        profilemover(std::vector<Eigen::Vector3d>& meshV, std::vector<std::vector<int>>& meshT);
 
         // Precompute cut-mesh and operators
         void precomputation();
@@ -66,13 +60,10 @@ class profilemover {
 
         
         // Store operators
-        // TODO: Do we need to store L, V separately?
         // TODO: Need functions to compute V and C
+        // TODO: Instead of storing VtLV, store its factorization.
         Eigen::SparseMatrix<double> VtLV;
         Eigen::SparseMatrix<double> mVtL;
-
-        Eigen::SparseMatrix<double> L;
-        Eigen::SparseMatrix<double> V;
         Eigen::SparseMatrix<double> C;
         
 };

@@ -8,8 +8,8 @@
 
 
 namespace Curvenet {
-    // Returns a CCW list of the tangents to a specified control
-    std::vector<Eigen::Vector3d> curvenet::ctrlAdjTans(int c) {
+    // Returns a list of the tangents to a specified control
+    std::vector<Eigen::Vector3d> curvenet::ctrlAdjTans(int c) const {
         std::vector<Eigen::Vector3d> adjT;
         for (int he = 0; he < C[c].adjHE.size(); he++) {
             adjT.push_back(HE[C[c].adjHE[he]].tan);
@@ -18,8 +18,7 @@ namespace Curvenet {
     }
 
     // Returns a list of the splines adjacent to a control 
-    // If no self loops, then these are CCW
-    std::vector<int> curvenet::ctrlAdjSplines(int c) {
+    std::vector<int> curvenet::ctrlAdjSplines(int c) const {
         std::vector<int> adjS;
         std::vector<int> adjHE = C[c].adjHE;
         for (int he = 0; he < adjHE.size(); he++) {
@@ -31,7 +30,7 @@ namespace Curvenet {
     }
 
     // Returns vertices adjacent to a spline
-    std::vector<int> curvenet::splineAdjCtrls(int s) {
+    std::vector<int> curvenet::splineAdjCtrls(int s) const {
         std::vector<int> adjC;
         int he0 = S[s].he;
         adjC.push_back(HE[he0].origin);   // First vertex

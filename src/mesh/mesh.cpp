@@ -20,7 +20,6 @@ mesh::mesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::ve
     }
     computeFNormalsAreas();
     computeVNormalsAreas();
-    computeHeightFuncs();
     computeMeanE();
     computeBBoxDiag();
     return;
@@ -243,15 +242,46 @@ bool mesh::clearMesh() {
 }
 
 // Getters
-Eigen::Vector3d& mesh::getVPos(int v) const {
+Eigen::Vector3d mesh::getVPos(int v) const {
     Eigen::Vector3d pos = V[v].pos;
     return pos;
 }
-Eigen::Vector3d& mesh::getVNormal(int v) const {
+Eigen::Vector3d mesh::getNormal(int elType, int elIdx) const {
+    if (elType == 0) {
+        return getVNormal(elIdx);
+    } else if (elType == 1) {
+        return getENormal(elIdx);
+    } else if (elType == 2) {
+        return getFNormal(elIdx);
+    } else {
+        return Eigen::Vector3d::Zero();
+    }
+}
+Eigen::Vector3d mesh::getVNormal(int v) const {
+    if (v < 0 || v >= V.size()) {
+        return Eigen::Vector3d::Zero();
+    }
     Eigen::Vector3d n = V[v].n;
     return n;
 }
-Eigen::Vector3d& mesh::getFNormal(int f) const {
+Eigen::Vector3d mesh::getENormal(int e) const {
+    if (e < 0 || e >= V.size()) {
+        return Eigen::Vector3d::Zero();
+    }
+    std::pair<int, int> eFaces = edgeAdjFaces(e);
+    Eigen::Vector3d n = Eigen::Vector3d::Zero();
+    if (eFaces.first != -1) {
+        n += F[eFaces.first].n;
+    }
+    if (eFaces.second != -1) {
+        n += F[eFaces.second].n;
+    }
+    return n;
+}
+Eigen::Vector3d mesh::getFNormal(int f) const {
+    if (f < 0 || f > F.size()) {
+        return Eigen::Vector3d::Zero();
+    }
     Eigen::Vector3d n = F[f].n;
     return n;
 }
@@ -266,7 +296,7 @@ double mesh::getBBoxDiag() const {
     return bboxDiag;
 }
 
-Eigen::VectorXd mesh::computeFaceHeight(int f) {
+Eigen::VectorXd mesh::computeFaceHeight(int f) const {
     const std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(f);
     int fSize = fVertsPos.size();
     Eigen::VectorXd faceH = Eigen::VectorXd::Zero(fSize);

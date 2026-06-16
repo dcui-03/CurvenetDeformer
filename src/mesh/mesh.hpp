@@ -36,13 +36,14 @@ class mesh {
 
         // Project a vertex onto the mesh
         // mesh_utils.cpp
-        int computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap = true);
+        int computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap = true) const;
         
         // Getters
-        // CAUTION: Returns reference, which exposes the value to edits.
-        Eigen::Vector3d& getVPos(int vidx) const;
-        Eigen::Vector3d& getVNormal(int vidx) const;
-        Eigen::Vector3d& getFNormal(int fidx) const;
+        Eigen::Vector3d getVPos(int v) const;
+        Eigen::Vector3d getNormal(int elType, int elIdx) const;
+        Eigen::Vector3d getVNormal(int v) const;
+        Eigen::Vector3d getENormal(int e) const;
+        Eigen::Vector3d getFNormal(int f) const;
 
         // Get mean edge length
         double getMeanE() const;
@@ -56,8 +57,7 @@ class mesh {
         // Clear all mesh attributes
         bool clearMesh();
         // Internal function to precompute height functions on both planar/nonplanar faces
-        Eigen::VectorXd computeFaceHeight(int f);
-        void computeHeightFuncs();      // All faces
+        Eigen::VectorXd computeFaceHeight(int f) const;
         // Internal function to precompute normals and areas on mesh structures
         double computeFVectorArea(int f, Eigen::Vector3d& fN);  // 1 face
         void computeFNormalsAreas();        // All faces
@@ -91,36 +91,36 @@ class mesh {
         // ------------- ITERATORS + QUERYING (mesh_iter.cpp) -----------------
 
         // Returns a CCW list of a vertex's OUTGOING halfedge indices
-        std::vector<int> vertAdjHEs(int v);
+        std::vector<int> vertAdjHEs(int v) const;
         // Returns a CCW list of a vertex's adjacent vertices
-        std::vector<int> vertAdjVerts(int v);
+        std::vector<int> vertAdjVerts(int v) const;
         // Returns a list of vertices in a loop from a given halfedge
-        std::vector<int> mesh::vertLoop(int he);
+        std::vector<int> mesh::vertLoop(int he) const;
         // Returns a CCW list of a vertex's adjacent faces
-        std::vector<int> vertAdjFaces(int v);
+        std::vector<int> vertAdjFaces(int v) const;
 
         // Returns the endpoints of an edge in an arbitrary order.
-        std::pair<int, int> edgeAdjVerts(int e);
+        std::pair<int, int> edgeAdjVerts(int e) const;
         // Returns the adjacent face(s) of an edge (-1 indicates boundary)
-        std::pair<int, int> edgeAdjFaces(int e);
+        std::pair<int, int> edgeAdjFaces(int e) const;
 
         // Returns the halfedge index given the face index and edge index
-        int halfedgeAtFaceEdge(int f, int e);
+        int halfedgeAtFaceEdge(int f, int e) const;
         // Get an arbitrary halfedge loop
-        std::vector<int> halfedgeLoop(int he);
+        std::vector<int> halfedgeLoop(int he) const;
 
         // Returns a CCW list of a face's vertices
-        std::vector<Eigen::Vector3d> faceAdjVerts(int f);
-        std::vector<Eigen::Vector3d> mesh::faceAdjVerts(std::vector<int> fVerts);
+        std::vector<Eigen::Vector3d> faceAdjVerts(int f) const;
+        std::vector<Eigen::Vector3d> mesh::faceAdjVerts(std::vector<int> fVerts) const;
         // Returns a CCW list of a face's vertex indices
-        std::vector<int> faceAdjVertIdxs(int f);
+        std::vector<int> faceAdjVertIdxs(int f) const;
         // Returns a CCW list of a face's half edges
-        std::vector<int> faceAdjHalfEdges(int f);
+        std::vector<int> faceAdjHalfEdges(int f) const;
 
         // Returns the outgoing boundary HE if a vertex is a boundary vertex, else returns -1
-        int vertIsBoundary(int v, bool fast = true);
+        int vertIsBoundary(int v, bool fast = true) const;
         // Returns true if halfedge is on boundary
-        bool halfedgeIsBoundary(int he);
+        bool halfedgeIsBoundary(int he) const;
 
         // ------------- MESH CUTTING (mesh_cut.cpp) -----------------
 

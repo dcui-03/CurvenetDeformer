@@ -3,30 +3,33 @@
 #include "utils/utils.hpp"
 #include <Eigen/Core>
 #include <cmath>
-
+#include <algorithm>
 
 namespace Curvenet {
     // Sample a bezier curve at time t
-    Eigen::Vector3d curvenet::tSampleBezier(Eigen::Vector3d c0, Eigen::Vector3d c1, Eigen::Vector3d c2, Eigen::Vector3d c3, double t) {
+    Eigen::Vector3d curvenet::tSampleBezier(const Eigen::Vector3d& c0, const Eigen::Vector3d& c1, const Eigen::Vector3d& c2, const Eigen::Vector3d& c3, double t) const {
         Eigen::Vector3d sample = std::pow(1 - t, 3) * c0 +
                         3 * std::pow(1 - t, 2) * t * c1 +
                         3 * (1 - t) * std::pow(t, 2) * c2 +
                         std::pow(t, 3) * c3;
         return sample;
     }
-    Eigen::Vector3d curvenet::tSampleBezier(int s, double t) {
+    Eigen::Vector3d curvenet::tSampleBezier(int s, double t) const {
         Eigen::Vector3d c0, c1, c2, c3;
         int he = S[s].he;
         c0 = C[HE[he].origin].pos;
         c1 = HE[he].tan;
-        c3 = HE[HE[he].twin].tan;
+        c2 = HE[HE[he].twin].tan;
         c3 = C[HE[HE[he].twin].origin].pos;
         return tSampleBezier(c0, c1, c2, c3, t);
     }
 
     // NOTE: This is a naive, fast sampler that uniformly samples t's. Re-implement if desired
-    // Returns n_samples+1 points on the curve, including the endpoints
-    std::vector<Eigen::Vector3d> curvenet::sampleBezierNaive(int s, int n_samples = 50) {
+    // Returns n_samples points on the curve, including the endpoints
+    std::vector<Eigen::Vector3d> curvenet::sampleBezierNaive(int s, int n_samples = 50) const {
+        if (n_samples < 2) {
+            return {};
+        }
         std::vector<Eigen::Vector3d> samples(n_samples);
         int he = S[s].he;
         double h = 1.0/(n_samples - 1);
@@ -44,52 +47,64 @@ namespace Curvenet {
     }
 
     // Estimate the arclength
-    double curvenet::arclenEst(std::vector<Eigen::Vector3d> samples) {
+    double curvenet::arclenEst(const std::vector<Eigen::Vector3d>& samples) const {
         double length = 0.0;
         for (int i = 0; i < samples.size() - 1; i++) {
             length += (samples[i+1] - samples[i]).norm();
         }
         return length;
     }
-    double curvenet::arclenEst(int s, int n_samples = 50) {
+    double curvenet::arclenEst(int s, int n_samples = 50) const {
         std::vector<Eigen::Vector3d> samples = sampleBezierNaive(s, n_samples);
         return arclenEst(samples);
     }
 
     // Uniformly sample based on arclength estimator
-    std::vector<Eigen::Vector3d> curvenet::unifSample(int s, int n_samples) {
-        // 1. Estimate the length of the bezier curve
-        // TODO: Pick a number of samples for the regular sampling
-        std::vector<Eigen::Vector3d> regSamples = sampleBezierNaive(s);
-        double arclength = arclenEst(regSamples);
+    std::vector<Eigen::Vector3d> curvenet::unifSample(int s, int n_samples) const {
+        if (n_samples < 2) {
+            return {};
+        }
 
-        // 2. Take discrete samples off of the regular sampling
-        // Get the n desired samples
-        double h = 1.0/(n_samples - 1);
-        double t = 0.0;
+        std::vector<Eigen::Vector3d> regSamples = sampleBezierNaive(s, 50);
         std::vector<Eigen::Vector3d> unifSamples(n_samples);
 
-        // track the index of the next vertex
-        int next_regV = 1;
-        double next_regDist = (regSamples[next_regV] - regSamples[next_regV - 1]).norm();
-        for (int i = 1; i < n_samples; i++) {
-            // track where we are in our walk
-            double h_local = h;
-            while (h_local > 0.0) { // Walk until we've walked the right distance
-                h_local -= next_regDist;
-                if (next_regDist >= h_local) {  // Walks to the next edge
-                    next_regV++;
-                    if (next_regV == regSamples.size() - 1) {
-                        break;
-                    }
-                    next_regDist = (regSamples[next_regV] - regSamples[next_regV - 1]).norm();
-                } else {
-                    next_regDist -= h_local;
-                }
-            }
-            unifSamples[i] = regSamples[next_regV - 1] -  next_regDist * (regSamples[next_regV-1] - regSamples[next_regV]).normalized();
+        // Build cumulative arclength list
+        std::vector<double> cumLen(regSamples.size(), 0.0);
+        for (int i = 1; i < static_cast<int>(regSamples.size()); ++i) {
+            cumLen[i] = cumLen[i - 1] + (regSamples[i] - regSamples[i - 1]).norm();
         }
-        
+        const double totalLen = cumLen.back();
+
+        // Degenerate curve fallback
+        if (totalLen <= 1e-16) {
+            // If curve is ~0 length, just return the start
+            for (int i = 0; i < n_samples; ++i) {
+                unifSamples[i] = regSamples.front();
+            }
+            return unifSamples;
+        }
+        unifSamples[0] = regSamples.front();
+        unifSamples[n_samples - 1] = regSamples.back();
+
+        int seg = 1;
+        for (int i = 1; i < n_samples - 1; ++i) {
+            double targetLen = totalLen * static_cast<double>(i) / static_cast<double>(n_samples - 1);
+            // Check if we overflow this segment
+            while ((seg < cumLen.size() - 1) && (cumLen[seg] < targetLen)) {
+                ++seg;
+            }
+
+            double segLen = cumLen[seg] - cumLen[seg - 1];
+            if (segLen <= 1e-16) {
+                unifSamples[i] = regSamples[seg];
+                continue;
+            }
+            // Increment by computing the percentage difference
+            double alpha = (targetLen - cumLen[seg - 1]) / segLen;
+            alpha = std::max(0.0, std::min(1.0, alpha));
+            unifSamples[i] = (1.0 - alpha) * regSamples[seg - 1] + alpha * regSamples[seg];
+        }
+
         return unifSamples;
     }
 

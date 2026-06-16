@@ -4,14 +4,14 @@
 #include <Eigen/Core>
 #include <vector>
 
-// File with basic structs used by mesh class
+// File with basic structs used by discrete curvenet class
 
 namespace DCurvenet {
 
     struct Vert {
         Eigen::Vector3d pos;
         Eigen::Vector3d n = Eigen::Vector3d::Zero();
-        int he = -1;   // one outgoing halfedge, or -1 if isolated
+        std::vector<int> adjHE;    // CCW ordered list of outgoing HE's
         bool active = true;     // For safety, say if the component is active (ignore for now)
         
         // Other info
@@ -29,9 +29,12 @@ namespace DCurvenet {
         int spline = -1;           // Index to the spline
         bool active = true;     // For safety, say if the component is active (ignore for now)
 
-        // Other info
-        Eigen::Matrix3d orthoFrame;
-        Eigen::Vector3d frameScale;
+        // Scaled Local Frame
+        bool sign;  // true for positive, false for negative
+        Eigen::Vector3d tangent;
+        Eigen::Vector3d binormal;
+        Eigen::Vector3d normal;
+        Eigen::Vector3d scale = {1.0, 1.0, 1.0}; // Scale each axis
     };
 
     // Only store one halfedge for each edge

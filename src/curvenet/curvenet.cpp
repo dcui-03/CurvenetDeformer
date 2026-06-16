@@ -4,6 +4,7 @@
 #include <Eigen/Core>
 #include <cmath>
 #include <array>
+#include <algorithm>
 
 
 namespace Curvenet {
@@ -14,6 +15,9 @@ namespace Curvenet {
         }
         for (int s = 0; s < Splines.size(); s++) {
             std::array<int, 4> S = Splines[s];
+            if (S[1] < 0 || S[1] >= Controls.size() || S[2] < 0 || S[2] >= Controls.size()) {
+                throw std::runtime_error("Failed to initialize curve network.");
+            }
             addSpline(S[0], S[3], Tangents[S[1]], Tangents[S[2]]);
         }
         return;
@@ -35,6 +39,9 @@ namespace Curvenet {
     }
     // Add a spline to the spline list given indices of the points
     int curvenet::addSpline(int start, int end, Eigen::Vector3d t0, Eigen::Vector3d t1) {
+        if (start < 0 || start >= C.size() || end < 0 || end >= C.size()) {
+            return -1;
+        }
         if (!C[start].active || !C[end].active) {
             return -1;
         }
@@ -58,14 +65,11 @@ namespace Curvenet {
         // Insert spline into vertex list
         C[start].adjHE.push_back(he0);
         C[end].adjHE.push_back(he1);
-        // Re-sort the outgoing halfedges of each control
-        //sortAdjHE(start);
-        sortAdjHE(end);
         return s;
     }
 
     // Move control
-    int curvenet::editControlPos(int c, const Eigen::Vector3d pos) {
+    int curvenet::editControlPos(int c, Eigen::Vector3d pos) {
         if (!C[c].active) {
             return -1;
         }
@@ -79,6 +83,21 @@ namespace Curvenet {
             return -1;
         }
         C[c].n = normal.normalized();   // Always normalize for safety
+        return 1;
+    }
+
+    // Compute normals for each vertex by projecting onto a mesh
+    int curvenet::ctrlNormalsFromMesh(const Mesh::mesh& m) {
+        for (int c = 0; c < C.size(); c++) {
+            if (!C[c].active) {
+                continue;
+            }
+            int elType, elIdx;
+            Eigen::Vector3d proj;
+            elType = m.computeVProjection(C[c].pos, proj, elIdx);
+            Eigen::Vector3d n = m.getNormal(elType, elIdx);
+            editControlN(c, n);
+        }
         return 1;
     }
 
@@ -108,6 +127,12 @@ namespace Curvenet {
 
         // Sort by angle
         Utils::doubleListIdxSort(adjTheta, adjHE);
+        // If a curve connects to itself and is the only one, then do not rewire.
+        if (adjTheta.size() == 2 && (HE[adjHE[0]].twin == adjHE[1])) {
+            C[c].adjHE = adjHE;
+            C[c].sorted = true;
+            return 1;   // success
+        }
         // Do the necessary re-wiring
         for (int he_idx = 0; he_idx < adjHE.size(); he_idx++) {
             int he = adjHE[he_idx];
@@ -132,9 +157,10 @@ namespace Curvenet {
     // Compute what kind of vertex each control is using the valence of splines
     int curvenet::assignCtrlType(int c) {
         std::vector<int> adjS = ctrlAdjSplines(c);
-        return adjS.size();
+        C[c].cType = std::min(static_cast<int>(adjS.size()), 3);
+        return C[c].cType;
     }
-    int curvenet::assignCtrlTypeAll(int c) {
+    int curvenet::assignCtrlTypeAll() {
         for (int c = 0; c < C.size(); c++) {
             if (C[c].active) {
                 assignCtrlType(c);

@@ -14,8 +14,10 @@ namespace Curvenet {
         Eigen::Vector3d pos;
         Eigen::Vector3d n = Eigen::Vector3d::Zero();
         std::vector<int> adjHE;        // Outgoing Halfedge list
+        std::vector<Eigen::Vector3d> adjN;  // Corner normals associated with adjHE
         bool active = true;     // For safety, say if the component is active (ignore for now)
         bool sorted = false;    // Safety flag. True when outgoing halfedges are sorted
+        int cType = 0;      // Control point type (1 = anchor, 2 = loop, 3 = intersection)
     };
 
     // NOTE: Halfedge iteration indices (next, prev) prioritize easy iteration over their associated controls

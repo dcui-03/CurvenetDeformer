@@ -17,7 +17,7 @@ namespace Mesh {
 // Project a vertex onto the mesh. If multiple, just picks the one with smaller index.
 // Also returns the element type that was landed on.
 // For non-planar faces, I am just going to fit a Newell plane using the barycenter and vector area + a barycentric height interpolation
-int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap) {
+int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap) const {
     double tol = 1e-6 * bboxDiag;
     double min_dist = std::numeric_limits<double>::infinity();
 
@@ -163,7 +163,6 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
 
     return 2;
 }
-
 
 // Inserts a vertex at a location and face
 // Returns the index of the new vertex
