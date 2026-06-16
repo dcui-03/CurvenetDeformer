@@ -1,14 +1,29 @@
 # ProfileMover
 Implementation of Pixar's Profile Mover in C++/Python
 
+**Build Instructions**
 You will need to clone Polyscope into a folder called deps. I also haven't tested this setup on anything but Apple Silicon so the Cmakelists.txt might need some additional lines to support Windows.
 Polyscope and libigl deps planned to be removed in the future.
 
+```
+git clone https://github.com/dcui-03/ProfileMover
+cd ./ProfileMover
+mkdir deps && cd ./deps
+git clone --recurse-submodules https://github.com/nmwsharp/polyscope.git
+git clone --recurse-submodules https://github.com/libigl/libigl.git
+cd .. && mkdir build && cd ./build
+cmake ..
+make -j4
+cd ..
+./build/profile_mover ./data/small_sphere.obj
+```
+
+# Updates and Notes
 **Update 6/15**
 
 Re-written curvenet class stripped to the bare minimum. The paradigm for the curvenet class is that it takes an existing curve network of bezier splines from some other editing software and statically builds it, meaning we don't need too many complicated functions for adding and removing, etc. These are the job of the front-end bezier curve data structure.
 
-Began drafting discrete curvenet. Still some minor tweaks that need to be made to mesh class and curvenet class.
+Began drafting discrete curvenet. Mesh class needs some more minor tweaks and extra helpers.
 
 **NOTES**
 
@@ -17,25 +32,23 @@ Important note about Eigen. For Eigen fixed-size containers that are a multiple 
 This does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects, though. In addition, c++17 handles this implicitly, so no need to handle if using c++17. However, it's good to put the allocators in for fixed-size 16 data types anyways for reliability.
 
 **Big TODOs**:
-
 - *Discrete Curvenet*: Re-do discrete curvenet class. Treat as a halfedge data structure, which makes indices into the dCN on the cut-mesh easier.
 
 - *Straightest Geodesic*: Re-do straightest geodesics. Include a fast (same-face check) version, and a slower (visibility-check) version. The first should be fairly straightforward to implement. The second will require extra Utils functions. Maybe look at other implementations for inspo? With face normals, should be fairly straightforward to just apply explicit rotations to a unit direction vector.
 
-- *Polygon DEC*: Check polygon operators and try to find better shortcuts for constructing them (check Appendix?)
+- *Profile Mover*: Integrate all components into the profilemover class and write function for actual runtime computation.
 
-- *Profile Mover*: Integrate all components into the profilemover class and write function for actual runtime computation. 
+- *Front End*: Figure out how to attach to Blender w/ all options that I want (Blender Bezier's may be a problem). Try Maya later.
 
 - *Debugging and Cleaning*: Try to avoid constructing 2D basis + redundancy.
-
-- *Curve Network Saving*: Save an initialized spline curvenetwork to some sparse file type (OBJ for splines???) so they can be loaded and reused.
 
 - *Projection Posing*: As mentioned in paper, compute cut-mesh from rest pose, then move all dcurvenet vertices and cut-mesh to the new configuration. Seems like curvenet is unusable like this??? Maybe only if you have pre-defined poses for the curvenet, you can transfer them? Maybe there's a scheme for editing the dcurvenet directly that I can look into?
 
 **Small Steps**:
 
-- The paper says not to update the vector area of each face in the cut-mesh during insertion.... Also, need to do a check to remove edge chains that are fully within a face.
-
+- The paper says not to update the vector area of each face in the cut-mesh during insertion.... May want to edit area when face splits happen, but not normals. Have a fast projection that projects directly to the Newell plane instead of computing height.
+- Do a check to remove edge chains that are fully within a face.
 - Re-implement discrete curvenet as a "half-edge" type data structure.
-
+- Check polygon DEC operators and try to find better shortcuts for constructing them (check Appendix?)
 - Add IO function to visualize mesh edits in polyscope and debug mesh class.
+- Save an initialized spline curvenetwork to some sparse file type (OBJ for splines???) so they can be loaded and reused.
