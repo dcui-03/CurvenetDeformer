@@ -40,4 +40,16 @@ namespace Curvenet {
         return adjC;
     }
 
+    // Because we sort the outgoing halfedges in CCW order,
+    // we can get the local indices of adjHE s.t. the adjacent halfedge is part of the specified spline
+    std::vector<int> curvenet::controlLocalSplineIdx(int c, int s) {
+        std::vector<int> local_idxs;
+        const std::vector<int> cAdjHE = C[c].adjHE;
+        for (int he = 0; he < cAdjHE.size(); he++) {
+            if (HE[cAdjHE[he]].s == s) {
+                local_idxs.push_back(he);
+            }
+        }
+        return local_idxs;
+    }
 }   // namespace Curvenet

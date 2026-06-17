@@ -15,9 +15,16 @@ class curvenet {
     public:
         // Constructor takes four points [start, tangent 1, tangent 2, end], and associated normals
         // NOTE: Constructor assumes you already have no duplicates in your inputs
-        curvenet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents, std::vector<std::array<int, 4>> Splines);
+        curvenet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents, std::vector<std::array<int, 4>> Splines, const Mesh::mesh& M);
         // Empty constructor
         curvenet();
+
+        // --------- GETTERS -----------
+        const std::vector<Control>& controls() const { return C; }
+        const std::vector<HalfEdge>& halfedges() const { return HE; }
+        const std::vector<CubicSpline>& splines() const { return S; }
+        const std::vector<Curve>& curves() const { return Crv; }
+        std::vector<int> controlLocalSplineIdx(int c, int s);
 
         // --------- SAMPLING -----------
         // Sample a bezier curve at time t
@@ -31,6 +38,7 @@ class curvenet {
         double arclenEst(const std::vector<Eigen::Vector3d>& samples) const;
         // Uniformly sample based on arclength estimator
         // Takes a user parameter alpha which helps control sampling
+        // Returns the length of the computed curve
         std::vector<Eigen::Vector3d> unifSample(int s, int n_samples = 50) const;
 
         // --------- EDITING -----------
@@ -70,11 +78,14 @@ class curvenet {
         int sortAdjHE(int c);
         // Compute what kind of vertex each control is using the valence of splines
         int assignCtrlType(int c);
+        // Trace out curves
+        int traceCurves();
 
         // Store attributes as lists
         std::vector<Control> C;
         std::vector<HalfEdge> HE;
         std::vector<CubicSpline> S;
+        std::vector<Curve> Crv;
 };
 
 }   // namespace Curvenet

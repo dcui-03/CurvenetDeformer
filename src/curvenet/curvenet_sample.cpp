@@ -59,7 +59,7 @@ namespace Curvenet {
         return arclenEst(samples);
     }
 
-    // Uniformly sample based on arclength estimator
+    // Uniformly sample based on arclength estimator and returns the length of the returned curve
     std::vector<Eigen::Vector3d> curvenet::unifSample(int s, int n_samples) const {
         if (n_samples < 2) {
             return {};

@@ -9,7 +9,7 @@
 
 namespace Curvenet {
     // Initialize from an existing list of controls, splines
-    curvenet::curvenet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents, std::vector<std::array<int, 4>> Splines) {
+    curvenet::curvenet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents, std::vector<std::array<int, 4>> Splines, const Mesh::mesh& M) {
         for (int c = 0; c < Controls.size(); c++) {
             addControl(Controls[c]);
         }
@@ -20,6 +20,10 @@ namespace Curvenet {
             }
             addSpline(S[0], S[3], Tangents[S[1]], Tangents[S[2]]);
         }
+        ctrlNormalsFromMesh(M);
+        sortAdjHEAll();
+        assignCtrlTypeAll();
+        traceCurves();
         return;
     }
 
@@ -169,4 +173,95 @@ namespace Curvenet {
         return 1;
     }
 
+    // Trace spline curves
+    int curvenet::traceCurves() {
+        std::vector<bool> splineFound(S.size(), false);
+        // Search from controls
+        for (int c = 0; c < C.size(); c++) {
+            int cType = C[c].cType;
+            const std::vector<int> adjHE = C[c].adjHE;
+            // Start from each outgoing halfedge and trace until we hit a stop point
+            for (int he = 0; he < adjHE.size(); he++) {
+                int s0 = HE[adjHE[he]].s;
+                if (splineFound[s0]) {   // Skip any splines we've already seen
+                    continue;
+                }
+                // Only start trace from intersections or anchors
+                int start = HE[S[s0].he].origin;
+                if (C[start].cType == 2) {
+                    continue;
+                }
+
+                // Otherwise, need to do a spline trace
+                // Create new curve object
+                int crv = Crv.size();
+                Crv.emplace_back();
+                bool curveEnd = false;
+                int counter = 0;
+                std::vector<int> splineList;
+                int curr_s = s0;
+                // Trace splines until we hit an intersection or an anchor
+                do {
+                    int curr_end = HE[HE[S[curr_s].he].twin].origin;
+                    // If we add a spline in, then flip it to make sure it aligns with the curve direction
+                    splineList.push_back(curr_s);
+                    S[curr_s].curve = crv;
+                    splineFound[curr_s] = true;
+                    counter++;
+                    // Go to next spline
+                    if (C[curr_end].cType == 1 || C[curr_end].cType == 3) {
+                        curveEnd = true;
+                    } else {    // Must be only 1 outgoing spline from this one
+                        std::vector<int> adjS = ctrlAdjSplines(curr_end);
+                        if (adjS[0] == curr_s) {    // correct ordering
+                            curr_s = adjS[1];
+                        } else {                    // Flipped ordering
+                            curr_s = adjS[0];
+                            S[curr_s].curve = HE[S[curr_s].he].twin;
+                        }
+                    }
+                } while (!curveEnd || counter == C.size());
+
+                Crv[crv].splines = splineList;
+            }
+        }
+
+        // Start from remaining splines, which must form closed loops
+        for (int s = 0; s < splineFound.size(); s++) {
+            if (splineFound[s]) {   // Skip already found splines
+                continue;
+            }
+            // Otherwise, need to do a spline trace
+            // Create new curve object
+            int crv = Crv.size();
+            Crv.emplace_back();
+            bool curveEnd = false;
+            int counter = 0;
+            std::vector<int> splineList;
+            int curr_s = s;
+            // Trace splines until we come back to the start
+            do {
+                int curr_end = HE[HE[S[curr_s].he].twin].origin;
+                // If we add a spline in, then flip it to make sure it aligns with the curve direction
+                splineList.push_back(curr_s);
+                S[curr_s].curve = crv;
+                splineFound[curr_s] = true;
+                counter++;
+                // Go to next spline
+                std::vector<int> adjS = ctrlAdjSplines(curr_end);
+                if (adjS[0] == curr_s) {    // correct ordering
+                    curr_s = adjS[1];
+                } else {                    // Flipped ordering
+                    curr_s = adjS[0];
+                    S[curr_s].curve = HE[S[curr_s].he].twin;
+                }
+                if (curr_s == s) { // Terminate if we reached the start again
+                    curveEnd = true;
+                }
+            } while (!curveEnd || counter == C.size());
+
+            Crv[crv].splines = splineList;
+        }
+        return 1;
+    }
 }   // namespace Curvenet

@@ -36,7 +36,7 @@ class mesh {
 
         // Project a vertex onto the mesh
         // mesh_utils.cpp
-        int computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap = true) const;
+        int computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap = true, bool fast = true) const;
         
         // Getters
         Eigen::Vector3d getVPos(int v) const;

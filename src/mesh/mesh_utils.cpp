@@ -17,7 +17,7 @@ namespace Mesh {
 // Project a vertex onto the mesh. If multiple, just picks the one with smaller index.
 // Also returns the element type that was landed on.
 // For non-planar faces, I am just going to fit a Newell plane using the barycenter and vector area + a barycentric height interpolation
-int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap) const {
+int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap, bool fast) const {
     double tol = 1e-6 * bboxDiag;
     double min_dist = std::numeric_limits<double>::infinity();
 
@@ -127,6 +127,11 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     }
 
     // If not snapping, then we must be on a face
+    // If using the fast version, just take the current Newell plane nearest
+    if (fast) {
+        return 2;
+    }
+    // Else do the slow way: lift proj using height
     // Check if we are on a non-planar face. If so, pin-point the location using MVC
     Eigen::VectorXd fHeight = computeFaceHeight(elIdx);
     bool planar = true;
@@ -362,6 +367,7 @@ int mesh::insertEdge(int f, int v0, int v1, int dCN_idx0, int dCN_idx1, bool pos
 // Inserts a new edge connecting two vertices on a specified face
 // Returns the index of the new edge
 // NOTE: This should only mainly be used as a helper for insertEdge()
+// NOTE: Paper says not to update normals here. Still included, but maybe try taking out later?
 int mesh::insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isolated, int he1_prev, int v1_isolated, int dCN_idx0, int dCN_idx1, bool positive0) {
     // Create new halfedges he0 and he1 connecting the two vertices
     int he0 = HE.size();

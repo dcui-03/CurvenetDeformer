@@ -14,7 +14,6 @@ namespace Curvenet {
         Eigen::Vector3d pos;
         Eigen::Vector3d n = Eigen::Vector3d::Zero();
         std::vector<int> adjHE;        // Outgoing Halfedge list
-        std::vector<Eigen::Vector3d> adjN;  // Corner normals associated with adjHE
         bool active = true;     // For safety, say if the component is active (ignore for now)
         bool sorted = false;    // Safety flag. True when outgoing halfedges are sorted
         int cType = 0;      // Control point type (1 = anchor, 2 = loop, 3 = intersection)
@@ -37,6 +36,14 @@ namespace Curvenet {
     // Splines for easy iteration
     struct CubicSpline {
         int he = -1;        // "First" halfedge describing the canonical direction
+        int curve = -1;     // Curve index the spline belongs to
         bool active = true;     // For safety, say if the component is active (ignore for now)
+    };
+
+    // Curves are chains of Splines
+    struct Curve {
+        // Just store the chain of spline indices
+        std::vector<int> splines;
+        bool active = true;
     };
 }   // namespace Curvenet
