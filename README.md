@@ -19,9 +19,11 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 6/17**
+**Update 6/18**
 
-Cleaning discrete curvenet class. Working on adding update functionality for the realtime computation, but getting a fast 1:1 match between curvenet vertex indices and their discrete curvenet vertex indices (after discretization) will take some re-thinking.
+dCN and CN realtime updates done, executed fast via a pre-computed map from the input format (subject to change once I see Blender/Maya bezier output formats).
+
+Next on the docket is polyscope front end and straightest geodesics, which may require initializing the profilemover class.
 
 **NOTES**
 
@@ -45,7 +47,6 @@ This does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects
 
 **Small Steps**:
 
-- Work on CN -> dCN real time frame update.
 - Add IO function to visualize edits in polyscope.
 - Add a function which checks if any edge chains are fully within a face, then removes them (and makes their associated dCN vertices inactive).
-- Check polygon DEC operators and try to find better shortcuts for constructing them (check Appendix?)
+- See Appendix for DEC halfedge laplacian shortcut

@@ -39,12 +39,6 @@ bool mesh::assignDCNtoHE(int he, const int dCN_idx, bool positive) {
     return true;
 }
 
-bool mesh::applyMeshRef(mesh* MRef) {
-    M_ref = MRef;
-    M_ref_initialized = true;
-    return true;
-}
-
 // Initializes the half edge mesh (Verts, Edges, Faces, Halfedges) from a vertex and face list
 bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::vector<int>>& F_List) {
     clearMesh();

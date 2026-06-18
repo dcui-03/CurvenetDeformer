@@ -148,10 +148,6 @@ class mesh {
         // Pointer to a dCN object if necessary
         DCurvenet::dcurvenet* dCN;
         bool dCN_initialized = false;
-
-        // Pointer to a mesh object
-        mesh* M_ref;
-        bool M_ref_initialized = false;
 };
 
 }   // namespace Mesh
