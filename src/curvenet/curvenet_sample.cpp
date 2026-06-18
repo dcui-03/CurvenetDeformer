@@ -59,6 +59,11 @@ namespace Curvenet {
         return arclenEst(samples);
     }
 
+    // Compute number of samples to take on a spline given a user parameter alpha
+    int curvenet::computeNumSamples(double arclen) {
+        return std::max(3, static_cast<int>(alpha * (arclen)/meanE));
+    }
+
     // Uniformly sample based on arclength estimator and returns the length of the returned curve
     std::vector<Eigen::Vector3d> curvenet::unifSample(int s, int n_samples) const {
         if (n_samples < 2) {

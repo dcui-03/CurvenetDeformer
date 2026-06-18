@@ -53,7 +53,7 @@ namespace Utils {
     // Computes the closest point to a triangle
     Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts, const Eigen::Vector3d p);
 
-    // Compute the angle between 
+    // Compute the angle of a vector starting at an origin and ending at a target, when projected onto a basis spanned by t1 and t2.
     bool directionAngleInPlane(
         const Eigen::Vector3d& origin,
         const Eigen::Vector3d& target,

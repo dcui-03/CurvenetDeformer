@@ -17,6 +17,9 @@ namespace Curvenet {
         bool active = true;     // For safety, say if the component is active (ignore for now)
         bool sorted = false;    // Safety flag. True when outgoing halfedges are sorted
         int cType = 0;      // Control point type (1 = anchor, 2 = loop, 3 = intersection)
+
+        // Runtime info
+        Eigen::Vector3d new_pos;
     };
 
     // NOTE: Halfedge iteration indices (next, prev) prioritize easy iteration over their associated controls
@@ -31,12 +34,16 @@ namespace Curvenet {
         Eigen::Vector3d tan;   // Tangent vector (defined in global coordinates, NOT relative to control)
 
         bool active = true;     // For safety, say if the component is active (ignore for now)
+        
+        // Runtime info
+        Eigen::Vector3d new_tan;
     };
 
     // Splines for easy iteration
     struct CubicSpline {
         int he = -1;        // "First" halfedge describing the canonical direction
         int curve = -1;     // Curve index the spline belongs to
+        int num_samples = -1;   // Number of samples to take during discretization
         bool active = true;     // For safety, say if the component is active (ignore for now)
     };
 

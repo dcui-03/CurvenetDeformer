@@ -21,7 +21,7 @@ cd ..
 # Updates and Notes
 **Update 6/17**
 
-Discrete Curvenet initialization completed, including scaled frames. Needs checking.
+Cleaning discrete curvenet class. Working on adding update functionality for the realtime computation, but getting a fast 1:1 match between curvenet vertex indices and their discrete curvenet vertex indices (after discretization) will take some re-thinking.
 
 **NOTES**
 
@@ -45,8 +45,7 @@ This does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects
 
 **Small Steps**:
 
-- Do a final check on CN curves and dCN initialization.
+- Work on CN -> dCN real time frame update.
+- Add IO function to visualize edits in polyscope.
 - Add a function which checks if any edge chains are fully within a face, then removes them (and makes their associated dCN vertices inactive).
 - Check polygon DEC operators and try to find better shortcuts for constructing them (check Appendix?)
-- Add IO function to visualize mesh edits in polyscope and debug mesh class.
-- Save an initialized spline curvenetwork to some sparse file type (OBJ for splines???) so they can be loaded and reused.

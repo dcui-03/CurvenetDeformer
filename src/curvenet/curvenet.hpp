@@ -6,6 +6,7 @@
 #include <Eigen/Core>
 #include <vector>
 #include <array>
+#include <map>
 
 namespace Curvenet {
 
@@ -15,16 +16,19 @@ class curvenet {
     public:
         // Constructor takes four points [start, tangent 1, tangent 2, end], and associated normals
         // NOTE: Constructor assumes you already have no duplicates in your inputs
-        curvenet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents, std::vector<std::array<int, 4>> Splines, const Mesh::mesh& M);
+        curvenet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents, std::vector<std::array<int, 4>> Splines, const Mesh::mesh& M, int alpha = 5);
         // Empty constructor
         curvenet();
 
         // --------- GETTERS -----------
+        const int numControls() const { return C.size(); }
+        const int numSplines() const { return S.size(); }
+        const int numCurves() const { return Crv.size(); }
         const std::vector<Control>& controls() const { return C; }
         const std::vector<HalfEdge>& halfedges() const { return HE; }
         const std::vector<CubicSpline>& splines() const { return S; }
         const std::vector<Curve>& curves() const { return Crv; }
-        std::vector<int> controlLocalSplineIdx(int c, int s);
+        std::vector<int> controlLocalSplineIdx(int c, int s) const;
 
         // --------- SAMPLING -----------
         // Sample a bezier curve at time t
@@ -40,6 +44,8 @@ class curvenet {
         // Takes a user parameter alpha which helps control sampling
         // Returns the length of the computed curve
         std::vector<Eigen::Vector3d> unifSample(int s, int n_samples = 50) const;
+        // Compute number of samples to take on a spline given a user parameter alpha
+        int computeNumSamples(double arclen);
 
         // --------- EDITING -----------
         // Exposed position edits
@@ -60,7 +66,7 @@ class curvenet {
         int addControl(Eigen::Vector3d pos);
 
         // Add a spline given the start, end, and two tangent endpoints
-        int addSpline(int start, int end, Eigen::Vector3d t0, Eigen::Vector3d t1);
+        std::pair<int, int> addSpline(int start, int end, Eigen::Vector3d t0, Eigen::Vector3d t1);
 
         // --------- ITERATORS -----------
         // Get the adjacent tangent vectors to a control vertex
@@ -86,6 +92,15 @@ class curvenet {
         std::vector<HalfEdge> HE;
         std::vector<CubicSpline> S;
         std::vector<Curve> Crv;
+
+        // Map from input control index to output control index
+        std::map<int, int> inputCtoC;
+        // Map from input tangent index to output halfedge index
+        std::map<int, int> inputTtoHE;
+
+        // User sampling parameter
+        int alpha = 5;
+        double meanE = 0.0;
 };
 
 }   // namespace Curvenet

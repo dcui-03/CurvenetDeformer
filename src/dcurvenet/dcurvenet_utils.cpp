@@ -5,57 +5,61 @@
 #include <Eigen/Core>
 #include <vector>
 #include <cmath>
+#include <algorithm>
 
 namespace DCurvenet {
 
-    Eigen::Matrix3d dcurvenet::computeHEDefGrad(int he,
-                                                const Eigen::Vector3d& newT, 
-                                                const Eigen::Vector3d& newB, 
-                                                const Eigen::Vector3d& newN, 
-                                                const double& newL, const double& newW, const double& newH) {
-        const Eigen::Vector3d& T = HE[he].tangent;
-        const Eigen::Vector3d& B = HE[he].binormal;
-        const Eigen::Vector3d& N = HE[he].normal;
-        const double& l = HE[he].l;
-        const double& w = HE[he].w;
-        const double& h = HE[he].h;
-        Eigen::Matrix3d F = (newL / l) * (newT * T.transpose()) + 
-                            (newW / w) * (newB * B.transpose()) + 
-                            (newH / h) * (newN * N.transpose());
+    // Move a vertex
+    int dcurvenet::moveVert(int v, Eigen::Vector3d new_pos) {
+        if (v >= V.size()) {
+            return -1;
+        }
+        V[v].new_pos = new_pos;
+        return 1;
+    }
+
+
+    // Compute the deformation gradient of a halfedge
+    Eigen::Matrix3d dcurvenet::computeHEDefGrad(int he) {
+        Eigen::Matrix3d F = (HE[he].l / HE[he].rest_l) * (HE[he].tangent * HE[he].rest_tangent.transpose()) + 
+                            (HE[he].w / HE[he].rest_w) * (HE[he].binormal * HE[he].rest_binormal.transpose()) + 
+                            (HE[he].h / HE[he].rest_h) * (HE[he].normal * HE[he].rest_normal.transpose());
         return F;
     }
 
     // Accumulate rotation matrices, starting from an initial halfedge and tracing forward until we hit the goal vertex
-    double dcurvenet::accumulateRotations(int start_he, int end_v, std::vector<Eigen::Matrix3d>& rots, std::vector<double> lens) {
+    double dcurvenet::accumulateRotations(int start_he, int end_v, std::vector<Eigen::Matrix3d>& rots, std::vector<double>& lens) {
         rots.clear();
         lens.clear();
         int he_curr = start_he;
         int he_prev = start_he;
-        Eigen::Vector3d tan_curr = HE[he_curr].tangent;
-        Eigen::Vector3d tan_prev = tan_curr;
-        std::vector<double> lengths;
-        std::vector<Eigen::Matrix3d> rots;
+        if (start_he < 0) {
+            return 0.0;
+        }
+        Eigen::Vector3d tan_prev = HE[he_curr].tangent;
         Eigen::Matrix3d curr_rot = Eigen::Matrix3d::Identity();
         double curr_len = 0.0;
         // Traverse halfedges until we hit the end vertex
         do {
+            Eigen::Vector3d tan_curr = HE[he_curr].tangent;
             curr_rot = Utils::computeRotation(tan_prev, tan_curr) * curr_rot;   // Left multiply to accumulate rotations
             rots.push_back(curr_rot);
             curr_len += HE[he_curr].l;
-            lengths.push_back(curr_len);
+            lens.push_back(curr_len);
 
             he_prev = he_curr;
             he_curr = HE[he_curr].next;
             tan_prev = tan_curr;
-            tan_curr = HE[he_curr].tangent;
-        } while ((HE[he_prev].dest != end_v) || (he_curr == -1));
+        } while ((HE[he_prev].dest != end_v) && (he_curr != -1));
         return curr_len;
     }
 
     // Total torsion
     double dcurvenet::computeTorsion(Eigen::Vector3d n_1, Eigen::Vector3d n_k, Eigen::Matrix3d Om_k, Eigen::Vector3d t_k) {
         Eigen::Vector3d twist = Om_k * n_1;
-        return std::atan(twist.dot(n_k.cross(t_k)) / (twist.dot(n_k)));
+        double y = twist.dot(n_k.cross(t_k));
+        double x = twist.dot(n_k);
+        return std::atan2(y, x);
     }
 
 }   // namespace DCurvenet

@@ -9,132 +9,32 @@
 
 namespace DCurvenet {
     // Takes the original curvenet and discretizes it
-    dcurvenet::dcurvenet(Curvenet::curvenet* CN, int alpha): CN(CN) {
-        std::vector<Curvenet::Control> cnCtrl = CN->controls();
-        std::vector<Curvenet::HalfEdge> cnHE = CN->halfedges();
-        std::vector<Curvenet::CubicSpline> cnSpline = CN->splines();
-        std::vector<Curvenet::Curve> cnCrv = CN->curves();
+    dcurvenet::dcurvenet(Curvenet::curvenet* CN, double meanE, int alpha): CN(CN), alpha(alpha), meanE(meanE) {
+        const std::vector<Curvenet::Control>& cnCtrl = CN->controls();
+        int num_curves = CN->numCurves();
         // Defensive reset
         V.clear();
-        E.clear();
         HE.clear();
         C.clear();
         // 1. First copy in the control points
         int num_controls = cnCtrl.size();
+        std::vector<int> ctrlVerts(num_controls);
         for (int c = 0; c < num_controls; c++) {
-            int v = V.size();
-            V.emplace_back();
-            V[v].n = cnCtrl[c].n;
-            V[v].pos = cnCtrl[c].pos;
-            V[v].cn_idx = c;
-            V[v].cn_type = cnCtrl[c].cType;
+            int new_v = addVert(cnCtrl[c], c);
+            inputCtoV[c] = new_v;
+            ctrlVerts[c] = new_v;
         }
         // 2. Initialize new dCN copies of the CN curves
-        for (int crv = 0; crv < cnCrv.size(); crv++) {
-            const std::vector<int>& crvSplines = cnCrv[crv].splines;
-            int c = C.size();
-            C.emplace_back();
-            C[c].cn_idx = crv;
-            // Track the halfedges between splines in the curve
-            int prev_he0 = -1;
-            int next_he1 = -1;
-            int temp_origin = -1;   // Tracks the new halfedge's origin
-            // For each curve, initialize all its splines (+ edges, halfedges, verts)
-            for (int s_idx = 0; s_idx < crvSplines.size(); s_idx++) {
-                int s = crvSplines[s_idx];
-                // Get start and endpoint controls
-                int s_start = cnHE[cnSpline[s].he].origin;
-                int s_end = cnHE[cnHE[cnSpline[s].he].twin].origin;
-                if (s_idx == 0) {   // Initialize curve start on first spline
-                    C[c].start = s_start;
-                    temp_origin = s_start;
-                } else if (s_idx == crvSplines.size() - 1) {
-                    C[c].end = s_end;
-                }
-
-                // TODO: Compute actual number of samples to use
-                // Compute samples
-                double arclen = CN->arclenEst(s);
-                int n_samples = std::max(3, 50);
-                // Assume n_samples will always be > 3
-                std::vector<Eigen::Vector3d> samples = CN->unifSample(s, n_samples);
-                // Get local spline idx. If multiple, then this spline must make a self-loop
-                std::vector<int> startLocalSplineIdx = CN->controlLocalSplineIdx(s, s_start);
-                std::vector<int> endLocalSplineIdx = CN->controlLocalSplineIdx(s, s_end);
-                if (startLocalSplineIdx.size() == 2) {  // self-loop
-                    endLocalSplineIdx[0] = startLocalSplineIdx[1];
-                }
-                // Start outgoing edge
-                for (int i = 1; i < n_samples; i++) {
-                    int v;
-                    // Initialize new structures
-                    if (i == n_samples -1) {    // Last sample
-                        v = s_end;
-                    } else {
-                        v = V.size();
-                        V.emplace_back();
-                    }
-                    int he0 = HE.size();
-                    int he1 = he0+1;
-                    HE.emplace_back();
-                    HE.emplace_back();
-                    int e = E.size();
-                    E.emplace_back();
-                    
-                    // Rewire
-                    Eigen::Vector3d edgeVec = V[v].pos - V[temp_origin].pos;
-                    HE[he0].twin = he1;
-                    HE[he1].twin = he0;
-                    HE[he0].prev = prev_he0;
-                    HE[he1].next = next_he1;
-                    HE[he0].tangent = edgeVec.normalized();
-                    HE[he1].tangent = -1 * edgeVec.normalized();
-                    HE[he0].l = edgeVec.norm();
-                    HE[he1].l = edgeVec.norm();
-                    if (i == n_samples - 1) {    // End vertex is the next
-                        V[v].adjHE[endLocalSplineIdx[0]] = he1;  // Add he1 to outgoing of end
-                        if (s_idx == crvSplines.size()-1) {
-                            C[c].he_end = he1;
-                        }
-                    } else if (i == 1) { // Start vertex is the prev
-                        V[v].adjHE[startLocalSplineIdx[0]] = he0;  // Add he0 to outgoing
-                        // Also set the first halfedge of the curve
-                        if (s_idx == 0) {
-                            C[c].he_start = he0;
-                        }
-                    } else { // Middle vertex (symmetrize next and prev)
-                        HE[prev_he0].next = he0;
-                        HE[next_he1].prev = he1;
-                        V[v].adjHE.push_back(he0);
-                    }
-                    HE[he0].dest = v;
-                    HE[he1].dest = temp_origin;
-                    HE[he0].edge = e;
-                    HE[he1].edge = e;
-                    HE[he0].sign = true;    // left side
-                    HE[he1].sign = false;   // right side
-                    E[e].he = he0;
-                    E[e].curve = c;
-                    // Update loop params
-                    prev_he0 = he0;
-                    next_he1 = he1;
-                    temp_origin = v;
-                }
-            }
+        for (int crv = 0; crv < num_curves; crv++) {
+            int c = addCurve(crv);
+            inputCrvToC[crv] = c;
         }
 
         // 3. Iterate over every control vertex that is an intersection/anchor and rewire its outgoing/incoming halfedges
-        for (int v = 0; v < num_controls; v++) {
-            if (V[v].cn_type == 2) {
-                continue;
-            }
-            const std::vector<int> adjHE = V[v].adjHE;
-            for (int he = 0; he < adjHE.size(); he++) {
-                int he0 = adjHE[he];
-                int he1 = adjHE[(he0+1)%adjHE.size()];
-                HE[he0].prev = HE[he1].twin;
-                HE[HE[he1].twin].next = he0;
-            }
+        // NOTE: This is not really necessary. We already have the outgoing order of halfedges per control vertex, and we will never need to traverse betweem curves
+        for (int v_idx = 0; v_idx < ctrlVerts.size(); v_idx++) {
+            int v = ctrlVerts[v_idx];
+            rewireVertAdjHE(v);
         }
 
         // 4. Compute all corner normals and widths
@@ -143,53 +43,262 @@ namespace DCurvenet {
         transportNormalsAndWidths();
         // 6. Compute scaled frames on all splines
         computeScaledFrames();
+
+        // 7. Cleanup by copying realtime frames to rest frames
+        copyFramesToNew();
     }
+
+    // Update the new frames on all halfedges
+    void dcurvenet::updateNewFrames() {
+        const std::vector<Curvenet::Control>& cnCtrl = CN->controls();
+        const std::vector<Curvenet::CubicSpline>& cnSpline = CN->splines();
+        const std::vector<Curvenet::Curve>& cnCurve = CN->curves();
+        // 1. Copy new control positions to their corresponding dvert
+        for (const auto& idxPair : inputCtoV) {
+            V[idxPair.second].new_pos = cnCtrl[idxPair.first].new_pos;
+        }
+        // 2. Iterate over curves and recompute
+        for (const auto& idxPair : inputCrvToC) {
+            std::vector<int> splines = cnCurve[idxPair.first].splines;
+            for (int s_idx = 0; s_idx < splines.size(); s_idx++) {
+                int s = splines[s_idx];
+                int n_samples = cnSpline[s].num_samples;
+                // Assume n_samples will always be > 3
+                const std::vector<Eigen::Vector3d> samples = CN->unifSample(s, n_samples);
+                // Exploit the fact that this matches the ordering that the curve was constructed
+                // NOTE: Is there a better way of doing this that more strongly guarantees matching indices?
+                for (int i = 1; i < samples.size() - 1; i++) {
+                    
+                }
+            }
+        }
+
+    }
+
+    // Add a new vertex that matches an existing control
+    int dcurvenet::addVert(Curvenet::Control ctrl, int ctrl_idx) {
+        int v = V.size();
+        V.emplace_back();
+        V[v].n = ctrl.n;
+        V[v].pos = ctrl.pos;
+        V[v].new_pos = ctrl.pos;
+        V[v].cn_idx = ctrl_idx;
+        V[v].cn_type = ctrl.cType;
+        V[v].adjHE.resize(ctrl.adjHE.size(), -1);
+        return v;
+    }
+    // Add a vertex given its parameters
+    int dcurvenet::addVert(Eigen::Vector3d new_pos, Eigen::Vector3d new_n, int ctrl_idx, int ctrl_type, int adjSize) {
+        int v = V.size();
+        V.emplace_back();
+        V[v].n = new_n;
+        V[v].pos = new_pos;
+        V[v].new_pos = new_pos;
+        V[v].cn_idx = ctrl_idx;
+        V[v].cn_type = ctrl_type;
+        V[v].adjHE.resize(adjSize, -1);
+        return v;
+    }
+    // Add a new edge in and return its halfedges
+    std::pair<int, int> dcurvenet::addEdge(int origin, int dest, int prev_he0, int next_he1, int c) {
+        if (origin > V.size() || dest > V.size()) {
+            return std::make_pair(-1, -1);
+        }
+        int he0 = HE.size();
+        int he1 = he0+1;
+        HE.emplace_back();
+        HE.emplace_back();
+        
+        // Rewire
+        HE[he0].dest = dest;
+        HE[he1].dest = origin;
+        Eigen::Vector3d edgeVec = V[dest].pos - V[origin].pos;
+        HE[he0].twin = he1;
+        HE[he1].twin = he0;
+        HE[he0].prev = prev_he0;
+        HE[he1].next = next_he1;
+        if (prev_he0 != -1) {
+            HE[prev_he0].next = he0;
+        }
+        if (next_he1 != -1) {
+            HE[next_he1].prev = he1;
+        }
+        HE[he0].tangent = edgeVec.normalized();
+        HE[he1].tangent = -1 * edgeVec.normalized();
+        HE[he0].l = edgeVec.norm();
+        HE[he1].l = edgeVec.norm();
+        HE[he0].sign = true;    // left side
+        HE[he1].sign = false;   // right side
+        HE[he0].curve = c;
+        HE[he1].curve = c;
+
+        return std::make_pair(he0, he1);
+    }
+    // Add a curve that matches an input curvenet curve
+    int dcurvenet::addCurve(int crv) {
+        const std::vector<Curvenet::HalfEdge>& cnHE = CN->halfedges();
+        const std::vector<Curvenet::CubicSpline>& cnSpline = CN->splines();
+        const std::vector<Curvenet::Curve>& cnCrv = CN->curves();
+
+        const std::vector<int>& crvSplines = cnCrv[crv].splines;
+        int c = C.size();
+        C.emplace_back();
+        C[c].cn_idx = crv;
+        // Track the halfedges between splines in the curve
+        int prev_he0 = -1;
+        int next_he1 = -1;
+        int temp_origin = -1;   // Tracks the new halfedge's origin
+        // For each curve, initialize all its splines (+ edges, halfedges, verts)
+        for (int s_idx = 0; s_idx < crvSplines.size(); s_idx++) {
+            int s = crvSplines[s_idx];
+            // Get start and endpoint controls
+            int s_start = cnHE[cnSpline[s].he].origin;
+            int s_end = cnHE[cnHE[cnSpline[s].he].twin].origin;
+            if (s_idx == 0) {   // Initialize curve start on first spline
+                C[c].start = s_start;
+                temp_origin = s_start;
+            } 
+            if (s_idx == crvSplines.size() - 1) {   // Initialize curve end on the last spline
+                C[c].end = s_end;
+            }
+
+            // Compute samples
+            int n_samples = cnSpline[s].num_samples;
+            // Assume n_samples will always be > 3
+            const std::vector<Eigen::Vector3d> samples = CN->unifSample(s, n_samples);
+            // Get local spline idx. If multiple, then this spline must make a self-loop
+            std::vector<int> startLocalSplineIdx = CN->controlLocalSplineIdx(s_start, s);
+            std::vector<int> endLocalSplineIdx = CN->controlLocalSplineIdx(s_end, s);
+            if (s_start == s_end && startLocalSplineIdx.size() == 2) {  // Check self-loops
+                endLocalSplineIdx[0] = startLocalSplineIdx[1];
+            }
+            // Start outgoing edge
+            for (int i = 1; i < n_samples; i++) {
+                int v;
+                // Initialize new structures
+                if (i == n_samples -1) {    // Last sample
+                    v = s_end;
+                } else {    // Initialize a new sample
+                    v = addVert(samples[i]);
+                }
+                std::pair<int, int> new_edge = addEdge(temp_origin, v, prev_he0, next_he1, c);
+                int he0 = new_edge.first;
+                int he1 = new_edge.second;
+                
+                if (i == n_samples - 1) {    // End vertex is the next
+                    V[v].adjHE[endLocalSplineIdx[0]] = he1;  // Add he1 to outgoing of end
+                    if (s_idx == crvSplines.size()-1) {
+                        C[c].he_end = he1;
+                    }
+                } else if (i == 1) { // Start vertex is the prev
+                    V[temp_origin].adjHE[startLocalSplineIdx[0]] = he0;  // Add he0 to outgoing
+                    // Also set the first halfedge of the curve
+                    if (s_idx == 0) {
+                        C[c].he_start = he0;
+                    }
+                } else { // Middle vertex (symmetrize next and prev)
+                    V[temp_origin].adjHE.push_back(he0);
+                }
+                // Update loop params
+                prev_he0 = he0;
+                next_he1 = he1;
+                temp_origin = v;
+            }
+        }
+        return c;
+    }
+    // Rewire incoming and outgoing halfedges of intersection vertices
+    int dcurvenet::rewireVertAdjHE(int v) {
+        if (V[v].cn_type < 3) {
+            return -1;
+        }
+        const std::vector<int> adjHE = V[v].adjHE;
+        for (int he = 0; he < adjHE.size(); he++) {
+            int he0 = adjHE[he];
+            int he1 = adjHE[(he+1)%adjHE.size()];
+            HE[he0].prev = HE[he1].twin;
+            HE[HE[he1].twin].next = he0;
+        }
+        return 1;
+    }
+
 
     // For intersections, computes their corner normals. For non-controls, this method does nothing (return -1)
     int dcurvenet::vertCornerNormalsWidths(int v) {
-        // Do not process vertices which are not marked as intersections or anchors
-        if ((V[v].cn_type != 1 && V[v].cn_type != 3) || !V[v].active) {
+        if (!V[v].active) {
             return -1;
         }
         double eps = 1e-6;
         const std::vector<int> adjHE = V[v].adjHE;
         std::vector<Eigen::Vector3d> adjNormals(adjHE.size());
-        // Explictly handle anchors -- but only if the outgoing curve has an endpoint anchor
-        if (V[v].cn_type == 1) {
-            // Grab the adjacent curve
-            int he = adjHE[0];
-            int c = E[HE[he].edge].curve;
-            // Figure out if v is at the end or start of the curve + assign normals and widths
-            if (HE[he].sign) {
-                C[c].N_pos.first = V[v].n;
-                C[c].W_pos.first = HE[he].l;
-                C[c].N_neg.first = V[v].n;
-                C[c].W_neg.first = HE[he].l;
-            } else {
-                C[c].N_pos.second = V[v].n;
-                C[c].W_pos.second = HE[he].l;
-                C[c].N_neg.second = V[v].n;
-                C[c].W_neg.second = HE[he].l;
+        // Explictly handle anchors and closed curves
+        if (V[v].cn_type < 3) {
+            // Check if we are on the start of a curve
+            int he0 = adjHE[0];
+            int c = HE[he0].curve;
+            if ((C[c].start != v) && V[v].cn_type == 2) {   // valence 2 control that is not the start of the curve
+                return -1;
             }
-            // Note that if the other endpoint of the curve is an intersection, these will be ignored.
+            for (int he_idx = 0; he_idx < adjHE.size(); he_idx++) {
+                int he = adjHE[he_idx];
+                const Eigen::Vector3d& tan = using_new ? HE[he].new_tangent : HE[he].tangent;
+                // Gram-schmidt to ensure the normal is orthogonal to each tangent
+                Eigen::Vector3d n = V[v].n - V[v].n.dot(tan) * tan;
+                if (n.norm() <= eps) {  // Extremely rare case where normal == tangent or normal == -tangent
+                    // Just pick a random direction orthogonal to the tangent 
+                    if (std::abs(tan(0)) < 0.9) {
+                        n = tan.cross(Eigen::Vector3d::UnitX());
+                    } else {
+                        n = tan.cross(Eigen::Vector3d::UnitY());
+                    }
+                }
+                double l = n.norm();
+                n.normalize();
+                int next_he = adjHE[(he_idx+1)%adjHE.size()];
+                double w = HE[he].l + l * (HE[next_he].l - HE[he].l);
+                if (HE[he].sign) {
+                    C[c].N_pos.first = n;
+                    C[c].W_pos.first = w;
+                    C[c].N_neg.first = n;
+                    C[c].W_neg.first = w;
+                } else {
+                    C[c].N_pos.second = n;
+                    C[c].W_pos.second = w;
+                    C[c].N_neg.second = n;
+                    C[c].W_neg.second = w;
+                }
+            }
             return 1;
         }
-        // Otherwise, we need to compute normals explicitly
+
+        // Otherwise, we are at an intersection and need to compute normals explicitly
         std::vector<bool> skipList(adjNormals.size(), false);
         for (int he = 0; he < adjHE.size(); he++) {
             int he0 = adjHE[he];
-            int he1 = adjHE[(he0+1)%adjHE.size()];
-            int c0 = E[HE[he0].edge].curve;
-            int c1 = E[HE[he1].edge].curve;
+            int he1 = adjHE[(he+1)%adjHE.size()];
+            int c0 = HE[he0].curve;
+            int c1 = HE[he1].curve;
+            Eigen::Vector3d cornerNormal;
             // First check if we are parallel. If so skip for now
             double dotProdTest = HE[he0].tangent.dot(HE[he1].tangent);
-            if (dotProdTest >= 1.0-eps || dotProdTest <= -1.0+eps) {
+            if (dotProdTest <= -1.0+eps) {
                 skipList[he] = true;
                 continue;
+            } else if (dotProdTest >= 1 - eps) {    // Two outgoing HEs are coincident
+                const Eigen::Vector3d& tan = HE[he0].tangent;
+                cornerNormal = V[v].n - V[v].n.dot(tan) * tan;
+                if (cornerNormal.norm() <= eps) {  // Extremely rare case where normal == tangent or normal == -tangent
+                    // Just pick a random direction orthogonal to the tangent 
+                    if (std::abs(tan(0)) < 0.9) {
+                        cornerNormal = tan.cross(Eigen::Vector3d::UnitX());
+                    } else {
+                        cornerNormal = tan.cross(Eigen::Vector3d::UnitY());
+                    }
+                }
+            } else {
+                // Compute corner normal as usual
+                cornerNormal = HE[he0].tangent.cross(HE[he1].tangent);
             }
-            
-            // Compute corner normal
-            Eigen::Vector3d cornerNormal = HE[he0].tangent.cross(HE[he1].tangent);
 
             // Assign corner normals to curves
             // First figure out if this is the start halfedge of the curve
@@ -207,25 +316,45 @@ namespace DCurvenet {
         }
         // Loop over any degenerate cases (straight angles)
         for (int he = 0; he < skipList.size(); he++) {
+            if (!skipList[he]) {
+                continue;
+            }
             int he0 = adjHE[he];
-            int he_m1 = adjHE[(he + adjHE.size() - 1)%adjHE.size()];
-            int he1 = adjHE[(he + adjHE.size() - 1)%adjHE.size()];
+            int he_m1_local = (he + adjHE.size() - 1)%adjHE.size();
+            int he_m1 = adjHE[he_m1];
+            int he1_local = (he + 1)%adjHE.size();
+            int he1 = adjHE[he1_local];
             // Get adjacent curves
-            int c0 = E[HE[he0].edge].curve;
-            int c1 = E[HE[he1].edge].curve;
+            int c0 = HE[he0].curve;
+            int c1 = HE[he1].curve;
 
             // Average the adjacent vectors
-            Eigen::Vector3d cornerNormal = (adjNormals[he_m1] + adjNormals[he1])/((adjNormals[he_m1] + adjNormals[he1]).norm());
+            Eigen::Vector3d cornerNormal = adjNormals[he_m1_local] + adjNormals[he1_local];
+            // Extremely unlikely, but just in case, put in a safeguard...
+            if (cornerNormal.norm() <= eps) {
+                Eigen::Vector3d tan = HE[he0].tangent;
+                cornerNormal = V[v].n - V[v].n.dot(tan) * tan;cornerNormal = V[v].n - V[v].n.dot(tan) * tan;
+                if (cornerNormal.norm() <= eps) {
+                    // Just pick a random direction orthogonal to the tangent 
+                    if (std::abs(tan(0)) < 0.9) {
+                        cornerNormal = tan.cross(Eigen::Vector3d::UnitX());
+                    } else {
+                        cornerNormal = tan.cross(Eigen::Vector3d::UnitY());
+                    }
+                }
+            }
+            cornerNormal.normalize();
+
             // Assign corner normals to curves
             if (HE[he0].sign) {
-                C[c0].N_pos.first = cornerNormal;
+                C[c0].N_pos.first = cornerNormal.normalized();
             } else {
-                C[c0].N_neg.second = cornerNormal;
+                C[c0].N_neg.second = cornerNormal.normalized();
             }
             if (HE[he1].sign) {
-                C[c1].N_neg.first = cornerNormal;
+                C[c1].N_neg.first = cornerNormal.normalized();
             } else {
-                C[c1].N_pos.second = cornerNormal;
+                C[c1].N_pos.second = cornerNormal.normalized();
             }
             adjNormals[he] = cornerNormal;
         }
@@ -233,12 +362,12 @@ namespace DCurvenet {
         // Use the computed normal norm list to calculate widths
         for (int he = 0; he < adjHE.size(); he++) {
             int he0 = adjHE[he];
-            int he1 = adjHE[(he0+1)%adjHE.size()];
-            int he_m1 = adjHE[(he0-1+adjHE.size())%adjHE.size()];
-            int c0 = E[HE[he0].edge].curve;
+            int he1 = adjHE[(he+1)%adjHE.size()];
+            int he_m1 = adjHE[(he-1+adjHE.size())%adjHE.size()];
+            int c0 = HE[he0].curve;
             double cornerNormalNorm0;
             double he0_len = HE[he0].l;
-            double he_m1_len = HE[he1].l;
+            double he_m1_len = HE[he_m1].l;
             double he1_len = HE[he1].l;
 
             // Compute corner widths
@@ -259,7 +388,7 @@ namespace DCurvenet {
     }
 
     // Corner normals on only intersections
-    int dcurvenet::allCornerNormalsAndWidths() {
+    int dcurvenet::allCornerNormalsAndWidths(bool using_new) {
         for (int v = 0; v < V.size(); v++) {
             vertCornerNormalsWidths(v);
         }
@@ -278,19 +407,6 @@ namespace DCurvenet {
         int he_end = C[c].he_end;
         int start_type = V[C[c].start].cn_type;
         int end_type = V[C[c].end].cn_type;
-
-        // We haven't set the normals and widths for closed curves yet
-        if (start_type == 2 && end_type == 2) {
-            C[c].N_pos.first = V[start].n;
-            C[c].N_pos.second = V[start].n;
-            C[c].N_neg.first = V[start].n;
-            C[c].N_neg.second = V[start].n;
-
-            C[c].W_pos.first = HE[he_start].l;
-            C[c].W_pos.second = HE[he_end].l;
-            C[c].W_neg.first = HE[he_start].l;
-            C[c].W_neg.second = HE[he_end].l;
-        }
 
         // Case 1: Both endpoints are intersections or both are anchors
         if (start_type == end_type) {
@@ -370,7 +486,7 @@ namespace DCurvenet {
             std::vector<double> lens;
             Eigen::Vector3d start_n = C[c].N_neg.second;
             double start_w = C[c].W_neg.second;
-            int total_len = accumulateRotations(C[c].he_end, start, rots, lens);
+            double total_len = accumulateRotations(C[c].he_end, start, rots, lens);
             int he_curr = he_end;
             for (int he = 0; he < rots.size(); he++) {
                 HE[he_curr].normal = rots[he] * start_n;
@@ -392,7 +508,7 @@ namespace DCurvenet {
         return -1;
     }
     // Transport normals for all curves
-    int dcurvenet::transportNormalsAndWidths() {
+    int dcurvenet::transportNormalsAndWidths(bool using_new) {
         for (int c = 0; c < C.size(); c++) {
             transportNWOnCurve(c);
         }
@@ -417,21 +533,45 @@ namespace DCurvenet {
             } else {
                 he_curr = HE[he_curr].next;
             }
+            // Re-orthogonalize normals for safety
+            HE[he_curr].normal = (HE[he_curr].normal - HE[he_curr].normal.dot(HE[he_curr].tangent) * HE[he_curr].tangent).normalized();
             // Positive side
-            HE[he_curr].binormal = HE[he_curr].tangent.cross(HE[he_curr].normal);
+            HE[he_curr].binormal = (HE[he_curr].tangent.cross(HE[he_curr].normal)).normalized();
             HE[he_curr].h = std::sqrt(HE[he_curr].l * HE[he_curr].w);
             // Negative side
             int he_neg = HE[he_curr].twin;
-            HE[he_neg].binormal = HE[he_neg].tangent.cross(HE[he_neg].normal);
+            // Re-orthogonalize normals for safety
+            HE[he_neg].normal = (HE[he_neg].normal - HE[he_neg].normal.dot(HE[he_neg].tangent) * HE[he_neg].tangent).normalized();
+            HE[he_neg].binormal = (HE[he_neg].tangent.cross(HE[he_neg].normal)).normalized();
             HE[he_neg].h = std::sqrt(HE[he_neg].l * HE[he_neg].w);
-        } while (HE[he_curr].dest != end && he_curr != -1);
+        } while (he_curr != -1 && HE[he_curr].dest != end);
         return 1;
     }
-    int dcurvenet::computeScaledFrames() {
+    int dcurvenet::computeScaledFrames(bool using_new) {
         for (int c = 0; c < C.size(); c++) {
             computeScaledFrameOnCurve(c);
         }
         return 1;
     }
 
+    // Copy scaled frame data to new local variables
+    int dcurvenet::copyFrameToNew(int he) {
+        if (he >= HE.size()) {
+            return -1;
+        }
+        HE[he].rest_tangent = HE[he].tangent;
+        HE[he].rest_binormal = HE[he].binormal;
+        HE[he].rest_normal = HE[he].normal;
+
+        HE[he].rest_l = HE[he].l;
+        HE[he].rest_w = HE[he].w;
+        HE[he].rest_h = HE[he].h;
+        return 1;
+    }
+    int dcurvenet::copyFramesToNew() {
+        for (int he = 0; he < HE.size(); he++) {
+            copyFrameToNew(he);
+        }
+        return 1;
+    }
 }   // namespace DCurvenet
