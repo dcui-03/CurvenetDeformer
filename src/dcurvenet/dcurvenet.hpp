@@ -21,11 +21,12 @@ class dcurvenet {
         dcurvenet();
 
         // Compute the deformation gradient on an edge given a new scaled frame
-        // NOTE: Use formula from paper
-        void computeHEDefGrad(int he, Eigen::Vector3d newT,
-                                      Eigen::Vector3d newB,
-                                      Eigen::Vector3d newN,
-                                      Eigen::Vector3d newScale);
+        // NOTE: Uses formula from paper
+        Eigen::Matrix3d computeHEDefGrad(int he,
+                                        const Eigen::Vector3d& newT, 
+                                        const Eigen::Vector3d& newB, 
+                                        const Eigen::Vector3d& newN, 
+                                        const double& newL, const double& newW, const double& newH);
 
     protected:
         // No inherited classes
@@ -44,6 +45,11 @@ class dcurvenet {
         int computeScaledFrameOnCurve(int c);   // Notice that we need to do this
         // Compute scaled frames on all curves
         int computeScaledFrames();
+        
+        // Accumulates rotation matrices and lengths by tracing from a starting halfedge to an end vertex
+        double accumulateRotations(int start_he, int end_v, std::vector<Eigen::Matrix3d>& rots, std::vector<double> lens);
+        // Compute torsioin
+        double computeTorsion(Eigen::Vector3d n_1, Eigen::Vector3d n_k, Eigen::Matrix3d Om_k, Eigen::Vector3d t_k);
             
         // Attributes as lists
         std::vector<Vert> V;

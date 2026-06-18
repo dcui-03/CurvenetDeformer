@@ -3,6 +3,7 @@
 
 #include <Eigen/Core>
 #include <vector>
+#include <utility>
 
 // File with basic structs used by discrete curvenet class
 
@@ -34,9 +35,12 @@ namespace DCurvenet {
 
         // Scaled Local Frame
         bool sign;  // true for positive, false for negative
+        // Note, we can save these each separately for easy access.
+        // Paper provides an easy method for computing def grad using components rather than matrices
         Eigen::Vector3d tangent;
         Eigen::Vector3d binormal;
         Eigen::Vector3d normal;
+        double l, w, h; // length, width, and height
         Eigen::Vector3d scale = {1.0, 1.0, 1.0}; // Scale each axis
     };
 
@@ -49,10 +53,10 @@ namespace DCurvenet {
 
     // Discrete curve
     struct Curve {
-        int he = -1;        // Starting outgoing halfedge
+        int he_start = -1;        // Starting outgoing halfedge
+        int he_end = -1;        // Ending outgoing halfedge
         int start = -1;    // One of the endpoint vertices
         int end = -1;      // The other endpoint vertex
-        double len = 0.0;   // length of the curve
         bool active = true;     // For safety, say if the component is active (ignore for now)
 
         // Corner normals

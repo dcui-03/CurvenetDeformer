@@ -1,18 +1,20 @@
 #include "dcurvenet.hpp"
 
 #include "curvenet/curvenet.hpp"
+#include "utils/utils.hpp"
 #include <Eigen/Core>
 #include <vector>
-#include <algorithm>
+#include <cmath>
+#include <utility>
 
 namespace DCurvenet {
-
     // Takes the original curvenet and discretizes it
     dcurvenet::dcurvenet(Curvenet::curvenet* CN, int alpha): CN(CN) {
         std::vector<Curvenet::Control> cnCtrl = CN->controls();
         std::vector<Curvenet::HalfEdge> cnHE = CN->halfedges();
         std::vector<Curvenet::CubicSpline> cnSpline = CN->splines();
         std::vector<Curvenet::Curve> cnCrv = CN->curves();
+        // Defensive reset
         V.clear();
         E.clear();
         HE.clear();
@@ -56,7 +58,7 @@ namespace DCurvenet {
                 int n_samples = std::max(3, 50);
                 // Assume n_samples will always be > 3
                 std::vector<Eigen::Vector3d> samples = CN->unifSample(s, n_samples);
-                // Insert into 
+                // Get local spline idx. If multiple, then this spline must make a self-loop
                 std::vector<int> startLocalSplineIdx = CN->controlLocalSplineIdx(s, s_start);
                 std::vector<int> endLocalSplineIdx = CN->controlLocalSplineIdx(s, s_end);
                 if (startLocalSplineIdx.size() == 2) {  // self-loop
@@ -87,14 +89,19 @@ namespace DCurvenet {
                     HE[he1].next = next_he1;
                     HE[he0].tangent = edgeVec.normalized();
                     HE[he1].tangent = -1 * edgeVec.normalized();
-                    HE[he0].scale(0) = edgeVec.norm();
-                    HE[he1].scale(0) = edgeVec.norm();
+                    HE[he0].l = edgeVec.norm();
+                    HE[he1].l = edgeVec.norm();
                     if (i == n_samples - 1) {    // End vertex is the next
-                        V[v].adjHE[endLocalSplineIdx[0]] = he1;  // Add he0 to outgoing
+                        V[v].adjHE[endLocalSplineIdx[0]] = he1;  // Add he1 to outgoing of end
+                        if (s_idx == crvSplines.size()-1) {
+                            C[c].he_end = he1;
+                        }
                     } else if (i == 1) { // Start vertex is the prev
                         V[v].adjHE[startLocalSplineIdx[0]] = he0;  // Add he0 to outgoing
                         // Also set the first halfedge of the curve
-                        C[c].he = he0;
+                        if (s_idx == 0) {
+                            C[c].he_start = he0;
+                        }
                     } else { // Middle vertex (symmetrize next and prev)
                         HE[prev_he0].next = he0;
                         HE[next_he1].prev = he1;
@@ -140,13 +147,34 @@ namespace DCurvenet {
 
     // For intersections, computes their corner normals. For non-controls, this method does nothing (return -1)
     int dcurvenet::vertCornerNormalsWidths(int v) {
-        // Do not process vertices which are not marked as intersections
-        if (V[v].cn_type < 3) {
+        // Do not process vertices which are not marked as intersections or anchors
+        if ((V[v].cn_type != 1 && V[v].cn_type != 3) || !V[v].active) {
             return -1;
         }
         double eps = 1e-6;
         const std::vector<int> adjHE = V[v].adjHE;
         std::vector<Eigen::Vector3d> adjNormals(adjHE.size());
+        // Explictly handle anchors -- but only if the outgoing curve has an endpoint anchor
+        if (V[v].cn_type == 1) {
+            // Grab the adjacent curve
+            int he = adjHE[0];
+            int c = E[HE[he].edge].curve;
+            // Figure out if v is at the end or start of the curve + assign normals and widths
+            if (HE[he].sign) {
+                C[c].N_pos.first = V[v].n;
+                C[c].W_pos.first = HE[he].l;
+                C[c].N_neg.first = V[v].n;
+                C[c].W_neg.first = HE[he].l;
+            } else {
+                C[c].N_pos.second = V[v].n;
+                C[c].W_pos.second = HE[he].l;
+                C[c].N_neg.second = V[v].n;
+                C[c].W_neg.second = HE[he].l;
+            }
+            // Note that if the other endpoint of the curve is an intersection, these will be ignored.
+            return 1;
+        }
+        // Otherwise, we need to compute normals explicitly
         std::vector<bool> skipList(adjNormals.size(), false);
         for (int he = 0; he < adjHE.size(); he++) {
             int he0 = adjHE[he];
@@ -209,9 +237,9 @@ namespace DCurvenet {
             int he_m1 = adjHE[(he0-1+adjHE.size())%adjHE.size()];
             int c0 = E[HE[he0].edge].curve;
             double cornerNormalNorm0;
-            double he0_len = HE[he0].scale(0);
-            double he_m1_len = HE[he1].scale(0);
-            double he1_len = HE[he1].scale(0);
+            double he0_len = HE[he0].l;
+            double he_m1_len = HE[he1].l;
+            double he1_len = HE[he1].l;
 
             // Compute corner widths
             double cornerWidth0 = he0_len + adjNormals[he].norm()*(he1_len - he0_len);
@@ -240,53 +268,168 @@ namespace DCurvenet {
 
     // Transport corner normals and widths from the two ends of a curve
     int dcurvenet::transportNWOnCurve(int c) {
+        if (!C[c].active) {
+            return -1;
+        }
         // First, query what kinds of endpoints we have
         int start = C[c].start;
         int end = C[c].end;
+        int he_start = C[c].he_start;
+        int he_end = C[c].he_end;
         int start_type = V[C[c].start].cn_type;
         int end_type = V[C[c].end].cn_type;
 
-        // TODO: Maybe write a function which does tracing and rotation/alpha accumulation for you, given a start vert index and end vert index
-        // ex. pass in two vectors, one for alpha (std::vector<double>), one for rotation (std::vector<Eigen::Matrix3d>). returns total alpha as a double.
-        // TODO: Need a utils function which converts an angle into a rotation matrix.
+        // We haven't set the normals and widths for closed curves yet
+        if (start_type == 2 && end_type == 2) {
+            C[c].N_pos.first = V[start].n;
+            C[c].N_pos.second = V[start].n;
+            C[c].N_neg.first = V[start].n;
+            C[c].N_neg.second = V[start].n;
 
-        // Case 1: Both endpoints are intersections
-        if ((start_type == 3) && (end_type == 3)) {
+            C[c].W_pos.first = HE[he_start].l;
+            C[c].W_pos.second = HE[he_end].l;
+            C[c].W_neg.first = HE[he_start].l;
+            C[c].W_neg.second = HE[he_end].l;
+        }
+
+        // Case 1: Both endpoints are intersections or both are anchors
+        if (start_type == end_type) {
+            // POSITIVE SIDE
+            std::vector<Eigen::Matrix3d> rots;
+            std::vector<double> lens;
+            Eigen::Vector3d start_n = C[c].N_pos.first;
+            Eigen::Vector3d end_n = C[c].N_pos.second;
+            double start_w = C[c].W_pos.first;
+            double end_w = C[c].W_pos.second;
             // 1. For the pos side, first trace until the end vertex, accumulating rotations and alpha values
+            double total_len = accumulateRotations(C[c].he_start, end, rots, lens);
             // 2. Compute the torsion angle theta
-            // 3. Accumulate torsion and apply to curve
+            double torsion = computeTorsion(start_n, end_n, rots[rots.size()-1], -1*HE[C[c].he_end].tangent);
+            // 3. Propagate rotations and widths to halfedges
+            int he_curr = he_start;
+            for (int he = 0; he < rots.size(); he++) {
+                double alpha = lens[he]/total_len;
+                Eigen::Matrix3d he_torsion = Utils::computeRotation(HE[he_curr].tangent, alpha*torsion);
+                HE[he_curr].normal = he_torsion * rots[he] * start_n;
+                HE[he_curr].w = (1-alpha)*start_w + (alpha)*end_w;
+                he_curr = HE[he_curr].next;
+            }
 
-            // 3. Repeat for negative side (but starting from the end and tracing to the start)
-        }
-        // Case 2: Both endpoints are anchors
-        else if ((start_type == 1) && (end_type == 1)) {
-            // Need to handle this case somehow, so set all normals as 
-            int he0 = adjHE[0];
-            int c = E[HE[he0].edge].curve;
-            C[c].N_pos.first = V[v].n;
-            C[c].N_pos.second = V[v].n;
-            C[c].N_neg.first = V[v].n;
-            C[c].N_neg.second = V[v].n;
+            // NEGATIVE SIDE
+            // The same thing but backwards (so we can trace using the same function of next halfedges)
+            start_n = C[c].N_neg.second;
+            end_n = C[c].N_neg.first;
+            start_w = C[c].W_neg.second;
+            end_w = C[c].W_neg.first;
+            total_len = accumulateRotations(C[c].he_end, start, rots, lens);
+            torsion = computeTorsion(start_n, end_n, rots[rots.size()-1], -1*HE[C[c].he_start].tangent);
+            he_curr = he_end;
+            for (int he = 0; he < rots.size(); he++) {
+                double alpha = lens[he]/total_len;
+                Eigen::Matrix3d he_torsion = Utils::computeRotation(HE[he_curr].tangent, alpha*torsion);
+                HE[he_curr].normal = he_torsion * rots[he] * start_n;
+                HE[he_curr].w = (1-alpha)*start_w + (alpha)*end_w;
+                he_curr = HE[he_curr].next;
+            }
             return 1;
-            // Take the start and end normals as their associated vertex normal
-            // Take the widths as ???? just the length of the tangent?
-            // Then, apply same logic as the intersection version
         }
-        // Case 3: Start is an intersection, end is an anchor
+        // Case 2: Start is an intersection, end is an anchor
         else if ((start_type == 3) && (end_type == 1)) {
-            // 1. Accumulate rotations
-            // 2. Propagate normals
+            // POSITIVE SIDE
+            std::vector<Eigen::Matrix3d> rots;
+            std::vector<double> lens;
+            Eigen::Vector3d start_n = C[c].N_pos.first;
+            double start_w = C[c].W_pos.first;
+            // 1. For the pos side, first trace until the end vertex, accumulating rotations and alpha values
+            double total_len = accumulateRotations(C[c].he_start, end, rots, lens);
+            // 3. Propagate rotations and widths to halfedges
+            int he_curr = he_start;
+            for (int he = 0; he < rots.size(); he++) {
+                HE[he_curr].normal = rots[he] * start_n;
+                HE[he_curr].w = start_w;
+                he_curr = HE[he_curr].next;
+            }
+
+            // NEGATIVE SIDE
+            start_n = C[c].N_neg.first;
+            start_w = C[c].W_neg.first;
+            he_curr = HE[he_start].twin;
+            // Do not re-initialize rotations, since we only trace from interesection to anchor
+            for (int he = 0; he < rots.size(); he++) {
+                HE[he_curr].normal = rots[he] * start_n;
+                HE[he_curr].w = start_w;
+                he_curr = HE[he_curr].prev;
+            }
+            return 1;
         }
-        // Case 4: Start is an anchor, end is an intersection
-        else {
-            // Same as case 3 but trace backwards instead of forwards
+        // Case 3: Start is an anchor, end is an intersection
+        else if ((start_type == 1) && (end_type == 3)) {
+            // Same as case 2 but trace backwards instead of forwards
+            // NEGATIVE SIDE
+            std::vector<Eigen::Matrix3d> rots;
+            std::vector<double> lens;
+            Eigen::Vector3d start_n = C[c].N_neg.second;
+            double start_w = C[c].W_neg.second;
+            int total_len = accumulateRotations(C[c].he_end, start, rots, lens);
+            int he_curr = he_end;
+            for (int he = 0; he < rots.size(); he++) {
+                HE[he_curr].normal = rots[he] * start_n;
+                HE[he_curr].w = start_w;
+                he_curr = HE[he_curr].next;
+            }
+
+            start_n = C[c].N_pos.second;
+            start_w = C[c].W_pos.second;
+            he_curr = HE[he_end].twin;
+            // Do not re-initialize rotations, since we only trace from interesection to anchor
+            for (int he = 0; he < rots.size(); he++) {
+                HE[he_curr].normal = rots[he] * start_n;
+                HE[he_curr].w = start_w;
+                he_curr = HE[he_curr].prev;
+            }
+            return 1;
         }
-        return 1;
+        return -1;
     }
     // Transport normals for all curves
     int dcurvenet::transportNormalsAndWidths() {
         for (int c = 0; c < C.size(); c++) {
             transportNWOnCurve(c);
+        }
+        return 1;
+    }
+
+    // Complete the scaled frames on a curve by computing the binormal and height
+    int dcurvenet::computeScaledFrameOnCurve(int c) {
+        if (!C[c].active) {
+            return -1;
+        }
+        int start = C[c].start;
+        int end = C[c].end;
+        int he_start = C[c].he_start;
+        int he_end = C[c].he_end;
+        
+        int he_curr = -1;
+        // Iterate over every halfedge in the curve
+        do {
+            if (he_curr == -1) {
+                he_curr = he_start;
+            } else {
+                he_curr = HE[he_curr].next;
+            }
+            // Positive side
+            HE[he_curr].binormal = HE[he_curr].tangent.cross(HE[he_curr].normal);
+            HE[he_curr].h = std::sqrt(HE[he_curr].l * HE[he_curr].w);
+            // Negative side
+            int he_neg = HE[he_curr].twin;
+            HE[he_neg].binormal = HE[he_neg].tangent.cross(HE[he_neg].normal);
+            HE[he_neg].h = std::sqrt(HE[he_neg].l * HE[he_neg].w);
+        } while (HE[he_curr].dest != end && he_curr != -1);
+        return 1;
+    }
+    int dcurvenet::computeScaledFrames() {
+        for (int c = 0; c < C.size(); c++) {
+            computeScaledFrameOnCurve(c);
         }
         return 1;
     }

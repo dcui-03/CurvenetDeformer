@@ -111,6 +111,19 @@ bool insertIdxBetweenPair(std::vector<int>& idxList, int a, int b, int new_idx) 
     return false;
 }
 
+// Flattens an Eigen::Matrix3d into a 9x1 row vector
+// NOTE: Does so column-wise!
+Eigen::VectorXd flattenMatrix3d(const Eigen::Matrix3d& F) {
+    return F.reshaped();
+}
+
+// Compresses a 9x1 Eigen::VectorXd into an Eigen::Matrix3d
+// Assumes column-wise storage
+Eigen::Matrix3d compressVector9d(const Eigen::VectorXd& f) {
+    assert(f.size() == 9);
+    return Eigen::Map<const Eigen::Matrix3d>(f.data());
+}
+
 // GEOMETRY HELPERS
 
 // Find the closest point to a triangle
@@ -248,6 +261,79 @@ bool anglesCoincident(double a, double b, double eps) {
     double diff = std::abs(a - b);
     diff = std::min(diff, 2.0 * M_PI - diff);
     return diff <= eps;
+}
+
+// Given two unit vectors, compute the rotation from one to the other
+// Rotation formulation taken from https://en.wikipedia.org/wiki/Rotation_matrix#Rotation_matrix_from_axis_and_angle
+Eigen::Matrix3d computeRotation(const Eigen::Vector3d& u, const Eigen::Vector3d& v) {
+    double eps = 1e-6;
+    // Check for degenerate vectors
+    if (u.norm() <= eps || v.norm() <= eps) {
+        return Eigen::Matrix3d::Zero();
+    }
+    // For safety, re-normalize
+    Eigen::Vector3d u_norm = u.normalized();
+    Eigen::Vector3d v_norm = v.normalized();
+    double cosUV = u_norm.dot(v_norm);
+    if (cosUV >= 1-eps) {   // Same vector
+        return Eigen::Matrix3d::Identity();
+    } else if (cosUV <= -1 + eps) { // Opposite vectors
+        return -1 * Eigen::Matrix3d::Identity();
+    }
+
+    // Compute angle
+    Eigen::Vector3d axis = u_norm.cross(v_norm);
+    double sinUV = axis.norm(); // u and v are already unit
+    axis.normalize();
+
+    // Construct the rotation
+    Eigen::Matrix3d rot = Eigen::Matrix3d::Zero();
+    // row 0
+    rot(0, 0) = axis(0) * axis(0) * (1 - cosUV) + cosUV;
+    rot(0, 1) = axis(0) * axis(1) * (1 - cosUV) - axis(2)*sinUV;
+    rot(0, 2) = axis(0) * axis(2) * (1 - cosUV) + axis(1)*sinUV;
+    // row 1
+    rot(1, 0) = axis(1) * axis(0) * (1 - cosUV) + axis(2)*sinUV;
+    rot(1, 1) = axis(1) * axis(1) * (1 - cosUV) + cosUV;
+    rot(1, 2) = axis(1) * axis(2) * (1 - cosUV) - axis(0)*sinUV;
+    // row 2
+    rot(2, 0) = axis(2) * axis(0) * (1 - cosUV) - axis(1)*sinUV;
+    rot(2, 1) = axis(2) * axis(1) * (1 - cosUV) + axis(0)*sinUV;
+    rot(2, 2) = axis(2) * axis(2) * (1 - cosUV) + cosUV;
+    return rot;
+}
+
+// Overload
+Eigen::Matrix3d computeRotation(const Eigen::Vector3d& axis, const double& theta) {
+    double eps = 1e-6;
+    // Check for degenerate vectors
+    if (axis.norm() <= eps) {
+        return Eigen::Matrix3d::Zero();
+    } else if (theta <= eps) {  // No rotation
+        return Eigen::Matrix3d::Identity();
+    } else if (theta >= M_PI-eps && theta <= M_PI+eps) {    // 180 rotation
+        return -1 * Eigen::Matrix3d::Identity();
+    }
+    // For safety, re-normalize
+    Eigen::Vector3d a_norm = axis.normalized();
+    double cosTheta = std::cos(theta);
+    double sinTheta = std::sin(theta);
+
+    // Construct the rotation
+    Eigen::Matrix3d rot = Eigen::Matrix3d::Zero();
+    // row 0
+    rot(0, 0) = axis(0) * axis(0) * (1 - cosTheta) + cosTheta;
+    rot(0, 1) = axis(0) * axis(1) * (1 - cosTheta) - axis(2)*sinTheta;
+    rot(0, 2) = axis(0) * axis(2) * (1 - cosTheta) + axis(1)*sinTheta;
+    // row 1
+    rot(1, 0) = axis(1) * axis(0) * (1 - cosTheta) + axis(2)*sinTheta;
+    rot(1, 1) = axis(1) * axis(1) * (1 - cosTheta) + cosTheta;
+    rot(1, 2) = axis(1) * axis(2) * (1 - cosTheta) - axis(0)*sinTheta;
+    // row 2
+    rot(2, 0) = axis(2) * axis(0) * (1 - cosTheta) - axis(1)*sinTheta;
+    rot(2, 1) = axis(2) * axis(1) * (1 - cosTheta) + axis(0)*sinTheta;
+    rot(2, 2) = axis(2) * axis(2) * (1 - cosTheta) + cosTheta;
+    return rot;
 }
 
 // Find basis vectors for a planar region (ex. tangent plane)

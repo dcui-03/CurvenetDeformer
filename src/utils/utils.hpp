@@ -34,10 +34,18 @@ namespace Utils {
     void copyConnectivity(const std::vector<std::vector<int>>& T_old, std::vector<std::vector<int>>& T_new);
 
     // SORTING
+    // Sort a reference list of doubles while sorting their indices in the same way
     void doubleListIdxSort(std::vector<double>& ref_List, std::vector<int>& idx_List);
 
     // Insert at index between a pair of indices in a list
     bool insertIdxBetweenPair(std::vector<int>& idxList, int a, int b, int new_idx);
+
+    // Flattens an Eigen::Matrix3d into a 9x1 row vector
+    // NOTE: Does so column-wise!
+    Eigen::VectorXd flattenMatrix3d(const Eigen::Matrix3d& F);
+    // Compresses a 9x1 Eigen::VectorXd into an Eigen::Matrix3d
+    // Assumes column-wise storage
+    Eigen::Matrix3d compressVector9d(const Eigen::VectorXd& f);
     
 
     // VECTOR/PROJECTION HELPERS
@@ -54,6 +62,12 @@ namespace Utils {
         const Eigen::Vector3d& t2,
         double& theta
     );
+
+    // Given two unit vectors, compute the rotation from one to the other
+    Eigen::Matrix3d computeRotation(const Eigen::Vector3d& u, const Eigen::Vector3d& v);
+    // Overload given axis and rotation
+    Eigen::Matrix3d computeRotation(const Eigen::Vector3d& axis, const double& theta);
+
 
     // Returns true if two angular values are effectively the same direction.
     bool anglesCoincident(double a, double b, double eps = 1e-10);
