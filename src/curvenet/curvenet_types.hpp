@@ -31,12 +31,12 @@ namespace Curvenet {
         int twin = -1;
         int next = -1;
         int prev = -1;
-        Eigen::Vector3d tan;   // Tangent vector (defined in global coordinates, NOT relative to control)
+        Eigen::Vector3d rest_tan;   // Tangent vector (defined in global coordinates, NOT relative to control)
 
         bool active = true;     // For safety, say if the component is active (ignore for now)
         
         // Runtime info
-        Eigen::Vector3d new_tan;
+        Eigen::Vector3d tan;
     };
 
     // Splines for easy iteration

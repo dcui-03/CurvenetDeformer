@@ -49,7 +49,7 @@ namespace DCurvenet {
     }
 
     // Update the new frames on all halfedges
-    void dcurvenet::updateNewFrames() {
+    void dcurvenet::updateDiscCurveNet() {
         const std::vector<Curvenet::Control>& cnCtrl = CN->controls();
         const std::vector<Curvenet::CubicSpline>& cnSpline = CN->splines();
         const std::vector<Curvenet::Curve>& cnCurve = CN->curves();
@@ -60,19 +60,37 @@ namespace DCurvenet {
         // 2. Iterate over curves and recompute
         for (const auto& idxPair : inputCrvToC) {
             std::vector<int> splines = cnCurve[idxPair.first].splines;
+            int c = idxPair.second;
+            int he_curr = C[c].he_start;
+            int v_prev = C[c].start;
             for (int s_idx = 0; s_idx < splines.size(); s_idx++) {
                 int s = splines[s_idx];
                 int n_samples = cnSpline[s].num_samples;
                 // Assume n_samples will always be > 3
                 const std::vector<Eigen::Vector3d> samples = CN->unifSample(s, n_samples);
-                // Exploit the fact that this matches the ordering that the curve was constructed
-                // NOTE: Is there a better way of doing this that more strongly guarantees matching indices?
-                for (int i = 1; i < samples.size() - 1; i++) {
-                    
+                // Exploit the fact that this matches the halfedge direction that the curve was constructed from
+                for (int i = 1; i < samples.size(); i++) {
+                    // for numerical reasons, only copy in non-controls
+                    if (i != samples.size() - 1) {
+                        V[HE[he_curr].dest].new_pos = samples[i];
+                    }
+                    Eigen::Vector3d tangent = V[HE[he_curr].dest].new_pos - V[v_prev].new_pos;
+                    HE[he_curr].tangent = tangent.normalized();
+                    HE[he_curr].l = tangent.norm();
+                    HE[HE[he_curr].twin].tangent = -1 * tangent.normalized();
+                    HE[HE[he_curr].twin].l = tangent.norm();
+                    he_curr = HE[he_curr].next;
+                    v_prev = HE[he_curr].dest;
                 }
             }
         }
-
+        // Compute corner normals and widths
+        allCornerNormalsAndWidths();
+        // Transport all normals and widths
+        transportNormalsAndWidths();
+        // Compute scaled frames on all splines
+        computeScaledFrames();
+        return;
     }
 
     // Add a new vertex that matches an existing control
@@ -241,7 +259,7 @@ namespace DCurvenet {
             }
             for (int he_idx = 0; he_idx < adjHE.size(); he_idx++) {
                 int he = adjHE[he_idx];
-                const Eigen::Vector3d& tan = using_new ? HE[he].new_tangent : HE[he].tangent;
+                const Eigen::Vector3d& tan = HE[he].tangent;
                 // Gram-schmidt to ensure the normal is orthogonal to each tangent
                 Eigen::Vector3d n = V[v].n - V[v].n.dot(tan) * tan;
                 if (n.norm() <= eps) {  // Extremely rare case where normal == tangent or normal == -tangent
@@ -388,7 +406,7 @@ namespace DCurvenet {
     }
 
     // Corner normals on only intersections
-    int dcurvenet::allCornerNormalsAndWidths(bool using_new) {
+    int dcurvenet::allCornerNormalsAndWidths() {
         for (int v = 0; v < V.size(); v++) {
             vertCornerNormalsWidths(v);
         }
@@ -508,7 +526,7 @@ namespace DCurvenet {
         return -1;
     }
     // Transport normals for all curves
-    int dcurvenet::transportNormalsAndWidths(bool using_new) {
+    int dcurvenet::transportNormalsAndWidths() {
         for (int c = 0; c < C.size(); c++) {
             transportNWOnCurve(c);
         }
@@ -547,7 +565,7 @@ namespace DCurvenet {
         } while (he_curr != -1 && HE[he_curr].dest != end);
         return 1;
     }
-    int dcurvenet::computeScaledFrames(bool using_new) {
+    int dcurvenet::computeScaledFrames() {
         for (int c = 0; c < C.size(); c++) {
             computeScaledFrameOnCurve(c);
         }

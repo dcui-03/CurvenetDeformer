@@ -20,6 +20,9 @@ class curvenet {
         // Empty constructor
         curvenet();
 
+        // --------- UPDATE CURVENET -----------
+        void updateCurveNet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents);
+
         // --------- GETTERS -----------
         const int numControls() const { return C.size(); }
         const int numSplines() const { return S.size(); }

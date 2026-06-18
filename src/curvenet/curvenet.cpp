@@ -34,6 +34,18 @@ namespace Curvenet {
         return;
     }
 
+    // Update curve network with new positions
+    // No topological changes, so just update positions
+    void curvenet::updateCurveNet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents) {
+        for (auto& idxPair : inputCtoC) {
+            C[idxPair.second].new_pos = Controls[idxPair.first];
+        }
+        for (auto& idxPair : inputTtoHE) {
+            HE[idxPair.second].tan = Tangents[idxPair.first];
+        }
+        return;
+    }
+
     // empty initializer
     curvenet::curvenet() {
         C.clear();
@@ -65,8 +77,8 @@ namespace Curvenet {
         HE[he1].origin = end;
         HE[he0].tan = t0;
         HE[he1].tan = t1;
-        HE[he0].new_tan = t0;
-        HE[he0].new_tan = t1;
+        HE[he0].rest_tan = t0;
+        HE[he0].rest_tan = t1;
         HE[he0].s = s;
         HE[he1].s = s;
         S[s].he = he0;

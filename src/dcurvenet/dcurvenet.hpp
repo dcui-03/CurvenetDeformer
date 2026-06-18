@@ -22,8 +22,8 @@ class dcurvenet {
 
 
         // --------- RUNTIME COMPUTATION -----------
-        // Update local frames to match the new curvenet positions
-        void dcurvenet::updateNewFrames();
+        // Update with new curvenet positions and local frames
+        void dcurvenet::updateDiscCurveNet();
         // Move a single vertex to a new position
         int moveVert(int v, Eigen::Vector3d new_pos); 
         // Compute the deformation gradient on an edge given a new scaled frame
@@ -50,16 +50,16 @@ class dcurvenet {
         // For controls, computes their corner normals and widths. For non-intersections, this method does nothing (return -1)
         int vertCornerNormalsWidths(int v);
         // Corner normals on all vertices
-        int allCornerNormalsAndWidths(bool using_new = false);
+        int allCornerNormalsAndWidths();
         // Transport corner normals and widths from the two end corners of a curve
         int transportNWOnCurve(int c);
         // Transport normals and widths for all curves
-        int transportNormalsAndWidths(bool using_new = false);
+        int transportNormalsAndWidths();
 
         // Compute local frame on a curve
         int computeScaledFrameOnCurve(int c);   // Notice that we need to do this
         // Compute scaled frames on all curves
-        int computeScaledFrames(bool using_new = false);
+        int computeScaledFrames();
         // Initialize new frames as copies of old
         int copyFrameToNew(int he);
         int copyFramesToNew();
