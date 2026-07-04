@@ -21,7 +21,7 @@
 
 // My files
 #include "profilemover/profilemover.hpp"
-#include "curvenet/components/spline.hpp"   // So we can segment splines on the fly for visualization
+#include "curvenet/curvenet.hpp"   // So we can segment splines on the fly for visualization
 #include "mesh/mesh.hpp"
 #include "utils/utils.hpp"
 #include "IO/io.hpp"

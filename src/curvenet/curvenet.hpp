@@ -27,6 +27,7 @@ class curvenet {
         const int numControls() const { return C.size(); }
         const int numSplines() const { return S.size(); }
         const int numCurves() const { return Crv.size(); }
+        // TODO: REMOVE the below getters and use friend classes instead
         const std::vector<Control>& controls() const { return C; }
         const std::vector<HalfEdge>& halfedges() const { return HE; }
         const std::vector<CubicSpline>& splines() const { return S; }
@@ -61,6 +62,8 @@ class curvenet {
         int ctrlNormalsFromMesh(const Mesh::mesh& m);
         int sortAdjHEAll();
         int assignCtrlTypeAll();
+
+        friend class DCurvenet::dcurvenet;
     protected:
         // No class inheritance
     private:

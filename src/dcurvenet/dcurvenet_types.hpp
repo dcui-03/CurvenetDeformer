@@ -21,9 +21,6 @@ namespace DCurvenet {
 
         // Runtime variables
         Eigen::Vector3d new_pos;
-        // Vector from the projected point on the rest mesh to the curvenet vert (computed during cut-mesh computation)
-        Eigen::Vector3d projVector_pos = Eigen::Vector3d::Zero();
-        Eigen::Vector3d projVector_neg = Eigen::Vector3d::Zero();
     };
 
     // NOTE: A halfedge's next/prev can be -1 if this is the end of a spline
@@ -33,7 +30,7 @@ namespace DCurvenet {
         int twin = -1;
         int next = -1;
         int prev = -1;
-        int curve = -1;           // Index to the curve
+        int edge = -1;
         bool active = true;     // For safety, say if the component is active (ignore for now)
 
         // Scaled Local Frame
@@ -50,6 +47,13 @@ namespace DCurvenet {
         Eigen::Vector3d binormal;
         Eigen::Vector3d normal;
         double l, w, h;
+    };
+
+    // Edge in a curve
+    struct Edge {
+        int he = -1;
+        int curve = -1; // Index to curve
+        bool active = true;
     };
 
     // Discrete curve

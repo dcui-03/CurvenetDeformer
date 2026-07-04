@@ -3,6 +3,7 @@
 
 #include "dcurvenet_types.hpp"
 #include "curvenet/curvenet.hpp"
+#include "cutmesh/cutmesh.hpp"
 #include <Eigen/Core>
 #include <vector>
 
@@ -20,6 +21,14 @@ class dcurvenet {
         // Initialize with empty constructor
         dcurvenet();
 
+        // --------- GETTERS -----------
+        const int numVerts() const { return V.size(); }
+        const int numHalfedges() const { return HE.size(); }
+        const int numCurves() const { return C.size(); }
+        const std::vector<Vert>& verts() const { return V; }
+        const std::vector<HalfEdge>& halfedges() const { return HE; }
+        const std::vector<Curve>& curves() const { return C; }
+
 
         // --------- RUNTIME COMPUTATION -----------
         // Update with new curvenet positions and local frames
@@ -32,6 +41,8 @@ class dcurvenet {
         // Sampling parameters
         int alpha = 5;          // User param
         double meanE = 0.0;     // Mean edge length on mesh
+
+        friend class Mesh::cutmesh;    // Friend class to access curvenet variables
     protected:
         // No inherited classes
     private:
@@ -39,8 +50,8 @@ class dcurvenet {
         // Add a vertex
         int addVert(Curvenet::Control ctrl, int ctrl_idx = -1);
         int addVert(Eigen::Vector3d new_pos, Eigen::Vector3d new_n = Eigen::Vector3d::Zero(), int ctrl_idx = -1, int ctrl_type = -1, int adjSize = 0);
-        // Add an edge and return the indices of the pair of created halfedges
-        std::pair<int, int> addEdge(int origin, int dest, int prev_he0 = -1, int next_he1 = -1, int c = -1);
+        // Add an edge and return the index of the new edge
+        int addEdge(int origin, int dest, int prev_he0 = -1, int next_he1 = -1, int c = -1);
         // Add a curve
         int addCurve(int crv);
         // Rewire incoming/outgoing halfedges of an intersection vertex such that topology is correct
@@ -78,6 +89,7 @@ class dcurvenet {
         // Attributes as lists
         std::vector<Vert> V;
         std::vector<HalfEdge> HE;
+        std::vector<Edge> E;
         std::vector<Curve> C;
         
         // Map input vertex index to local vertex index

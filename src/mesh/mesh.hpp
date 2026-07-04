@@ -2,6 +2,7 @@
 #pragma once
 
 #include "dcurvenet/dcurvenet.hpp"
+#include "cutmesh/cutmesh.hpp"
 #include "mesh_types.hpp"
 #include <Eigen/Core>
 #include <Eigen/StdVector>
@@ -20,19 +21,12 @@ File Descriptors:
     - mesh.cpp: Mesh instance initialization functions and getters
     - mesh_utils.cpp: Standard mesh operations (projection, editing, etc.)
     - mesh_iter.cpp: Standard mesh iterators and queries (vertex-edge mapping, vertex umbrellas, edge-face mapping, etc.)
-    - mesh_cut.cpp: Functions for cutting a mesh given a discrete curve network
 */
 class mesh {
     public:
         // Constructor
         mesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::vector<int>>& F_List);
-
-        // Add a discrete Curvenetwork Pointer
-        bool applyDiscreteCurvenet(DCurvenet::dcurvenet* dCurvenet);
-        // Assign a discrete curvenet index to a halfedge
-        bool assignDCNtoHE(int he, const int dCN_idx, bool positive);
-        // Add a reference mesh
-        bool applyMeshRef(mesh* MRef);
+        mesh();
 
         // Project a vertex onto the mesh
         // mesh_utils.cpp
@@ -50,43 +44,19 @@ class mesh {
         // Get bbox diagonal length
         double getBBoxDiag() const;
 
-    private:
-        // ------------- INITIALIZATION (mesh.cpp)  -----------------
-        // Main init function
-        bool initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::vector<int>>& F_List);
-        // Clear all mesh attributes
-        bool clearMesh();
-        // Internal function to precompute height functions on both planar/nonplanar faces
-        Eigen::VectorXd computeFaceHeight(int f) const;
+        friend class cutmesh;   // Let cutmesh read its internals :)
+
+    protected:
+        // INITIALIZATION HELPERS
         // Internal function to precompute normals and areas on mesh structures
         double computeFVectorArea(int f, Eigen::Vector3d& fN);  // 1 face
         void computeFNormalsAreas();        // All faces
         // weight_fN weights by adjacent face areas
         double computeVNormalArea(int v, Eigen::Vector3d& vN, bool weight_fN = true);   // 1 vertex
         void computeVNormalsAreas(bool weight_fN = true);       // All vertices
+        // Clear all mesh attributes
+        bool clearMesh();
 
-        // Computes mean edge length on the mesh
-        void computeMeanE();
-        // Compute the length of the diagonal of the bounding box.
-        void computeBBoxDiag();
-
-        // ------------- UTILITIES (mesh_utils.cpp) -----------------
-
-        // Inserts a vertex at a location into a data structure and appends to a corresponding face
-        // NOTE: For safety, REQUIRE that vertex is attached to a real face
-        // Returns the index of the new vertex
-        int insertVertex(Eigen::Vector3d pos, int f, int dCN_idx = -1);
-        // Topologically splits an existing edge by adding a new vertex.
-        // NOTE: Added vertex does NOT need to lie on the edge
-        // Returns index of the new vertex
-        int splitEdge(int e, Eigen::Vector3d split_pos);
-        // Main function that inserts a new edge connecting two vertices on a specified face
-        // Returns the index of the new edge
-        int insertEdge(int f, int v0, int v1, int dCN_idx0 = -1, int dCN_idx1 = -1, bool positive0 = true);
-        // Helper that actually does the new edge insertion at an exact halfedge location
-        int insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isolated, int he1_prev, int v1_isolated, int dCN_idx0, int dCN_idx1, bool positive0);
-        // Helper that determines which halfedge to insert the new edge at.
-        bool chooseEdgeInsertHE(int f, int v, int target, int& he_prev_out);
 
         // ------------- ITERATORS + QUERYING (mesh_iter.cpp) -----------------
 
@@ -122,10 +92,15 @@ class mesh {
         // Returns true if halfedge is on boundary
         bool halfedgeIsBoundary(int he) const;
 
-        // ------------- MESH CUTTING (mesh_cut.cpp) -----------------
-
-        // Recursively computes straightest geodesic from a starting point given a starting direction, inserting new vertices as needed
-
+        // Geodesic Tracing
+        // Optional default input parameters for traced intersection vertices
+        int traceGeodesic(Vert start, 
+                      Vert end, 
+                      Eigen::Vector3d direc, 
+                      std::vector<Vert>& tracedVerts,
+                      int dCN_he0 = -1, 
+                      int dCN_he1 = -1, 
+                      int vLabel = 2);
 
         // ------------- ATTRIBUTES -----------------
         // List of primal mesh elements
@@ -145,9 +120,35 @@ class mesh {
         // AABB Diagonal length
         double bboxDiag;
 
-        // Pointer to a dCN object if necessary
-        DCurvenet::dcurvenet* dCN;
-        bool dCN_initialized = false;
+    private:
+        // ------------- INITIALIZATION (mesh.cpp)  -----------------
+        // Main init function
+        bool initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::vector<int>>& F_List);
+        // Internal function to precompute height functions on both planar/nonplanar faces
+        Eigen::VectorXd computeFaceHeight(int f) const;
+
+        // Computes mean edge length on the mesh
+        void computeMeanE();
+        // Compute the length of the diagonal of the bounding box.
+        void computeBBoxDiag();
+
+        // ------------- UTILITIES (mesh_utils.cpp) -----------------
+
+        // Inserts a vertex at a location into a data structure and appends to a corresponding face
+        // NOTE: For safety, REQUIRE that vertex is attached to a real face
+        // Returns the index of the new vertex
+        int insertVertex(Eigen::Vector3d pos, int f, int dCN_idx = -1);
+        // Topologically splits an existing edge by adding a new vertex.
+        // NOTE: Added vertex does NOT need to lie on the edge
+        // Returns index of the new vertex
+        int splitEdge(int e, Eigen::Vector3d split_pos, int dCN_idx = -1);
+        // Main function that inserts a new edge connecting two vertices on a specified face
+        // Returns the index of the new edge
+        int insertEdge(int f, int v0, int v1, int dCN_idx0 = -1, int dCN_idx1 = -1);
+        // Helper that actually does the new edge insertion at an exact halfedge location
+        int insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isolated, int he1_prev, int v1_isolated, int dCN_idx0, int dCN_idx1);
+        // Helper that determines which halfedge to insert the new edge at.
+        bool chooseEdgeInsertHE(int f, int v, int target, int& he_prev_out);
 };
 
 }   // namespace Mesh

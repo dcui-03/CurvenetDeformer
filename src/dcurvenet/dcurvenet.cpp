@@ -118,16 +118,20 @@ namespace DCurvenet {
         return v;
     }
     // Add a new edge in and return its halfedges
-    std::pair<int, int> dcurvenet::addEdge(int origin, int dest, int prev_he0, int next_he1, int c) {
+    int dcurvenet::addEdge(int origin, int dest, int prev_he0, int next_he1, int c) {
         if (origin > V.size() || dest > V.size()) {
-            return std::make_pair(-1, -1);
+            return -1;
         }
+        int e = E.size();
+        E.emplace_back();
         int he0 = HE.size();
         int he1 = he0+1;
         HE.emplace_back();
         HE.emplace_back();
         
         // Rewire
+        E[e].he = he0;
+        E[e].curve = c;
         HE[he0].dest = dest;
         HE[he1].dest = origin;
         Eigen::Vector3d edgeVec = V[dest].pos - V[origin].pos;
@@ -147,8 +151,6 @@ namespace DCurvenet {
         HE[he1].l = edgeVec.norm();
         HE[he0].sign = true;    // left side
         HE[he1].sign = false;   // right side
-        HE[he0].curve = c;
-        HE[he1].curve = c;
 
         return std::make_pair(he0, he1);
     }
@@ -199,9 +201,9 @@ namespace DCurvenet {
                 } else {    // Initialize a new sample
                     v = addVert(samples[i]);
                 }
-                std::pair<int, int> new_edge = addEdge(temp_origin, v, prev_he0, next_he1, c);
-                int he0 = new_edge.first;
-                int he1 = new_edge.second;
+                int new_edge = addEdge(temp_origin, v, prev_he0, next_he1, c);
+                int he0 = E[new_edge].he;
+                int he1 = HE[he0].twin;
                 
                 if (i == n_samples - 1) {    // End vertex is the next
                     V[v].adjHE[endLocalSplineIdx[0]] = he1;  // Add he1 to outgoing of end
@@ -253,7 +255,7 @@ namespace DCurvenet {
         if (V[v].cn_type < 3) {
             // Check if we are on the start of a curve
             int he0 = adjHE[0];
-            int c = HE[he0].curve;
+            int c = E[HE[he0].edge].curve;
             if ((C[c].start != v) && V[v].cn_type == 2) {   // valence 2 control that is not the start of the curve
                 return -1;
             }
@@ -294,8 +296,8 @@ namespace DCurvenet {
         for (int he = 0; he < adjHE.size(); he++) {
             int he0 = adjHE[he];
             int he1 = adjHE[(he+1)%adjHE.size()];
-            int c0 = HE[he0].curve;
-            int c1 = HE[he1].curve;
+            int c0 = E[HE[he0].edge].curve;
+            int c1 = E[HE[he1].edge].curve;
             Eigen::Vector3d cornerNormal;
             // First check if we are parallel. If so skip for now
             double dotProdTest = HE[he0].tangent.dot(HE[he1].tangent);
@@ -343,8 +345,8 @@ namespace DCurvenet {
             int he1_local = (he + 1)%adjHE.size();
             int he1 = adjHE[he1_local];
             // Get adjacent curves
-            int c0 = HE[he0].curve;
-            int c1 = HE[he1].curve;
+            int c0 = E[HE[he0].edge].curve;
+            int c1 = E[HE[he1].edge].curve;
 
             // Average the adjacent vectors
             Eigen::Vector3d cornerNormal = adjNormals[he_m1_local] + adjNormals[he1_local];
@@ -382,7 +384,7 @@ namespace DCurvenet {
             int he0 = adjHE[he];
             int he1 = adjHE[(he+1)%adjHE.size()];
             int he_m1 = adjHE[(he-1+adjHE.size())%adjHE.size()];
-            int c0 = HE[he0].curve;
+            int c0 = E[HE[he0].edge].curve;
             double cornerNormalNorm0;
             double he0_len = HE[he0].l;
             double he_m1_len = HE[he_m1].l;

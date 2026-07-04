@@ -182,7 +182,6 @@ int mesh::insertVertex(Eigen::Vector3d pos, int f, int dCN_idx) {
     V.emplace_back();
     V[v].pos = pos;
     active_v++;
-    F[f].verts.push_back(v);
     // Add in the dCN info
     if (dCN_idx != -1) {
         V[v].dCN_idx = dCN_idx;
@@ -193,7 +192,7 @@ int mesh::insertVertex(Eigen::Vector3d pos, int f, int dCN_idx) {
 // Topologically splits an existing edge by adding a new vertex.
 // NOTE: Added vertex does NOT need to lie on the edge
 // Returns index of the new vertex
-int mesh::splitEdge(int e, Eigen::Vector3d split_pos) {
+int mesh::splitEdge(int e, Eigen::Vector3d split_pos, int dCN_idx) {
     // Make and modify a copy of the current halfedges
     int he0_idx = E[e].he;
     int he1_idx = HE[he0_idx].twin;
@@ -206,18 +205,10 @@ int mesh::splitEdge(int e, Eigen::Vector3d split_pos) {
 
     // Insert the new vertex into the mesh
     int new_v;
-    if ((f0_idx == f1_idx) && (f0_idx >= 0)) {  // No duplicate insertions
+    if (f0_idx >= 0) {
         new_v = insertVertex(split_pos, f0_idx);
-    } else if (f0_idx >= 0) {
-        new_v = insertVertex(split_pos, f0_idx);
-        if (f1_idx >= 0) {
-            F[f1_idx].verts.push_back(new_v);
-        }
     } else if (f1_idx >= 0) {
         new_v = insertVertex(split_pos, f1_idx);
-        if (f0_idx >= 0) {
-            F[f0_idx].verts.push_back(new_v);
-        }
     } else {
         return -1;  // i.e., not a valid edge to split
     }
@@ -267,6 +258,7 @@ int mesh::splitEdge(int e, Eigen::Vector3d split_pos) {
     HE[he1_idx].prev = he1_new;
 
     V[new_v].he = he0_new;
+    V[new_v].dCN_idx = dCN_idx;
     if (HE[he1_idx].face == -1) {   // Preserve outgoing boundary HE
         V[new_v].he = he1_idx;
     }
@@ -294,7 +286,7 @@ int mesh::splitEdge(int e, Eigen::Vector3d split_pos) {
     return new_v;
 }
 
-int mesh::insertEdge(int f, int v0, int v1, int dCN_idx0, int dCN_idx1, bool positive0) {
+int mesh::insertEdge(int f, int v0, int v1, int dCN_idx0, int dCN_idx1) {
     // Validate inputs
     if (f < 0 || f >= F.size() || !F[f].active) {   // valid face
         return -1;
@@ -317,7 +309,8 @@ int mesh::insertEdge(int f, int v0, int v1, int dCN_idx0, int dCN_idx1, bool pos
     // Check that both verts belong to this face
     bool v0_inF = false;
     bool v1_inF = false;
-    for (int fv : F[f].verts) {
+    std::vector<int> fVerts = faceAdjVertIdxs(f);
+    for (int fv : fVerts) {
         if (fv == v0) {
             v0_inF = true;
         }
@@ -359,8 +352,7 @@ int mesh::insertEdge(int f, int v0, int v1, int dCN_idx0, int dCN_idx1, bool pos
         he1_prev,
         v1_isolated,
         dCN_idx0,
-        dCN_idx1,
-        positive0
+        dCN_idx1
     );
 }
 
@@ -368,7 +360,7 @@ int mesh::insertEdge(int f, int v0, int v1, int dCN_idx0, int dCN_idx1, bool pos
 // Returns the index of the new edge
 // NOTE: This should only mainly be used as a helper for insertEdge()
 // NOTE: Paper says not to update normals here. Still included, but maybe try taking out later?
-int mesh::insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isolated, int he1_prev, int v1_isolated, int dCN_idx0, int dCN_idx1, bool positive0) {
+int mesh::insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isolated, int he1_prev, int v1_isolated, int dCN_idx0, int dCN_idx1) {
     // Create new halfedges he0 and he1 connecting the two vertices
     int he0 = HE.size();
     int he1 = he0+1;
@@ -392,11 +384,9 @@ int mesh::insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isola
     // Separate the index assignment of dCN for both halfedges
     if (dCN_idx0 != -1) {
         HE[he0].dCN_idx = dCN_idx0;
-        HE[he0].dCN_sign = positive0;
     }
     if (dCN_idx1 != -1) {
         HE[he1].dCN_idx = dCN_idx1;
-        HE[he1].dCN_sign = !positive0;
     }
     vertPairToHE[{v0, v1}] = he0;
     vertPairToHE[{v1, v0}] = he1;
@@ -476,27 +466,6 @@ int mesh::insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isola
             for (int i = 0; i < f1_HEloop.size(); i++) {
                 f1_Vloop[i] = HE[f1_HEloop[i]].dest;
             }
-            // Remove unique vertices in new face from the first face
-            for (int f1_he = 0; f1_he < f1_HEloop.size(); f1_he++) {
-                HE[f1_HEloop[f1_he]].face = new_f;
-                int he_vert = HE[f1_HEloop[f1_he]].dest;
-                // Check if the vertex is shared by f0 (i.e., twin's face)
-                if (HE[HE[f1_HEloop[f1_he]].twin].face == f) {
-                    continue;   // Skip, do not delete
-                }
-                int rm_idx = -1;
-                // Find removal index
-                for (int f0_v = 0; f0_v < F[f].verts.size(); f0_v++) {
-                    if (he_vert == F[f].verts[f0_v]) { // Check if the vertex list in f contains f1_v
-                        rm_idx = f0_v;
-                    }
-                }
-                if (rm_idx != -1) { // Remove
-                    F[f].verts.erase(F[f].verts.begin() + rm_idx);
-                }
-            }
-            // Assign the new face its vertex loop
-            F[new_f].verts = f1_Vloop;
             F[new_f].he = he1;
             F[f].he = he0;
             active_f++;
@@ -509,21 +478,6 @@ int mesh::insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isola
             F[new_f].fArea = f1_area;
             F[new_f].n = f1_n;
             return e;
-        }
-
-        // If NOT splitting, make sure to add any new vertices to the face's vertex list.
-        for (int i = 0; i < f0_HEloop.size(); i++) {
-            int he_vert = HE[f0_HEloop[i]].dest;
-            bool exists = false;
-            // Check if vert already exists in the current face's list.
-            for (int f0_v = 0; f0_v < F[f].verts.size(); f0_v++) {
-                if (he_vert == F[f].verts[f0_v]) { // Check if the vertex list in f contains the vert
-                    exists = true;
-                }
-            }
-            if (!exists) {
-                F[f].verts.push_back(he_vert);
-            }
         }
     }
     // Recompute face normal and area

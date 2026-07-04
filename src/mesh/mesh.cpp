@@ -25,20 +25,6 @@ mesh::mesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::ve
     return;
 }
 
-// Add a discrete Curvenetwork Pointer
-bool mesh::applyDiscreteCurvenet(DCurvenet::dcurvenet* dCurvenet) {
-    dCN = dCurvenet;
-    dCN_initialized = true;
-    return true;
-}
-
-// Assign a discrete curvenet index to a halfedge
-bool mesh::assignDCNtoHE(int he, const int dCN_idx, bool positive) {
-    HE[he].dCN_idx = dCN_idx;
-    HE[he].dCN_sign = positive;
-    return true;
-}
-
 // Initializes the half edge mesh (Verts, Edges, Faces, Halfedges) from a vertex and face list
 bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::vector<int>>& F_List) {
     clearMesh();
@@ -70,22 +56,6 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
     for (int f = 0; f < F_List.size(); f++) {
         const std::vector<int>& fVerts = F_List[f];
         const int fSize = static_cast<int>(fVerts.size());
-
-        // Check if each vertex in the face has a valid index
-        for (int i = 0; i < fSize; ++i) {
-            int vi = fVerts[i];
-            int vj = fVerts[(i + 1) % fSize];
-            if (vi < 0 || vi >= V.size()) {
-                return false;
-            }
-            if (vj < 0 || vj >= V.size()) {
-                return false;
-            }
-            if (vi == vj) { // Degenerate face
-                return false;
-            }
-        }
-        F[f].verts = fVerts;
 
         // Temporary list of face HE's
         std::vector<int> faceHEs(fSize, -1);
@@ -231,7 +201,6 @@ bool mesh::clearMesh() {
     // Reset mesh qualities
     meanE = 0.0;
     bboxDiag = 0.0;
-    dCN = nullptr;
     return;
 }
 
@@ -354,7 +323,8 @@ double mesh::computeVNormalArea(int v, Eigen::Vector3d& vN, bool weight_fN) {
     // Iterate over face list and accumulate areas and normals
     for (int i = 0; i < fList.size(); i++) {
         int f = fList[f];
-        double fArea = F[f].fArea/(F[f].verts.size());
+        std::vector<int> fVerts = faceAdjHalfEdges(f);
+        double fArea = F[f].fArea/(fVerts.size());
         if (weight_fN) {
             vN += fArea * F[f].n;
         } else {
