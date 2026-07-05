@@ -68,17 +68,17 @@ std::vector<int> mesh::vertLoop(int he) const {
 }
 
 // Returns the endpoints of an edge in an arbitrary order.
-std::pair<int, int> mesh::edgeAdjVerts(int e) const {
+std::vector<int> mesh::edgeAdjVerts(int e) const {
     int he = E[e].he;
-    std::pair<int, int> v_pair = std::make_pair(HE[HE[he].prev].dest, HE[he].dest);
+    std::vector<int> v_pair = {HE[HE[he].prev].dest, HE[he].dest};
     return v_pair;
 }
 
 // Returns the adjacent face(s) of an edge (-1 indicates boundary)
-std::pair<int, int> mesh::edgeAdjFaces(int e) const {
+std::vector<int> mesh::edgeAdjFaces(int e) const {
     int he0 = E[e].he;
     int he1 = HE[he0].twin;
-    std::pair<int, int> v_pair = std::make_pair(HE[he0].face, HE[he1].face);
+    std::vector<int> v_pair = {HE[he0].face, HE[he1].face};
     return v_pair;
 }
 
@@ -149,6 +149,18 @@ std::vector<int> mesh::faceAdjHalfEdges(int f) const {
     return fHalfEdges;
 }
 
+std::vector<int> mesh::adjFaces(int elType, int elIdx) const {
+    std::vector<int> adjF;
+    if (elType == 0) {
+        adjF = vertAdjFaces(elIdx);
+    } else if (elType == 1) {
+        adjF = edgeAdjFaces(elIdx);
+    } else if (elType == 2) {
+        adjF.push_back(elIdx);
+    }
+    return adjF;
+}
+
 // Returns the outgoing boundary HE if a vertex is a boundary vertex, else returns -1
 int mesh::vertIsBoundary(int v, bool fast) const {
     // Fast check: grab the outgoing halfedge
@@ -169,14 +181,6 @@ int mesh::vertIsBoundary(int v, bool fast) const {
         }
         he_curr = HE[HE[he0].prev].twin;
     } while (he_curr != he0);
-    return false;
-}
-// Returns true if halfedge is on boundary
-bool mesh::halfedgeIsBoundary(int he) const {
-    // Super simple face check
-    if (HE[he].face == -1) {
-        return true;
-    }
     return false;
 }
 

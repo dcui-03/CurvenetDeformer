@@ -19,11 +19,9 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/3**
+**Update 7/4**
 
-Major update, mesh class and cut-mesh classes were once again split ugh. Cut-mesh class is now a child class of the mesh class and has its own set of functions to augment the mesh class's. This is to accommodate the geodesic computation and make expensive vertex projection parallelizable. It's now more accurate to the paper! But still needs a lotttt of reorganization to clear up issues. Also had classes friend each other to make inter-op easier.
-
-Restarting straightest geodesics now, which operates on the original mesh and not on the cut-mesh. Shouldn't be horribly difficult given the new setup (famous last words). However, likely need to move this to the mesh class and then call it from the cut-mesh class when necessary.
+Partway through implementing straightest geodesics, just need to figure out how to compute next direction when reaching an intersection. Important TODOs next are to modify the raycasting function in utils and also figure out how to do edge insertions in the cut-mesh. Looking good so far though, and somewhat cleaner than before.
 
 **NOTES**
 
@@ -35,7 +33,7 @@ This does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects
 
 - *Polyscope Tests*: For running tests. Re-do polyscope front-end so visual debugging is enabled; this needs its own editable curve network class and converters from the new internal curvenet/dCN classes.
 
-- *Straightest Geodesic*: Yeah... Figure
+- *Straightest Geodesic*: Yeah... Figure this out.
 
 - *Profile Mover*: Integrate all components into the profilemover class and write function for actual runtime computation. This class should also have the construct the operators, and needs functions for the intermediate stages of computation (i.e., computing per-face deformed polygons, computing deformed vertex projections). Needs a few index maps to get in and out of the matrix indices.
 
@@ -46,10 +44,10 @@ This does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects
 - *Projection Posing*: As mentioned in paper, compute cut-mesh from rest pose, then move all dcurvenet vertices and cut-mesh to the new configuration. Seems like curvenet is unusable like this??? Maybe only if you have pre-defined poses for the curvenet, you can transfer them? Maybe there's a scheme for editing the dcurvenet directly that I can look into?
 
 **Small Steps**:
-- Clean up mesh class (needs a new initialization, iterators, etc.) and cut-mesh initialization
-- Finish up mesh embedding. Currently missing a few parts, like t-vals for edge sorting, and halfedge sorting on the tangent plane.
+- t-values for edge insertion on cut-mesh
+- Next walk direction for straightest geodesics
 - Work on mesh cutting. This should be mosly straightforward with some edge cases to be wary of (ex. boundaries).
-- Finish Straightest Geodesics. Start with fast version and then move to slow version. Should be relatively well-structured at this point.
+- Move proj vector from mesh verts to dCN verts and add a function to pre-compute the deformed proj during runtime.
 - Add a function which checks if any edge chains are fully within a face, then removes them (and makes their associated dCN vertices inactive).
 - Finish Polyscope front end mesh and curvenet classes.
 - Add IO function to visualize edits in polyscope.

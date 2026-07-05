@@ -56,6 +56,14 @@ class mesh {
         void computeVNormalsAreas(bool weight_fN = true);       // All vertices
         // Clear all mesh attributes
         bool clearMesh();
+        // Create a new vertex but do NOT insert it
+        Vert createVertex(Eigen::Vector3d pos,
+                          Eigen::Vector3d n, 
+                          int label = 0, 
+                          int dCN_idx = -1, 
+                          int ref_Type = 0, 
+                          int ref_Idx = -1, 
+                          Eigen::Vector3d proj = Eigen::Vector3d::Zero());
 
 
         // ------------- ITERATORS + QUERYING (mesh_iter.cpp) -----------------
@@ -70,9 +78,9 @@ class mesh {
         std::vector<int> vertAdjFaces(int v) const;
 
         // Returns the endpoints of an edge in an arbitrary order.
-        std::pair<int, int> edgeAdjVerts(int e) const;
+        std::vector<int> edgeAdjVerts(int e) const;
         // Returns the adjacent face(s) of an edge (-1 indicates boundary)
-        std::pair<int, int> edgeAdjFaces(int e) const;
+        std::vector<int> edgeAdjFaces(int e) const;
 
         // Returns the halfedge index given the face index and edge index
         int halfedgeAtFaceEdge(int f, int e) const;
@@ -87,20 +95,32 @@ class mesh {
         // Returns a CCW list of a face's half edges
         std::vector<int> faceAdjHalfEdges(int f) const;
 
+        // Adjacent faces given the element type and its index
+        std::vector<int> adjFaces(int elType, int elIdx) const;
+
         // Returns the outgoing boundary HE if a vertex is a boundary vertex, else returns -1
         int vertIsBoundary(int v, bool fast = true) const;
-        // Returns true if halfedge is on boundary
-        bool halfedgeIsBoundary(int he) const;
 
         // Geodesic Tracing
         // Optional default input parameters for traced intersection vertices
-        int traceGeodesic(Vert start, 
-                      Vert end, 
+        int traceGeodesic(const Vert& start, 
+                      const Vert& end, 
                       Eigen::Vector3d direc, 
+                      int walk_ElType,
+                      int walk_ElIdx,
                       std::vector<Vert>& tracedVerts,
-                      int dCN_he0 = -1, 
-                      int dCN_he1 = -1, 
-                      int vLabel = 2);
+                      bool recompute = false,
+                      bool fast = true);
+        // Slow Termination check for traceGeodesic: Check if the end is visible from the start
+        // on a shared face
+        bool testVisibility(int f, Eigen::Vector3d start, Eigen::Vector3d end, double eps = 1e-4);
+
+        int mesh::rayCastOnFace(int f, 
+                                Eigen::Vector3d start, 
+                                Eigen::Vector3d direc, 
+                                Eigen::Vector3d& hit, 
+                                int& hit_ElIdx,
+                                double eps = 1e-4);
 
         // ------------- ATTRIBUTES -----------------
         // List of primal mesh elements

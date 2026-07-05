@@ -231,13 +231,13 @@ Eigen::Vector3d mesh::getENormal(int e) const {
     if (e < 0 || e >= V.size()) {
         return Eigen::Vector3d::Zero();
     }
-    std::pair<int, int> eFaces = edgeAdjFaces(e);
+    std::vector<int> eFaces = edgeAdjFaces(e);
     Eigen::Vector3d n = Eigen::Vector3d::Zero();
-    if (eFaces.first != -1) {
-        n += F[eFaces.first].n;
+    if (eFaces[0] != -1) {
+        n += F[eFaces[0]].n;
     }
-    if (eFaces.second != -1) {
-        n += F[eFaces.second].n;
+    if (eFaces[1] != -1) {
+        n += F[eFaces[1]].n;
     }
     return n;
 }
@@ -359,8 +359,8 @@ void mesh::computeMeanE() {
         if (!E[e].active) {
             continue;
         }
-        std::pair<int, int> eVerts = edgeAdjVerts(e);
-        meanE += (V[eVerts.first].pos - V[eVerts.second].pos).norm();
+        std::vector<int> eVerts = edgeAdjVerts(e);
+        meanE += (V[eVerts[0]].pos - V[eVerts[1]].pos).norm();
     }
     meanE /= active_e;
     return;
@@ -392,6 +392,19 @@ void mesh::computeBBoxDiag() {
     // get norm of the most extreme points
     bboxDiag = (maxV - minV).norm();
     return;
+}
+
+
+// Create a new vertex but do NOT insert it
+Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int dCN_idx, int ref_Type, int ref_Idx, Eigen::Vector3d proj) {
+    Vert v;
+    v.pos = pos;
+    v.n = n;
+    v.label = label;
+    v.dCN_idx = dCN_idx;
+    v.mesh_elType = ref_Type;
+    v.mesh_elIdx = ref_Idx;
+    return v;
 }
 
 }   // namespace Mesh

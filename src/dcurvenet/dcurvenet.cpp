@@ -152,7 +152,7 @@ namespace DCurvenet {
         HE[he0].sign = true;    // left side
         HE[he1].sign = false;   // right side
 
-        return std::make_pair(he0, he1);
+        return e;
     }
     // Add a curve that matches an input curvenet curve
     int dcurvenet::addCurve(int crv) {

@@ -57,12 +57,10 @@ class cutmesh : public mesh {
         // ------------- MESH CUTTING (cutmesh_cut.cpp) -----------------
         // Embed the pointed to discrete curve network into the mesh
         int embedCurves();
+        // Sort all halfedges so that their next/prev are correct
         int sortHalfEdges();
+        // Reset faces
         int resetFaces();
-        // Recursively computes straightest geodesic from a starting point and end point, inserting new vertices as needed
-        // In order to check if the end is reached (i.e., when the start and end share a face), a "visibility" test is performed on the shared face via raycasting
-        // Has a fast flag which simply checks for shared face(s) rather than doing visibility.
-        int traceGeodesic(int start, int startF, int end, int endF, int dCN_idx0, int dCN_idx1, Eigen::Vector3d direc, bool reDirec, bool fast = true);
         // Actually cuts the mesh along the embedded vertices
         int cutMesh();
 
@@ -79,13 +77,6 @@ class cutmesh : public mesh {
                          int ref_Idx = -1, 
                          Eigen::Vector3d proj = Eigen::Vector3d::Zero());
         int insertVertex(Vert splitV);
-        Vert createVertex(Eigen::Vector3d pos,
-                          Eigen::Vector3d n, 
-                          int label = 0, 
-                          int dCN_idx = -1, 
-                          int ref_Type = 0, 
-                          int ref_Idx = -1, 
-                          Eigen::Vector3d proj = Eigen::Vector3d::Zero());
         // Topologically split an edge with an existing vertex
         int splitEdge(int e, int new_v);
         // Insert an edge between two existing vertices

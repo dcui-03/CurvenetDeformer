@@ -431,6 +431,7 @@ Eigen::Vector2d closestPointOnSegment2D(const Eigen::Vector2d& p, const Eigen::V
     return v0 + t * vec;
 }
 
+// TODO: Fix this function so that it properly sets u
 bool raycastToSegment2D(const Eigen::Vector2d& p, const Eigen::Vector2d& direc, const Eigen::Vector2d& v0, const Eigen::Vector2d& v1,
                         double& t, double& u, bool clip) {
     Eigen::Vector2d vec = v1 - v0;
