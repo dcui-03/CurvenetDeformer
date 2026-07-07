@@ -178,6 +178,7 @@ int mesh::traceGeodesic(const Vert& start,
                   std::vector<Vert>& tracedVerts,
                   bool recompute,
                   bool fast) {
+    double eps = 1e-6;
     // First, do some simple tests for termination
     // It's good to have these to catch tiny directional drift
     if (walk_ElType == end.mesh_elType && walk_ElIdx == end.mesh_elIdx) {   // The next mesh element is exactly the goal
@@ -234,17 +235,19 @@ int mesh::traceGeodesic(const Vert& start,
         }
     }
 
-    // If we failed all those tests, then we actually need to walk! :(
-    // First, recompute direction if needed
-    if (recompute) {
-        direc = (end.pos - start.pos).normalized();
-    }
-
+    // TODO: How/when to handle recomputes?
+    // Maybe fold it into the nextEl_Vert and nextEl_Edge computation? Or make separate functions for this case
+    // Basically, for nextEl_Edge, check if projection of walk direction is on the halfplane of the next face (ex. via dot prod of vector and the binormal (edge vec cross normal vec)), and snap to boundary if necessary
+    // For nextEl_Vert, check which "bucket" the projection direction best falls into (i.e., project vector onto each corner, then find if this vector is between the two adjacent ones).
+    //                  Then, also do boundary/edge check again as usual.
+    int next_recompute = true;
     // Case 1: Check if walk direction is on an edge, simply grab the other end vertex of the edge
     if (walk_ElType == 1) {
+        // Opt to actually compute the matching direction instead of assuming the start is at a vertex
+        // This way we can handle degenerate cases where the initial walk direction is on an edge
         int he = E[walk_ElIdx].he;
         Eigen::Vector3d heVec = (V[HE[he].dest].pos - V[HE[HE[he].twin].dest].pos).normalized();
-        Eigen::Vector3d projDirec = direc.dot(heVec) * heVec;
+        Eigen::Vector3d projDirec = (direc.dot(heVec) * heVec).normalized();
         // Orient ourselves correctly
         int next;
         if (projDirec.dot(heVec) >= 0) {
@@ -253,15 +256,13 @@ int mesh::traceGeodesic(const Vert& start,
             next = HE[he].dest;
         }
         Vert nextVert = createVertex(V[next].pos, V[next].n, 2, -1, 0, next);
-        // Compute the next direction at the intersection
 
-        // TODO: Specially handling for boundaries
         Eigen::Vector3d nextDirec;
-        int next_ElType;
-        int next_ElIdx;
+        int next_ElType, next_ElIdx;
+        next_ElType = nextEl_Vert(next, walk_ElType, walk_ElIdx, projDirec, nextDirec, next_ElIdx, true);
         // Recurse
         tracedVerts.push_back(nextVert);
-        traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, true, fast);
+        traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, next_recompute, fast);
     }
 
     // If we reached this point, we are definitely walking on a face
@@ -279,10 +280,14 @@ int mesh::traceGeodesic(const Vert& start,
 
     int next_ElType, next_ElIdx;
     Eigen::Vector3d nextDirec;
-    // TODO: Figure out the next direction based on the intersection. Specially handling for boundaries!
+    if (hit_ElType == 1) {
+        next_ElType = nextEl_Edge(hit_ElIdx, walk_ElIdx, corrDirec, nextDirec, next_ElIdx, true);
+    } else {
+        next_ElType = nextEl_Vert(hit_ElIdx, walk_ElType, walk_ElIdx, corrDirec, nextDirec, next_ElIdx, true);
+    }
 
     tracedVerts.push_back(nextVert);
-    traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, true, fast);
+    traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, next_recompute, fast);
 }
 
 // Test whether the start and end are visible from each other on a particular face
@@ -397,6 +402,153 @@ int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eig
         next_ElIdx = fVertIdxs[v];
     }
     return next_ElType;
+}
+
+// Compute the next walk element given that we intersected with an edge
+// Returns the next 
+int mesh::nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& walk_direc, 
+                    Eigen::Vector3d& next_direc, int& next_elIdx, bool bdy_snap) {
+    // Get adjacent faces
+    std::vector<int> adjF = edgeAdjFaces(e);
+    next_elIdx = adjF[0];
+    if (f_origin == adjF[0]) {
+        next_elIdx = adjF[1];
+    }
+    // Projection step for safety
+    Eigen::Vector3d proj_direc;
+    double valid = Utils::projectVectorOntoTangentPlane(F[f_origin].n, walk_direc, proj_direc);
+    if (valid <= 0.0) {
+        return -1;
+    }
+    // Handle boundary case first
+    // Snap to the better boundary edge direction
+    if (next_elIdx == -1) {
+        if (bdy_snap) {
+            next_elIdx = e;
+            // Find the better fit direction 
+            int v1 = HE[E[e].he].dest;
+            int v0 = HE[HE[E[e].he].twin].dest;
+            if (((V[v1].pos - V[v0].pos).normalized()).dot(proj_direc) >= 0) {
+                next_direc = (V[v1].pos - V[v0].pos).normalized();
+            } else {
+                next_direc = (V[v0].pos - V[v1].pos).normalized();
+            }
+            return 1;
+        } else {    // Hit a dead end
+            return -1;
+        }
+    }
+    // Otherwise, we just rotate onto the plane of the adajcent face
+    // Get the halfedge of the incoming face
+    int he0 = E[e].he;
+    if (HE[he0].face == f_origin) {
+        he0 = HE[he0].twin;
+    }
+    // Compute the local tangent basis of the origin face
+    Eigen::Vector3d tangent = ((V[HE[he0].dest].pos - V[HE[HE[he0].twin].dest].pos).normalized());
+    // Normalized for numerical safety
+    Eigen::Vector3d biN_origin = tangent.cross(F[f_origin].n).normalized();
+    Eigen::Vector3d biN_next = tangent.cross(F[next_elIdx].n).normalized();
+    Eigen::Matrix3d rot = Utils::computeRotation(biN_origin, biN_next);
+    next_direc = rot * proj_direc;
+    return 2;
+}
+
+// Compute the next walk element given that we intersected with a vertex
+int mesh::nextEl_Vert(int v, int origin_ElType, int origin_ElIdx, 
+                    const Eigen::Vector3d& walk_direc, Eigen::Vector3d& next_direc, 
+                    int& next_elIdx, bool bdy_snap, double eps) {
+    // Gather all of the adjacent halfedges and faces
+    std::vector<int> adjHE = vertAdjHEs(v);
+    // Figure out which halfedge "matches" the face origin and also find the local umbrella angle sum
+    int localIdx = -1;
+    double angleSum = 0.0;
+    std::vector<double> angleBuckets(adjHE.size());
+    std::vector<Eigen::Vector3d> cornerNormals(adjHE.size());
+    for (int he_idx = 0; he_idx < adjHE.size(); he_idx++) {
+        int he0 = adjHE[he_idx];
+        int he1 = adjHE[(he_idx + 1) % adjHE.size()];
+        // Compute angle between the two vectors by first computing an axis
+        Eigen::Vector3d vec0 = V[HE[he0].dest].pos - V[v].pos;
+        Eigen::Vector3d vec1 = V[HE[he1].dest].pos - V[v].pos;
+        Eigen::Vector3d axis = vec0.cross(vec1);
+        cornerNormals[he_idx] = axis.normalized();
+        // Get the positive signed angle
+        angleBuckets[he_idx] = Utils::signedAngle(vec0, vec1, axis, true);
+        angleSum += angleBuckets[he_idx];
+        // Get the matching face as a local halfedge index in adjHE
+        if (origin_ElType == 1 && HE[adjHE[he_idx]].edge == origin_ElIdx) {
+            localIdx = he_idx;
+            break;
+        } else if (origin_ElType == 2 && HE[adjHE[he_idx]].face == origin_ElIdx) {
+            localIdx = he_idx;
+            break;
+        }
+    }
+    if (localIdx == -1) {   // Did not find a match
+        return -1;
+    }
+    // Compute the projected walk direction onto the corner normal's plane
+    Eigen::Vector3d proj_direc;
+    double valid = Utils::projectVectorOntoTangentPlane(cornerNormals[localIdx], walk_direc, proj_direc);
+    if (valid <= 0.0) {
+        return -1;
+    }
+    double angleToFace = Utils::signedAngle(V[HE[adjHE[localIdx]].dest].pos - V[v].pos, -1 * walk_direc, cornerNormals[localIdx], true);
+
+    // Get the halfway angle
+    double targetAngle = angleSum / 2.0;
+    int stopHE = -1;
+    targetAngle += angleToFace; // Add this on so we can start accumulating angles from the halfedge
+    // Iterate over faces to get the target angle
+    for (int f = 0; f < adjHE.size(); f++) {
+        int f_curr = (localIdx + f) % adjHE.size();
+        int f_next = (f_curr + 1) % adjHE.size();
+        if (targetAngle <= angleBuckets[f_curr]) {  // Found the face
+            stopHE = f_curr;
+            break;
+        } else {    // Keep going
+            targetAngle -= angleBuckets[f_curr];
+        }
+    }
+    // Use the computed face and remnant angle to determine the vector
+    Eigen::Vector3d heVec = (V[HE[adjHE[stopHE]].dest].pos - V[v].pos).normalized();
+    // To make this well-posed, compute corner normal as the average of adjacent corner normals
+    if (cornerNormals[stopHE].norm() <= eps) {
+        cornerNormals[stopHE] = (cornerNormals[(stopHE + 1)%adjHE.size()] + cornerNormals[(stopHE + adjHE.size() - 1)%adjHE.size()]) / 2;
+    }
+    Eigen::Matrix3d rot = Utils::computeRotation(cornerNormals[stopHE], targetAngle);
+    next_direc = rot * heVec;
+
+    Eigen::Vector3d heVec1 = (V[HE[adjHE[(stopHE+1)%adjHE.size()]].dest].pos - V[v].pos).normalized();
+    next_elIdx = HE[adjHE[stopHE]].face;
+    // Process boundary if we hit one
+    if (next_elIdx == -1) {
+        if (bdy_snap) {
+            // Compute best adjacent edge to snap to
+            if (next_direc.dot(heVec) <= next_direc.dot(heVec1)) {
+                next_direc = heVec;
+                next_elIdx = HE[adjHE[stopHE]].edge;
+            } else {
+                next_direc = heVec1;
+                next_elIdx = HE[adjHE[(stopHE+1)%adjHE.size()]].edge;
+            }
+            return 1;
+        } else {    // Failure
+            return -1;
+        }
+    }
+    // Check for edge snaps
+    if (next_direc.dot(heVec) <= eps) {
+        next_direc = heVec;
+        next_elIdx = adjHE[stopHE];
+        return 1;
+    } else if (next_direc.dot(heVec1) <= eps) {
+        next_direc = heVec1;
+        next_elIdx = adjHE[(stopHE+1)%adjHE.size()];
+        return 1;
+    }
+    return 2;
 }
 
 }   // namespace Mesh

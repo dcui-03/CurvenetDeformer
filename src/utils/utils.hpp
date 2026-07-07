@@ -49,6 +49,9 @@ namespace Utils {
     
 
     // VECTOR/PROJECTION HELPERS
+
+    // Compute signed angle between two vectors in 3D given the axis
+    double signedAngle(const Eigen::Vector3d& v0, const Eigen::Vector3d& v1, const Eigen::Vector3d& axis, bool positive = false);
     
     // Computes the closest point to a triangle
     Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts, const Eigen::Vector3d p);

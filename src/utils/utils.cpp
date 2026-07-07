@@ -126,6 +126,22 @@ Eigen::Matrix3d compressVector9d(const Eigen::VectorXd& f) {
 
 // GEOMETRY HELPERS
 
+// Compute 3D signed angle between two vectors
+double signedAngle(const Eigen::Vector3d& v0, const Eigen::Vector3d& v1, const Eigen::Vector3d& axis, bool positive) {
+    Eigen::Vector3d a = v0.normalized();
+    Eigen::Vector3d b = v1.normalized();
+    Eigen::Vector3d n = axis.normalized();
+
+    double sinTheta = n.dot(a.cross(b));
+    double cosTheta = a.dot(b);
+
+    double sAngle = std::atan2(sinTheta, cosTheta);
+    if (positive) {
+        sAngle = std::max(0.0, std::min(2*M_PI, M_PI + sAngle));
+    }
+    return sAngle;
+}
+
 // Find the closest point to a triangle
 Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts, const Eigen::Vector3d p) {
     const double eps = 1e-8;

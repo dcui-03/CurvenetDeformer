@@ -19,9 +19,11 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/4**
+**Update 7/6**
 
-Partway through implementing straightest geodesics, just need to figure out how to compute next direction when reaching an intersection. Important TODOs next are to modify the raycasting function in utils and also figure out how to do edge insertions in the cut-mesh. Looking good so far though, and somewhat cleaner than before.
+Next walk direction code for straightest geodesics is almost done. Definitely needs t-values for edge splits (maybe make this an attribute of struct?), but also needs to handle walk direction recomputation where necessary. There are two ways to implement this: at the start of the function and at the end. If you compute at the start, you don't need to precompute to call straightest geodesics the first time. Maybe do everything directional at the start (i.e., compute the next walk face and direction at the start), then simply trace the geodesic on that next face, then pass along to next call. Also need some sort of treatment for degenerate next walk directions. Maybe fail this case and hope sampling density/mesh quality is good enough?
+
+Also, would recommend moving projection info into a separate mesh struct to avoid these huge function inputs. ex. just a struct called meshElements which contains just the type and index, or even just treat is as a pair. This streamlines things and makes it clearer what the variable is doing.
 
 **NOTES**
 
@@ -45,7 +47,7 @@ This does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects
 
 **Small Steps**:
 - t-values for edge insertion on cut-mesh
-- Next walk direction for straightest geodesics
+- Next walk direction recomputation mechanism
 - Work on mesh cutting. This should be mosly straightforward with some edge cases to be wary of (ex. boundaries).
 - Move proj vector from mesh verts to dCN verts and add a function to pre-compute the deformed proj during runtime.
 - Add a function which checks if any edge chains are fully within a face, then removes them (and makes their associated dCN vertices inactive).

@@ -115,12 +115,19 @@ class mesh {
         // on a shared face
         bool testVisibility(int f, Eigen::Vector3d start, Eigen::Vector3d end, double eps = 1e-4);
 
-        int mesh::rayCastOnFace(int f, 
-                                Eigen::Vector3d start, 
-                                Eigen::Vector3d direc, 
-                                Eigen::Vector3d& hit, 
-                                int& hit_ElIdx,
-                                double eps = 1e-4);
+        int rayCastOnFace(int f, 
+                        Eigen::Vector3d start, 
+                        Eigen::Vector3d direc, 
+                        Eigen::Vector3d& hit, 
+                        int& hit_ElIdx,
+                        double eps = 1e-4);
+        // Compute the next walk element given that we intersected with an edge
+        int nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& walk_direc, 
+                    Eigen::Vector3d& next_direc, int& next_elIdx, bool bdy_snap = true);
+        // Compute the next walk element given that we intersected with a vertex
+        int nextEl_Vert(int v, int origin_ElType, int origin_ElIdx, 
+                    const Eigen::Vector3d& walk_direc, Eigen::Vector3d& next_direc, 
+                    int& next_elIdx, bool bdy_snap = true, double eps = 1e-4);
 
         // ------------- ATTRIBUTES -----------------
         // List of primal mesh elements

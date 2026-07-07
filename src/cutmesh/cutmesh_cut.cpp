@@ -124,8 +124,17 @@ namespace Mesh {
             // Connect the inserted vertices
             for (int v_idx = 1; v_idx < traceList.size(); v_idx++) {
                 int e = insertEdge(traceVerts[v_idx - 1], traceVerts[v_idx], dCN_he0, dCN_he1);
-                dCNHEtoHE[dCN_he0].push_back(E[e].he);
-                dCNHEtoHE[dCN_he1].push_back(HE[E[e].he].twin);
+                if (e == -1) {  // Edge already exists
+                    int he0 = vertPairToHE[{v0, v1}];
+                    int he1 = vertPairToHE[{v1, v0}];
+                    HE[he0].dCN_idx = dCN_he0;
+                    HE[he1].dCN_idx = dCN_he1;
+                    dCNHEtoHE[dCN_he0].push_back(he0);
+                    dCNHEtoHE[dCN_he1].push_back(he1);
+                } else {
+                    dCNHEtoHE[dCN_he0].push_back(E[e].he);
+                    dCNHEtoHE[dCN_he1].push_back(HE[E[e].he].twin);
+                }
             }
         }
 
