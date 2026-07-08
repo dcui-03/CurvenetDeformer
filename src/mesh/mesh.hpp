@@ -60,8 +60,8 @@ class mesh {
         Vert createVertex(Eigen::Vector3d pos,
                           Eigen::Vector3d n, 
                           int label = 0, 
-                          int dCN_idx = -1, 
-                          int ref_Type = 0, 
+                          int cornerIdx = -1, 
+                          int ref_Type = -1, 
                           int ref_Idx = -1, 
                           Eigen::Vector3d proj = Eigen::Vector3d::Zero());
 
@@ -70,6 +70,8 @@ class mesh {
 
         // Returns a CCW list of a vertex's OUTGOING halfedge indices
         std::vector<int> vertAdjHEs(int v) const;
+        // Returns a CCW list of all incoming AND outgoing halfedge indices
+        std::vector<int> mesh::vertAllHEs(int v) const;
         // Returns a CCW list of a vertex's adjacent vertices
         std::vector<int> vertAdjVerts(int v) const;
         // Returns a list of vertices in a loop from a given halfedge
@@ -101,34 +103,6 @@ class mesh {
         // Returns the outgoing boundary HE if a vertex is a boundary vertex, else returns -1
         int vertIsBoundary(int v, bool fast = true) const;
 
-        // Geodesic Tracing
-        // Optional default input parameters for traced intersection vertices
-        int traceGeodesic(const Vert& start, 
-                      const Vert& end, 
-                      Eigen::Vector3d direc, 
-                      int walk_ElType,
-                      int walk_ElIdx,
-                      std::vector<Vert>& tracedVerts,
-                      bool recompute = false,
-                      bool fast = true);
-        // Slow Termination check for traceGeodesic: Check if the end is visible from the start
-        // on a shared face
-        bool testVisibility(int f, Eigen::Vector3d start, Eigen::Vector3d end, double eps = 1e-4);
-
-        int rayCastOnFace(int f, 
-                        Eigen::Vector3d start, 
-                        Eigen::Vector3d direc, 
-                        Eigen::Vector3d& hit, 
-                        int& hit_ElIdx,
-                        double eps = 1e-4);
-        // Compute the next walk element given that we intersected with an edge
-        int nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& walk_direc, 
-                    Eigen::Vector3d& next_direc, int& next_elIdx, bool bdy_snap = true);
-        // Compute the next walk element given that we intersected with a vertex
-        int nextEl_Vert(int v, int origin_ElType, int origin_ElIdx, 
-                    const Eigen::Vector3d& walk_direc, Eigen::Vector3d& next_direc, 
-                    int& next_elIdx, bool bdy_snap = true, double eps = 1e-4);
-
         // ------------- ATTRIBUTES -----------------
         // List of primal mesh elements
         std::vector<Vert> V;
@@ -159,23 +133,34 @@ class mesh {
         // Compute the length of the diagonal of the bounding box.
         void computeBBoxDiag();
 
-        // ------------- UTILITIES (mesh_utils.cpp) -----------------
 
-        // Inserts a vertex at a location into a data structure and appends to a corresponding face
-        // NOTE: For safety, REQUIRE that vertex is attached to a real face
-        // Returns the index of the new vertex
-        int insertVertex(Eigen::Vector3d pos, int f, int dCN_idx = -1);
-        // Topologically splits an existing edge by adding a new vertex.
-        // NOTE: Added vertex does NOT need to lie on the edge
-        // Returns index of the new vertex
-        int splitEdge(int e, Eigen::Vector3d split_pos, int dCN_idx = -1);
-        // Main function that inserts a new edge connecting two vertices on a specified face
-        // Returns the index of the new edge
-        int insertEdge(int f, int v0, int v1, int dCN_idx0 = -1, int dCN_idx1 = -1);
-        // Helper that actually does the new edge insertion at an exact halfedge location
-        int insertEdgeBetweenHEs(int f, int v0, int v1, int he0_prev, int v0_isolated, int he1_prev, int v1_isolated, int dCN_idx0, int dCN_idx1);
-        // Helper that determines which halfedge to insert the new edge at.
-        bool chooseEdgeInsertHE(int f, int v, int target, int& he_prev_out);
+        // ------------- UTILITIES (mesh_utils.cpp) -----------------
+        // Optional default input parameters for traced intersection vertices
+        int traceGeodesic(const Vert& start, 
+                      const Vert& end, 
+                      Eigen::Vector3d direc, 
+                      int walk_ElType,
+                      int walk_ElIdx,
+                      std::vector<Vert>& tracedVerts,
+                      bool recompute = false,
+                      bool fast = true);
+        // Slow Termination check for traceGeodesic: Check if the end is visible from the start
+        // on a shared face
+        bool testVisibility(int f, Eigen::Vector3d start, Eigen::Vector3d end, double eps = 1e-4);
+
+        int rayCastOnFace(int f, 
+                        Eigen::Vector3d start, 
+                        Eigen::Vector3d direc, 
+                        Eigen::Vector3d& hit, 
+                        int& hit_ElIdx,
+                        double eps = 1e-4);
+        // Compute the next walk element given that we intersected with an edge
+        int nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& prev_direc, 
+                    Eigen::Vector3d& next_direc, int& next_elIdx, bool bdy_snap = true);
+        // Compute the next walk element given that we intersected with a vertex
+        int nextEl_Vert(int v, int origin_ElType, int origin_ElIdx, 
+                    const Eigen::Vector3d& prev_direc, Eigen::Vector3d& next_direc, 
+                    int& next_elIdx, bool bdy_snap = true, double eps = 1e-4);
 };
 
 }   // namespace Mesh

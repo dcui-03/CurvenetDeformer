@@ -61,6 +61,8 @@ class cutmesh : public mesh {
         int sortHalfEdges();
         // Reset faces
         int resetFaces();
+        // Find and deactivate any projected curves/loops that are not attached to the original mesh
+        int deactivateIsolatedCuts();
         // Actually cuts the mesh along the embedded vertices
         int cutMesh();
 
@@ -72,7 +74,7 @@ class cutmesh : public mesh {
         int insertVertex(Eigen::Vector3d pos,
                          Eigen::Vector3d n, 
                          int label = 0, 
-                         int dCN_idx = -1, 
+                         int cornerIdx = -1, 
                          int ref_Type = 0, 
                          int ref_Idx = -1, 
                          Eigen::Vector3d proj = Eigen::Vector3d::Zero());
@@ -86,10 +88,6 @@ class cutmesh : public mesh {
         mesh* M;
         // Pointer to a dCN object if necessary
         DCurvenet::dcurvenet* dCN;
-        // Map from dCN vert indices to cut-mesh vertex indices
-        std::map<int, std::vector<int>> dCNVtoV;
-        // Map from dCN halfedge indices to cut-mesh halfedge indices
-        std::map<int, std::vector<int>> dCNHEtoHE;
 };
 
 }   // namespace Mesh

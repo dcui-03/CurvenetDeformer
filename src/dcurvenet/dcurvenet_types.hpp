@@ -1,6 +1,7 @@
 // dcurvenet_types.hpp
 #pragma once
 
+#include "dcurvenet_def.hpp"
 #include <Eigen/Core>
 #include <vector>
 #include <utility>
@@ -47,6 +48,11 @@ namespace DCurvenet {
         Eigen::Vector3d binormal;
         Eigen::Vector3d normal;
         double l, w, h;
+
+        /*
+        // TODO
+        heDeformData defData;
+        */
     };
 
     // Edge in a curve

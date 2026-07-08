@@ -19,11 +19,13 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/6**
+**Update 7/7**
 
-Next walk direction code for straightest geodesics is almost done. Definitely needs t-values for edge splits (maybe make this an attribute of struct?), but also needs to handle walk direction recomputation where necessary. There are two ways to implement this: at the start of the function and at the end. If you compute at the start, you don't need to precompute to call straightest geodesics the first time. Maybe do everything directional at the start (i.e., compute the next walk face and direction at the start), then simply trace the geodesic on that next face, then pass along to next call. Also need some sort of treatment for degenerate next walk directions. Maybe fail this case and hope sampling density/mesh quality is good enough?
+First pass on geodesics done (yay!). Working on mesh cutting now... having some trouble figuring out how to handle boundaries, but shouldn't be overly complicated. May end up splitting into smaller cases... for example, if a cut-vert is on the boundary but its dCN halfedge is not... do we still split the vertex? If so, just be careful that both copies get the SAME corner_idx, even if the corner_idx is not adjacent to one of them. If not, our cut-mesh is no longer manifold. I would opt for the first version... And if the dCN halfedges run along the boundary? Partially along the boundary? Think this through a little more clearly.
 
-Also, would recommend moving projection info into a separate mesh struct to avoid these huge function inputs. ex. just a struct called meshElements which contains just the type and index, or even just treat is as a pair. This streamlines things and makes it clearer what the variable is doing.
+Also, structs should be reorganized so that they're better compartmentalized... right now there's lots of loose variables that can be grouped together. This should also make it easier to switch modes (i.e., deformation vs. color vs. scalar interpolation on cut-mesh)
+
+I think there are some other organizational shortcuts that may be useful. It turns out that we don't really need a mapping from dCN verts to mesh verts, or even dCN halfedges to mesh halfedges. The paper circumvents this entirely by averaging everything onto dCN verts first. Problem is, this means we need to store 2 def grads per dCN verts, which is a bit annoying. Instead, maybe have each copied cut-mesh vertex reference a halfedge in  the dCN mesh. This halfedge + its next (and its destination vert) can be used to define a corner in the dCN, which let's us query corresponding def grads + positions much more easily. dCN vert to mesh vert mappings are therefore "implicit" via dCN halfedge destination. However, note that we absolutely do need cut-mesh halfedges to store their corresponding dCN halfedges. BUT this means that instead of storing a dCN halfedge for each cut-vert, we can actually store one of its adjacent cut-mesh halfedges instead, since these halfedges reference their dCN halfedge. i.e., cut-vert --> cut-halfedge --> dCN halfedge --> dCN corner
 
 **NOTES**
 
@@ -32,6 +34,8 @@ Important note about Eigen. For Eigen fixed-size containers that are a multiple 
 This does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects, though. In addition, c++17 handles this implicitly, so no need to handle if using c++17. However, it's good to put the allocators in for fixed-size 16 data types anyways for reliability if you happen to be below c++17.
 
 **Big TODOs**:
+
+- *Code Restructuring*: Some major restructures would be nice, but best saved for later. For one, templating the mesh class would make the cut-mesh class easier to interface with and avoid storing a bunch of unused data in the mesh class. Potentially add cutVertex and cutHE to the struct list to accommodate this. The same could be done for the dCurvenet class, where instead of only storing deformation info, it could be used to store a bunch of other info. Combining struct info would make the code much cleaner. Look also into where we can do parallelization. Ex. during runtime, intermediate steps can be pretty cleanly parallelized to assemble all matrices.
 
 - *Polyscope Tests*: For running tests. Re-do polyscope front-end so visual debugging is enabled; this needs its own editable curve network class and converters from the new internal curvenet/dCN classes.
 

@@ -17,7 +17,7 @@ class dcurvenet {
         //       Curves are similar.
         // Takes the original curvenet and discretizes it
         // Alpha is the user-inputted sampling parameter
-        dcurvenet(Curvenet::curvenet* CN, double meanE, int alpha = 5);
+        dcurvenet(Curvenet::curvenet* CN, double meanE, int alpha = 5, int mode = 0);
         // Initialize with empty constructor
         dcurvenet();
 
@@ -37,6 +37,8 @@ class dcurvenet {
         int moveVert(int v, Eigen::Vector3d new_pos); 
         // Compute the deformation gradient on an edge given a new scaled frame
         Eigen::Matrix3d computeHEDefGrad(int he);
+        // Compute deformation gradients on all halfedges
+        int computeDefGradAll();
 
         // Sampling parameters
         int alpha = 5;          // User param

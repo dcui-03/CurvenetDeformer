@@ -17,8 +17,8 @@ namespace Mesh {
 // Inserts a vertex at a location and face
 // Returns the index of the new vertex
 // NOTE: The new vertex has no normal information or associated halfedge.
-int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int dCN_idx, int ref_Type, int ref_Idx, Eigen::Vector3d proj) {
-    Vert newV = createVertex(pos, n, label, dCN_idx, ref_Type, ref_Idx, proj);
+int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, int ref_Type, int ref_Idx, Eigen::Vector3d proj) {
+    Vert newV = createVertex(pos, n, label, cornerIdx, ref_Type, ref_Idx, proj);
     int v = V.size();
     V.push_back(newV);
     return v;
@@ -32,7 +32,6 @@ int cutmesh::insertVertex(Vert splitV) {
 
 // Topologically splits an existing edge by adding a new vertex.
 // NOTE: Added vertex does NOT need to lie on the edge
-// TODO: 
 int cutmesh::splitEdge(int e, int new_v) {
     if (e >= E.size() || !E[e].active) {
         return -1;
@@ -70,8 +69,10 @@ int cutmesh::splitEdge(int e, int new_v) {
     HE[he1_new].edge = new_e;
     HE[he0_idx].dest = new_v;
     HE[he1_new].dest = new_v;
+    HE[he0_new].dest = u;
     HE[he0_new].boundary = HE[he0_idx].boundary;
     HE[he1_new].boundary = HE[he1_idx].boundary;
+    V[new_v].he = he0_new;
 
     HE[HE[he0_idx].next].prev = he0_new;
     HE[HE[he1_idx].next].prev = he1_new;
@@ -86,7 +87,7 @@ int cutmesh::splitEdge(int e, int new_v) {
     vertPairToHE[{new_v, v}] = he0_new;
     vertPairToHE[{v, new_v}] = he1_new;
 
-    return new_v;
+    return new_e;
 }
 
 // Insert an edge into the mesh between two existing vertices
@@ -125,6 +126,8 @@ int cutmesh::insertEdge(int v0, int v1, int dCN_idx0, int dCN_idx1) {
     HE[he1].dest = v0;
     HE[he0].dCN_idx = dCN_idx0;
     HE[he1].dCN_idx = dCN_idx1;
+    V[v0].he = he1;
+    V[v1].he = he0;
 
     // New keys
     vertPairToHE[{v0, v1}] = he0;

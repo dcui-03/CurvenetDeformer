@@ -172,16 +172,16 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
 // Trace a "straightest" geodesic (ish) from the start vert to the end
 int mesh::traceGeodesic(const Vert& start, 
                   const Vert& end, 
-                  Eigen::Vector3d direc, 
-                  int walk_ElType,
-                  int walk_ElIdx,
+                  Eigen::Vector3d prevDirec, 
+                  int prev_ElType,
+                  int prev_ElIdx,
                   std::vector<Vert>& tracedVerts,
                   bool recompute,
                   bool fast) {
     double eps = 1e-6;
     // First, do some simple tests for termination
     // It's good to have these to catch tiny directional drift
-    if (walk_ElType == end.mesh_elType && walk_ElIdx == end.mesh_elIdx) {   // The next mesh element is exactly the goal
+    if (prev_ElType == end.mesh_elType && prev_ElIdx == end.mesh_elIdx) {   // The next mesh element is exactly the goal
         return true;
     } else if (start.mesh_elType == 0 && end.mesh_elType == 0) {    // Both are vertices
         if (vertPairToHE.find(std::make_pair(start.mesh_elIdx, end.mesh_elIdx)) != vertPairToHE.end()) {
@@ -205,9 +205,9 @@ int mesh::traceGeodesic(const Vert& start,
     }
 
     // Otherwise need to do a face-wise check
+    // Find shared faces between start and end, if any
     std::vector<int> startAdjF = adjFaces(start.mesh_elType, start.mesh_elIdx);
     std::vector<int> endAdjF = adjFaces(end.mesh_elType, end.mesh_elIdx);
-
     std::vector<int> sharedAdjF;
     for (int i = 0; i < startAdjF.size(); i++) {
         if (startAdjF[i] == -1) {
@@ -235,19 +235,43 @@ int mesh::traceGeodesic(const Vert& start,
         }
     }
 
-    // TODO: How/when to handle recomputes?
-    // Maybe fold it into the nextEl_Vert and nextEl_Edge computation? Or make separate functions for this case
-    // Basically, for nextEl_Edge, check if projection of walk direction is on the halfplane of the next face (ex. via dot prod of vector and the binormal (edge vec cross normal vec)), and snap to boundary if necessary
-    // For nextEl_Vert, check which "bucket" the projection direction best falls into (i.e., project vector onto each corner, then find if this vector is between the two adjacent ones).
-    //                  Then, also do boundary/edge check again as usual.
-    int next_recompute = true;
+    // We have to walk, so we now compute the next walk direction
+    int next_ElType, next_ElIdx;
+    Eigen::Vector3d nextDirec;
+    prevDirec.normalize();
+    if (recompute && start.mesh_elType == 2) {
+        Eigen::Vector3d refDirec = (end.pos - start.pos);
+        next_ElType = prev_ElType;
+        next_ElIdx = prev_ElIdx;
+        // If projection is degenerate, defer to valid previous version
+        if (Utils::projectVectorOntoTangentPlane(F[next_ElIdx].n, refDirec, nextDirec) <= eps) {
+            nextDirec = prevDirec;
+        } else if (nextDirec.dot(prevDirec) < 0.0) {    // Else do a soft check to make sure we're going the right way
+            nextDirec *= -1;
+        }
+    } else {
+        if (start.mesh_elType == 0) {
+            next_ElType = nextEl_Vert(start.mesh_elIdx, prev_ElType, prev_ElIdx, prevDirec, nextDirec, next_ElIdx, true);
+        } else if (start.mesh_elType == 1) {
+            next_ElType = nextEl_Edge(start.mesh_elIdx, prev_ElIdx, prevDirec, nextDirec, next_ElIdx, true);
+        } else {
+            next_ElType = prev_ElType;
+            next_ElIdx = prev_ElIdx;
+            Utils::projectVectorOntoTangentPlane(F[next_ElIdx].n, prevDirec, nextDirec);
+        }
+    }
+    // Screen out any immediately problematic vectors
+    if (nextDirec.norm() <= eps) {
+        return -1;
+    }
+
     // Case 1: Check if walk direction is on an edge, simply grab the other end vertex of the edge
-    if (walk_ElType == 1) {
+    if (prev_ElType == 1) {
         // Opt to actually compute the matching direction instead of assuming the start is at a vertex
         // This way we can handle degenerate cases where the initial walk direction is on an edge
-        int he = E[walk_ElIdx].he;
+        int he = E[prev_ElIdx].he;
         Eigen::Vector3d heVec = (V[HE[he].dest].pos - V[HE[HE[he].twin].dest].pos).normalized();
-        Eigen::Vector3d projDirec = (direc.dot(heVec) * heVec).normalized();
+        Eigen::Vector3d projDirec = (nextDirec.dot(heVec) * heVec).normalized();
         // Orient ourselves correctly
         int next;
         if (projDirec.dot(heVec) >= 0) {
@@ -256,38 +280,24 @@ int mesh::traceGeodesic(const Vert& start,
             next = HE[he].dest;
         }
         Vert nextVert = createVertex(V[next].pos, V[next].n, 2, -1, 0, next);
-
-        Eigen::Vector3d nextDirec;
-        int next_ElType, next_ElIdx;
-        next_ElType = nextEl_Vert(next, walk_ElType, walk_ElIdx, projDirec, nextDirec, next_ElIdx, true);
         // Recurse
         tracedVerts.push_back(nextVert);
-        traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, next_recompute, fast);
+        traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, true, fast);
     }
 
     // If we reached this point, we are definitely walking on a face
     // Project walk direction onto specified direction
     Eigen::Vector3d hit;
     int hit_ElIdx;
-    int hit_ElType = rayCastOnFace(walk_ElIdx, start.pos, direc, hit, hit_ElIdx);
+    int hit_ElType = rayCastOnFace(next_ElIdx, start.pos, nextDirec, hit, hit_ElIdx);
     if (hit_ElType == -1) {
         return -1;
     }
-    // Produce a "corrected" direction to account for projection drift
-    Eigen::Vector3d corrDirec = (hit - start.pos).normalized();
     // Create a new vertex at intersection and append to list
     Vert nextVert = createVertex(hit, getNormal(hit_ElType, hit_ElIdx), 2, -1, hit_ElType, hit_ElIdx);
 
-    int next_ElType, next_ElIdx;
-    Eigen::Vector3d nextDirec;
-    if (hit_ElType == 1) {
-        next_ElType = nextEl_Edge(hit_ElIdx, walk_ElIdx, corrDirec, nextDirec, next_ElIdx, true);
-    } else {
-        next_ElType = nextEl_Vert(hit_ElIdx, walk_ElType, walk_ElIdx, corrDirec, nextDirec, next_ElIdx, true);
-    }
-
     tracedVerts.push_back(nextVert);
-    traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, next_recompute, fast);
+    traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, true, fast);
 }
 
 // Test whether the start and end are visible from each other on a particular face
@@ -317,7 +327,7 @@ bool mesh::testVisibility(int f, Eigen::Vector3d start, Eigen::Vector3d end, dou
         int v_p1 = (v+projFVerts.size()+1) % projFVerts.size();
         double t, u;
         // Raycast to find nearest segment
-        if (Utils::raycastToSegment2D(start2D, direc, projFVerts[v], projFVerts[v_p1], t, u, false)) {
+        if (Utils::raycastToSegment2D(start2D, direc, projFVerts[v], projFVerts[v_p1], t, u)) {
             // Filter out any that are behind
             if (t >= eps) {
                 intersections.push_back(t);
@@ -367,7 +377,7 @@ int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eig
         int v_p1 = (v+projFVerts.size()+1) % projFVerts.size();
         double t, u;
         // Raycast to find nearest segment
-        if (Utils::raycastToSegment2D(start2D, direc2D, projFVerts[v], projFVerts[v_p1], t, u, true)) {
+        if (Utils::raycastToSegment2D(start2D, direc2D, projFVerts[v], projFVerts[v_p1], t, u)) {
             // Filter out any that are behind
             if (t >= eps) {
                 intersections.push_back(std::make_pair(v, u));
@@ -383,7 +393,7 @@ int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eig
     // Otherwise, check what we hit first
     int nearest_idx = 0;
     double nearest = intersections_t[0];
-    for (int i = 0; i < intersections_t.size(); i++) {
+    for (int i = 1; i < intersections_t.size(); i++) {
         if (intersections_t[i] <= nearest) {
             nearest = intersections_t[i];
             nearest_idx = i;
@@ -406,7 +416,7 @@ int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eig
 
 // Compute the next walk element given that we intersected with an edge
 // Returns the next 
-int mesh::nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& walk_direc, 
+int mesh::nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& prev_direc, 
                     Eigen::Vector3d& next_direc, int& next_elIdx, bool bdy_snap) {
     // Get adjacent faces
     std::vector<int> adjF = edgeAdjFaces(e);
@@ -416,7 +426,7 @@ int mesh::nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& walk_direc,
     }
     // Projection step for safety
     Eigen::Vector3d proj_direc;
-    double valid = Utils::projectVectorOntoTangentPlane(F[f_origin].n, walk_direc, proj_direc);
+    double valid = Utils::projectVectorOntoTangentPlane(F[f_origin].n, prev_direc, proj_direc);
     if (valid <= 0.0) {
         return -1;
     }
@@ -456,7 +466,7 @@ int mesh::nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& walk_direc,
 
 // Compute the next walk element given that we intersected with a vertex
 int mesh::nextEl_Vert(int v, int origin_ElType, int origin_ElIdx, 
-                    const Eigen::Vector3d& walk_direc, Eigen::Vector3d& next_direc, 
+                    const Eigen::Vector3d& prev_direc, Eigen::Vector3d& next_direc, 
                     int& next_elIdx, bool bdy_snap, double eps) {
     // Gather all of the adjacent halfedges and faces
     std::vector<int> adjHE = vertAdjHEs(v);
@@ -472,6 +482,9 @@ int mesh::nextEl_Vert(int v, int origin_ElType, int origin_ElIdx,
         Eigen::Vector3d vec0 = V[HE[he0].dest].pos - V[v].pos;
         Eigen::Vector3d vec1 = V[HE[he1].dest].pos - V[v].pos;
         Eigen::Vector3d axis = vec0.cross(vec1);
+        if (axis.norm() <= eps) {
+            axis = F[HE[he0].face].n;
+        }
         cornerNormals[he_idx] = axis.normalized();
         // Get the positive signed angle
         angleBuckets[he_idx] = Utils::signedAngle(vec0, vec1, axis, true);
@@ -490,11 +503,11 @@ int mesh::nextEl_Vert(int v, int origin_ElType, int origin_ElIdx,
     }
     // Compute the projected walk direction onto the corner normal's plane
     Eigen::Vector3d proj_direc;
-    double valid = Utils::projectVectorOntoTangentPlane(cornerNormals[localIdx], walk_direc, proj_direc);
+    double valid = Utils::projectVectorOntoTangentPlane(cornerNormals[localIdx], prev_direc, proj_direc);
     if (valid <= 0.0) {
         return -1;
     }
-    double angleToFace = Utils::signedAngle(V[HE[adjHE[localIdx]].dest].pos - V[v].pos, -1 * walk_direc, cornerNormals[localIdx], true);
+    double angleToFace = Utils::signedAngle(V[HE[adjHE[localIdx]].dest].pos - V[v].pos, -1 * prev_direc, cornerNormals[localIdx], true);
 
     // Get the halfway angle
     double targetAngle = angleSum / 2.0;

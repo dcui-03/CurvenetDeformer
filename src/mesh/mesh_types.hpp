@@ -8,6 +8,23 @@
 
 namespace Mesh {
 
+    // Data needed if we want to interpolate deformations
+    struct vertProjData {
+        // Where we landed in the original mesh, if label == 1
+        int mesh_elType = -1;
+        int mesh_elIdx = -1;
+        // Vector from the projected point on the rest mesh to the rest curvenet vert (if label == 1)
+        Eigen::Vector3d projVector = Eigen::Vector3d::Zero();
+    };
+
+    // Data needed if we want to interpolate deformations
+    struct vertDeformData {
+        // Vector from the projected point on the rest mesh to the rest curvenet vert (if label == 1)
+        Eigen::Vector3d projVector = Eigen::Vector3d::Zero();
+        // Deformation gradient eventually computed using Laplacian
+        Eigen::Matrix3d defGrad = Eigen::Matrix3d::Identity();
+    };
+
     struct Vert {
         Eigen::Vector3d pos;
         Eigen::Vector3d n = Eigen::Vector3d::Zero();
@@ -17,13 +34,22 @@ namespace Mesh {
 
         // Attributes for cut mesh
         int label = 0;  // {0 if original mesh vertex, 1 if projected CN vertex, 2 otherwise}
-        int dCN_idx = -1;   // Corresponding dCN index for cut-mesh (if cut-vertex is associated with a dCN vert or HE)
+        int corner_idx = -1;   // Corresponding dCN HALFEDGE index for cut-mesh (if cut-vertex is associated with a dCN vert or HE)
         // Note that if label == 1, then dCN_idx is a vert index, and if label == 2, then dCN_idx is a HE index
         // Where we landed in the original mesh, if label == 1
         int mesh_elType = -1;
         int mesh_elIdx = -1;
         // Vector from the projected point on the rest mesh to the rest curvenet vert (if label == 1)
         Eigen::Vector3d projVector = Eigen::Vector3d::Zero();
+        // Deformation gradient eventually computed using Laplacian
+        Eigen::Matrix3d defGrad = Eigen::Matrix3d::Identity();
+
+        /*
+        // TODO
+        vertProjData projData;
+
+        vertDeformData defData;
+        */
     };
 
     struct HalfEdge {
@@ -41,9 +67,6 @@ namespace Mesh {
 
         // Other indices for cut mesh
         int dCN_idx = -1;   // -1 if not connected, dCN HE index otherwise
-        // Computation needs
-        // Deformation gradient eventually computed using Laplacian
-        Eigen::Matrix3d defGrad = Eigen::Matrix3d::Identity();
     };
 
     // Only store one halfedge for each edge

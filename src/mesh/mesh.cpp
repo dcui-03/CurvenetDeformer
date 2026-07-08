@@ -396,12 +396,12 @@ void mesh::computeBBoxDiag() {
 
 
 // Create a new vertex but do NOT insert it
-Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int dCN_idx, int ref_Type, int ref_Idx, Eigen::Vector3d proj) {
+Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, int ref_Type, int ref_Idx, Eigen::Vector3d proj) {
     Vert v;
     v.pos = pos;
     v.n = n;
     v.label = label;
-    v.dCN_idx = dCN_idx;
+    v.corner_idx = cornerIdx;
     v.mesh_elType = ref_Type;
     v.mesh_elIdx = ref_Idx;
     return v;

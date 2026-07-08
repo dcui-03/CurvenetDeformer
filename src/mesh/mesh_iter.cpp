@@ -20,6 +20,19 @@ std::vector<int> mesh::vertAdjHEs(int v) const {
     return outgoingHEs;
 }
 
+// Returns a CCW list of ALL of a vertex's incoming and outgoin halfedge indices
+std::vector<int> mesh::vertAllHEs(int v) const {
+    std::vector<int> adjHEs;
+    const int he0 = V[v].he;
+    int he_curr = he0;
+    do {
+        adjHEs.push_back(he_curr);
+        adjHEs.push_back(HE[he_curr].prev);
+        he_curr = HE[HE[he_curr].prev].twin;
+    } while (he_curr != he0);
+    return adjHEs;
+}
+
 // Returns a CCW list of a vertex's adjacent vertices
 std::vector<int> mesh::vertAdjVerts(int v) const {
     std::vector<int> adjHE = vertAdjHEs(v);

@@ -9,7 +9,7 @@
 
 namespace DCurvenet {
     // Takes the original curvenet and discretizes it
-    dcurvenet::dcurvenet(Curvenet::curvenet* CN, double meanE, int alpha): CN(CN), alpha(alpha), meanE(meanE) {
+    dcurvenet::dcurvenet(Curvenet::curvenet* CN, double meanE, int alpha, int mode): CN(CN), alpha(alpha), meanE(meanE) {
         const std::vector<Curvenet::Control>& cnCtrl = CN->controls();
         int num_curves = CN->numCurves();
         // Defensive reset
@@ -37,22 +37,24 @@ namespace DCurvenet {
             rewireVertAdjHE(v);
         }
 
-        // 4. Compute all corner normals and widths
-        allCornerNormalsAndWidths();
-        // 5. Transport normals and widths along all splines
-        transportNormalsAndWidths();
-        // 6. Compute scaled frames on all splines
-        computeScaledFrames();
+        if (mode == 0) {
+            // 4. Compute all corner normals and widths
+            allCornerNormalsAndWidths();
+            // 5. Transport normals and widths along all splines
+            transportNormalsAndWidths();
+            // 6. Compute scaled frames on all splines
+            computeScaledFrames();
 
-        // 7. Cleanup by copying realtime frames to rest frames
-        copyFramesToNew();
+            // 7. Cleanup by copying realtime frames to rest frames
+            copyFramesToNew();
+        }
     }
 
     // Update the new frames on all halfedges
     void dcurvenet::updateDiscCurveNet() {
-        const std::vector<Curvenet::Control>& cnCtrl = CN->controls();
-        const std::vector<Curvenet::CubicSpline>& cnSpline = CN->splines();
-        const std::vector<Curvenet::Curve>& cnCurve = CN->curves();
+        const std::vector<Curvenet::Control>& cnCtrl = CN->C;
+        const std::vector<Curvenet::CubicSpline>& cnSpline = CN->S;
+        const std::vector<Curvenet::Curve>& cnCurve = CN->Crv;
         // 1. Copy new control positions to their corresponding dvert
         for (const auto& idxPair : inputCtoV) {
             V[idxPair.second].new_pos = cnCtrl[idxPair.first].new_pos;

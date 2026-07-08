@@ -95,7 +95,10 @@ namespace Utils {
     // To do this, we do raycasting to the segment
     bool pointInPolygon2D(const Eigen::Vector2d& p, const vector2dList& poly);
 
-    bool raycastToSegment2D(const Eigen::Vector2d& p, const Eigen::Vector2d& direc, const Eigen::Vector2d& v0, const Eigen::Vector2d& v1, double& t, double& u, bool clip = true);
+    // Returns the magnitude of the "cross product" of two 2D vectors.
+    double cross2D(const Eigen::Vector2d& a, const Eigen::Vector2d& b);
+    // Find the intersection between a ray and a segment in 2D, if one exists.
+    bool raycastToSegment2D(const Eigen::Vector2d& p, const Eigen::Vector2d& direc, const Eigen::Vector2d& v0, const Eigen::Vector2d& v1, double& t, double& u);
 
     // Get the closest point on a segment in 2D and 3D, where the endpoints are defined
     // To do this, project onto parameterized segment and snap t to [0, 1]
@@ -103,14 +106,6 @@ namespace Utils {
     Eigen::Vector2d closestPointOnSegment2D(const Eigen::Vector2d& p, const Eigen::Vector2d& v0, const Eigen::Vector2d& v1, bool clip = true);
 
     Eigen::Vector3d closestPointOnSegment3D(const Eigen::Vector3d& p, const Eigen::Vector3d& v0, const Eigen::Vector3d& v1, bool clip = true);
-
-    // Given points on a face, plus a ray, compute the intersection of the ray with the face, if one exists
-    bool computeFaceIntersection(const std::vector<Eigen::Vector3d>& fVerts, const Eigen::Vector3d& fNormal,
-                             const Eigen::Vector3d& start, const Eigen::Vector3d& direc,
-                             double& t, int& el_type, int& local_idx, double& u, double& theta, double tol = 1e-6);
-    bool computeFaceIntersectionTarget(const std::vector<Eigen::Vector3d>& fVerts, const Eigen::Vector3d& fNormal,
-                             const Eigen::Vector3d& start, const Eigen::Vector3d& target,
-                             double& t, int& el_type, int& local_idx, double& u, double& theta, double tol = 1e-6);
 
     // MEAN VALUE COORDINATES
     // Helpers
