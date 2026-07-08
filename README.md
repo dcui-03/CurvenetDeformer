@@ -19,9 +19,10 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/7**
+**Update 7/8**
 
-First pass on geodesics done (yay!). Working on mesh cutting now... having some trouble figuring out how to handle boundaries, but shouldn't be overly complicated. May end up splitting into smaller cases... for example, if a cut-vert is on the boundary but its dCN halfedge is not... do we still split the vertex? If so, just be careful that both copies get the SAME corner_idx, even if the corner_idx is not adjacent to one of them. If not, our cut-mesh is no longer manifold. I would opt for the first version... And if the dCN halfedges run along the boundary? Partially along the boundary? Think this through a little more clearly.
+Finished my first full draft of mesh cutting... although I think it'll need some extra debugging. However, it also doesn't add new boundary halfedges in, and simply leaves their twins dangling. I'm not sure if this is a problem... but it would definitely be better to have the halfedges than not, so as to prevent the mesh iterators from breaking (we may need them later). Here's my thought: After adding each split, record the start and end boundary halfedge of each (make a new one + new edge if needed), as well as tracking their previous and next. Then, let the start boundary he's prev be the end. Lastly, rewire the remaining boundaries. If a start boundary halfedge's twin's dest is the same as the previous split's end boundary halfedge, then connect them using prev/next. If not, then use the computed previous and next from the previous step. NOTE: if any pair of matching boundaries were caused by a split, then they will both require new halfedges. There will never be a case where we need to rewire with an old boundary and a new boundary. This is made easier by the sequential nature of this function, which fully let's us treat prior splits as boundaries.
+NOTE: do NOT rewire the boundary halfedges until AFTER all the splits are done for this vertex. This makes it easier to iterate without fearing problems.
 
 Also, structs should be reorganized so that they're better compartmentalized... right now there's lots of loose variables that can be grouped together. This should also make it easier to switch modes (i.e., deformation vs. color vs. scalar interpolation on cut-mesh)
 
