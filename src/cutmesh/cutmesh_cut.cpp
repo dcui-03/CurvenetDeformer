@@ -318,7 +318,7 @@ namespace Mesh {
                 // Find which halfedges to "split" at
                 // These include dCN halfedges and boundary edges
                 for (int he = 0; he < adjHE.size(); he++) {
-                    // Track all partitions that exclude the boundary
+                    // Track all partitions that include the boundary
                     if (HE[adjHE[he]].active && ((HE[adjHE[he]].dCN_idx >= 0) || HE[HE[adjHE[he]].twin].boundary)) {
                         HE_SplitIdxs.push_back(he);
                     }
@@ -345,6 +345,8 @@ namespace Mesh {
                 }
 
                 // For each dCN corner, split the vertex and rewire the halfedge destination vertices accordingly
+                std::vector<std::pair<int, int>> newStartBoundaries(HE_SplitIdxs.size());
+                std::vector<std::pair<int, int>> newEndBoundaries(HE_SplitIdxs.size());
                 for (int i = 0; i < HE_SplitIdxs.size(); i++) {
                     int startHE = adjHE[HE_SplitIdxs[i]];
                     int nextHE = adjHE[HE_SplitIdxs[(i+1)%HE_SplitIdxs.size()]];
@@ -359,13 +361,29 @@ namespace Mesh {
                     V[v_current].he = startHE;
 
                     // Check if we need to first insert the start boundary
+                    std::pair<int, int> startBdy;
                     if (HE[HE[startHE].twin].boundary) {
                         int adj_v = HE[startHE].dest;
                         HE[HE[startHE].twin].dest = v_current;
                         vertPairToHE.erase({adj_v, v});
                         vertPairToHE[{adj_v, v_current}] = HE[startHE].twin;
-                        int start_bdy = HE[startHE].twin;
+                        startBdy.first = HE[startHE].twin;
+                        startBdy.second = HE[startBdy.first].prev;
+                    } else {    // Currently no existing halfedge. Create a new one
+                        // Each split that doesn't start at a boundary keeps its last edge and gets a copy for its start edge
+                        int new_e = E.size();
+                        E.emplace_back();
+                        E[new_e].he = startHE;
+                        int new_he = HE.size();
+                        HE.emplace_back();
+                        HE[new_he].twin = startHE;
+                        HE[new_he].dest = HE[HE[startHE].twin].dest;
+                        HE[new_he].boundary = true;
+                        HE[new_he].edge = new_e;
+                        startBdy.first = new_he;
+                        startBdy.second = -1;
                     }
+                    newStartBoundaries[i] = startBdy;
                     int he_current = startHE;
                     int counter = 0;    // safety
                     // Rewire the halfedges to point to the new vert
@@ -385,38 +403,52 @@ namespace Mesh {
                     } while((he_current != nextHE && !HE[he_current].boundary) || (counter >= adjHE.size()));
 
                     // Check if we need to insert the end boundary
+                    std::pair<int, int> endBdy; // 
                     if (HE[he_current].boundary) {
                         int adj_v = HE[he_current].dest;
                         vertPairToHE.erase({v, adj_v});
                         vertPairToHE[{v_current, adj_v}] = he_current;
+                        endBdy.first = he_current;
+                        endBdy.second = HE[he_current].next;
+                    } else {    // Need to create a new halfedge
+                        int new_he = HE.size();
+                        HE.emplace_back();
+                        HE[new_he].edge = HE[he_current].edge;
+                        HE[new_he].boundary = true;
+                        HE[new_he].twin = HE[he_current].twin;
+                        HE[new_he].dest = HE[he_current].dest;
+                        endBdy.first = new_he;
+                        endBdy.second = -1;
+                    }
+                    newEndBoundaries.push_back(endBdy);
+                }
+
+                // Now that all splits are made, rewire by properly rewiring the boundaries
+                for (int i = 0; i < newStartBoundaries.size(); i++) {
+                    const std::pair<int, int>& currStart = newStartBoundaries[i];
+                    const std::pair<int, int>& currEnd = newStartBoundaries[i];
+
+                    HE[currStart.first].next = currEnd.first;
+                    HE[currEnd.first].prev = currStart.first;
+
+                    HE[HE[currStart.first].twin].twin = currStart.first;
+                    HE[HE[currEnd.first].twin].twin = currEnd.first;
+
+                    // Reconnect the newly formed boundaries
+                    if (currStart.second == -1) {
+                        const std::pair<int, int>& prevEnd = newEndBoundaries[(i+newEndBoundaries.size()-1)%newEndBoundaries.size()];
+                        HE[currStart.first].prev = prevEnd.second;
+                    } else {
+                        HE[currStart.first].prev = currStart.second;
+                    }
+                    if (currEnd.second == -1) {
+                        const std::pair<int, int>& nextStart = newStartBoundaries[(i+1)%newStartBoundaries.size()];
+                        HE[currEnd.first].next = nextStart.second;
+                    } else {
+                        HE[currEnd.first].next = currEnd.second;
                     }
                 }
             }
-        }
-
-        // Loop over edges and "cut" them apart if necessary
-        // TODO: Potentially fill these in with new boundary halfedges rather than nothing
-        for (int e = 0; e < E.size(); e++) {
-            int he0 = E[e].he;
-            int he1 = HE[he0].twin;
-            if (HE[he0].dCN_idx == -1) { // Process only those from dCN
-                continue;
-            }
-            // If either is a boundary, then skip
-            if (HE[he0].boundary || HE[he1].boundary) {
-                continue;
-            }
-
-            // Separate the halfedges
-            // Create new edge with copied info
-            int new_e = E.size();
-            E.emplace_back();
-            E[new_e].n = E[e].n;
-            E[new_e].he = he1;
-
-            HE[he0].twin = -1;
-            HE[he1].twin = -1;
-            HE[he1].edge = new_e;
         }
 
         return 1;

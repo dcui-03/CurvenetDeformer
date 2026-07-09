@@ -15,12 +15,13 @@ namespace ProfileMover {
 class profilemover {
     public:
         // Constructor, which first builds the mesh
-        profilemover(std::vector<Eigen::Vector3d>& meshV, std::vector<std::vector<int>>& meshF);
+        profilemover(std::vector<Eigen::Vector3d>& meshV, std::vector<std::vector<int>>& meshF, 
+                    std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents, std::vector<std::array<int, 4>> Splines, int alpha = 5);
         profilemover();
 
         // Precompute cut-mesh and operators
         // Takes as input the necessary items to construct the curve network
-        void precomputation(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents, std::vector<std::array<int, 4>> Splines, int alpha = 5);
+        void precomputation();
 
         // Apply deformation given the new control and tangent locations (connectivity should be same)
         // Returns new mesh positions as an Nx3 matrix
@@ -36,20 +37,25 @@ class profilemover {
         // Deformed projection needed for second opt
         Eigen::MatrixXd estimateProjectionDefs();
 
-        // Store copy of cut mesh
+        // Store copy of mesh
         Mesh::mesh M;
-
-        // NOTE: no need to store updated states curvenet and dcurvenet, we have to create new copies at execution time
-        // Store the neutral curvenet (spline)
-        // TODO: Do we need the original curvenet? --> Only for resets
-        // We do need the original nDCurvenet so that we can compute deformation gradients
+        // Store a copy of cut-mesh
+        Mesh::cutmesh CM;
+        
         Curvenet::curvenet CN;
         // Store the neutral discrete curvenet
         DCurvenet::dcurvenet dCN;
         bool dCN_init = false;
-        // Store neutral cut-mesh
-        //CutMesh::cutmesh nCutmesh;
 
+        // Map from matrices (C, V) to cutmesh cut-vertices and vice versa
+        // BE CAREFUL about inactive vertices
+        // NOTE: Could use a std::map insted, but this is more intuitive, since we will end up parallelizing these steps
+        std::vector<std::pair<int, int>> cutmeshVtoC_idx;
+        // Map from matrices to cutmesh regular vertices and vice versa
+        std::vector<std::pair<int, int>> cutmeshVtoV_idx;
+
+        // Note: We also may need some mapping from cut-verts w/ label 1 and coincident to a mesh vertex in order to assemble final positions
+        //       BUT this may be best assembled in the cutmesh class rather than in the profilemover class.
         
         // Store operators
         // TODO: Need functions to compute V and C
