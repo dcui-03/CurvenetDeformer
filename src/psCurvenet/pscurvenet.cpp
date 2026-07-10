@@ -83,7 +83,7 @@ bool pscurvenet::updateTangentPos(int s, bool t0, const Eigen::Vector3d& new_pos
     if (s >= S.size()) {
         return false;
     }
-    double eps = 1e-6;
+    double eps = 1e-8;
     // Prevent tangent movement if we are too close to an endpoint
     if (((C[S[s].start].pos - new_pos).norm() <= eps) || ((C[S[s].end].pos - new_pos).norm() <= eps)) {
         return false;
@@ -204,39 +204,40 @@ int pscurvenet::removeControl(int c) {
     // Remove control from list
     C.erase(C.begin() + c);
     // All controls c and above are now relabeled
-    // Redo numbering on all splines
-    std::vector<int> S_toRemove;
-    for (int s = 0; s < S.size(); s++) {
-        if (S[s].start == c) {
-            S[s].start = -1;
-            S_toRemove.push_back(s);
-        } else if (S[s].start > c) {
-            S[s].start -= 1;
-        } else if (S[s].end == c) {
-            S[s].end = -1;
-            S_toRemove.push_back(s);
-        } else if (S[s].end > c) {
-            S[s].end -= 1;
+    // Hard reset the splines
+    std::vector<Spline> newS;
+    newS.reserve(S.size());
+    for (int s = 0; s < static_cast<int>(S.size()); ++s) {
+        int start = S[s].start;
+        int end   = S[s].end;
+        // Drop any splines that contained the control
+        if (start == c || end == c) {
+            continue;
         }
-    }
-
-    for (int s = 0; s < S_toRemove.size(); s++) {
-        removeSpline(S_toRemove[s]);
-        for (int s_next = s; s_next < S_toRemove.size(); s_next++) {
-            if (S_toRemove[s_next] > S_toRemove[s]) {
-                S_toRemove[s_next]--;
-            }
+        // Make a copy and decrement any invalid indices
+        Spline spline = S[s];
+        if (spline.start > c) {
+            spline.start -= 1;
         }
+        if (spline.end > c) {
+            spline.end -= 1;
+        }
+        newS.push_back(spline);
     }
+    // Swap the old for the new
+    S.swap(newS);
     recomputeMap = true;
+    constructTangentMap();
     return 1;
 }
 
-// NOTE: Multiple splines can connect two controls. This function removes all of them
 int pscurvenet::removeSplineByTangent(int ps_TIdx) {
-    std::pair<int, bool> splineData = psTangentToS[ps_TIdx];
-    return removeSpline(splineData.first);
-    return -1;
+    constructTangentMap();
+    auto it = psTangentToS.find(ps_TIdx);
+    if (it == psTangentToS.end()) {
+        return -1;
+    }
+    return removeSpline(it->second.first);
 }
 
 // Remove a spline
@@ -247,6 +248,7 @@ int pscurvenet::removeSpline(int s) {
     // Remove spline from list
     S.erase(S.begin() + s);
     recomputeMap = true;
+    constructTangentMap();
     return 1;
 }
 
@@ -430,6 +432,7 @@ void pscurvenet::constructTangentMap() {
         psTangentToS[++tanIdx] = std::make_pair(s, false);
         tanIdx++;
     }
+    recomputeMap = false;
     return;
 }
 

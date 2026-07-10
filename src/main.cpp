@@ -168,6 +168,30 @@ void removeGizmo() {
     return;
 }
 
+// Remove all polyscope object
+void removeAllCurvenetPS() {
+    if (psEditableCN) {
+        psEditableCN->remove();
+        psEditableCN = nullptr;
+    }
+
+    if (psTangentsCN) {
+        psTangentsCN->remove();
+        psTangentsCN = nullptr;
+    }
+
+    if (psControlsPC) {
+        psControlsPC->remove();
+        psControlsPC = nullptr;
+    }
+
+    if (psTangentsPC) {
+        psTangentsPC->remove();
+        psTangentsPC = nullptr;
+    }
+    return;
+}
+
 void updateCurvenet(bool conn = false) {
     // Reset curvenet
     psCN->cnAsCurveNetwork(psCN_P, psCN_E);
@@ -176,6 +200,7 @@ void updateCurvenet(bool conn = false) {
     psCN->tPosAsMatrix(psTangents_P);
 
     if (conn) {
+        removeAllCurvenetPS();
         if (psCN_E.size() > 0) {
             psEditableCN = polyscope::registerCurveNetwork("Curvenet", psCN_P, psCN_E);
             psEditableCN->setColor({0.0f, 0.0f, 0.0f});
@@ -371,7 +396,18 @@ void myCallback() {
         }
     }
     
-
+    // RESETs
+    if (ImGui::Button("Clear Gizmo")) {
+        std::cout << "Removing current gizmo." << std::endl;
+        removeGizmo();
+        selectedIdx = -1;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear Curvenet")) {
+        std::cout << "Clearing entire curvenet." << std::endl;
+        psCN->resetCurvenet();
+        updateCurvenet(true);
+    }
     // May need to store a copy of the rest curvenet
     if (ImGui::Button("Reset Curvenet")) {
         std::cout << "Resetting Splines." << std::endl;
@@ -444,42 +480,44 @@ void myCallback() {
 
     // EDIT MODE CLICKS
     // Select control to edit
-    if (editCtrlMode && mouseClicked && pick.isHit && pick.structure == psControlsPC) {
-        polyscope::PointCloudPickResult pcPick = psControlsPC->interpretPickResult(pick);
+    if (editCtrlMode && mouseClicked) {
+        if (pick.isHit && pick.structure == psControlsPC) {
+            polyscope::PointCloudPickResult pcPick = psControlsPC->interpretPickResult(pick);
 
-        selectedIdx = static_cast<int>(pcPick.index);
-        // Build a basis
-        Eigen::Vector3d selectedPos = psControls_P.row(selectedIdx).transpose();
-        Eigen::Vector3d selectedN = psCN->getNormal(selectedIdx);
-        Eigen::Vector3d t0, t1;
-        Utils::buildPlaneBasis(selectedN, t0, t1);
-        std::cout << "Editing Vert at (" << selectedPos[0] << ", " << selectedPos[1] << ", " << selectedPos[2] << ")" << std::endl;
-        // add Gizmo at position
-        addGizmoAtLocation(selectedPos, selectedN, t0, t1);
-    } else if (editCtrlMode && mouseClicked && pick.isHit && pick.structure != psControlsPC) {  // or clear
-        selectedIdx = -1;
-        removeGizmo();
-        clearModes();
-        editCtrlMode = true;
+            selectedIdx = static_cast<int>(pcPick.index);
+            // Build a basis
+            Eigen::Vector3d selectedPos = psControls_P.row(selectedIdx).transpose();
+            Eigen::Vector3d selectedN = psCN->getNormal(selectedIdx);
+            Eigen::Vector3d t0, t1;
+            Utils::buildPlaneBasis(selectedN, t0, t1);
+            std::cout << "Editing Vert at (" << selectedPos[0] << ", " << selectedPos[1] << ", " << selectedPos[2] << ")" << std::endl;
+            // add Gizmo at position
+            addGizmoAtLocation(selectedPos, selectedN, t0, t1);
+        } else if (editCtrlMode && mouseClicked && !activeGizmo && (!pick.isHit || (pick.isHit && pick.structure != psControlsPC))) {  // or clear
+            clearModes();
+            editCtrlMode = true;
+        }
     }
     // Select tangent to edit
-    if (editTanMode && mouseClicked && pick.isHit && pick.structure == psTangentsPC) {
-        // Index into tangent list. Get associated spline by integer dividing by 2.
-        // Then use the spline index to edit the tangent's position directly
-        polyscope::PointCloudPickResult pcPick = psTangentsPC->interpretPickResult(pick);
+    if (editTanMode && mouseClicked) {
+        if (pick.isHit && pick.structure == psTangentsPC) {
+            // Index into tangent list. Get associated spline by integer dividing by 2.
+            // Then use the spline index to edit the tangent's position directly
+            polyscope::PointCloudPickResult pcPick = psTangentsPC->interpretPickResult(pick);
 
-        selectedIdx = static_cast<int>(pcPick.index);
-        Eigen::Vector3d selectedPos = psTangents_P.row(selectedIdx).transpose();
-        std::cout << "Editing Spline Handle at (" << selectedPos[0] << ", " << selectedPos[1] << ", " << selectedPos[2] << ")" << std::endl;
-        // add Gizmo at position
-        addGizmoAtLocation(selectedPos);
-    } else if (editTanMode && mouseClicked && pick.isHit && pick.structure != psTangentsPC) {  // or clear
-        clearModes();
-        editTanMode = true;
+            selectedIdx = static_cast<int>(pcPick.index);
+            Eigen::Vector3d selectedPos = psTangents_P.row(selectedIdx).transpose();
+            std::cout << "Editing Spline Handle at (" << selectedPos[0] << ", " << selectedPos[1] << ", " << selectedPos[2] << ")" << std::endl;
+            // add Gizmo at position
+            addGizmoAtLocation(selectedPos);
+        } else if (editTanMode && mouseClicked && !activeGizmo && (!pick.isHit || (pick.isHit && pick.structure != psTangentsPC))) {  // or clear
+            clearModes();
+            editTanMode = true;
+        }
     }
 
-    // Update control position
-    if (editCtrlMode && activeGizmo) {
+    // Update control position per-frame
+    if (editCtrlMode && activeGizmo && selectedIdx >= 0) {
         // Get the gizmo's location at this frame
         Eigen::Vector3d gizmoPosF = Utils::glmToEigen(vertexGizmo->getPosition());
         glm::mat4 T = vertexGizmo->getTransform();
@@ -492,15 +530,17 @@ void myCallback() {
 
         updateCurvenet();
     }
-    // Update tangent position
-    if (editTanMode && activeGizmo) {
+    // Update tangent position per-frame
+    if (editTanMode && activeGizmo && selectedIdx >= 0) {
         // Get the gizmo's location at this frame
         Eigen::Vector3d gizmoPosF = Utils::glmToEigen(vertexGizmo->getPosition());
         // If we are too close to either endpoint, do not update
-        if (!psCN->updateTangentPos(selectedIdx, gizmoPosF, tanConstraint)) {
-            vertexGizmo->setPosition(Utils::eigenToGLM(psTangents_P.row(selectedIdx).transpose()));
-        }
+        bool updated = psCN->updateTangentPos(selectedIdx, gizmoPosF, tanConstraint);
         updateCurvenet();
+        if (updated) {
+            Eigen::Vector3d tangentPos = psTangents_P.row(selectedIdx).transpose();
+            vertexGizmo->setPosition(Utils::eigenToGLM(tangentPos));
+        }
     }
 
     return;
@@ -508,7 +548,7 @@ void myCallback() {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        std::cout << "Too few arguments. Usage: ./profile_mover <input OBJ file path> <output file path>" << std::endl;
+        std::cout << "Too few arguments. Usage: ./profile_mover <input OBJ file path>" << std::endl;
         return 1;
     }
     InputPath = argv[1];
@@ -527,7 +567,7 @@ int main(int argc, char **argv) {
     // polyscope::view::setFrontDir(polyscope::FrontDir::NegYFront); // -Y forward
 
     // Set projection to orthographic
-    polyscope::view::setProjectionMode(polyscope::ProjectionMode::Orthographic);
+    // polyscope::view::setProjectionMode(polyscope::ProjectionMode::Orthographic);
 
     // Load our mesh object
     std::cout << "\nLoading surface mesh file" << std::endl;
