@@ -31,7 +31,7 @@ class pscurvenet {
         // Add a control and return its index
         int addControl(Eigen::Vector3d pos, Eigen::Vector3d normal = Eigen::Vector3d::UnitZ());
         // Add a spline given only the start and end. Estimate t0 and t1 from these
-        int addSpline(int c0, int c1);
+        int addSpline(int c0, int c1, double init_factor = 2.5);
         // Add a spline and return its index
         int addSpline(int c0, Eigen::Vector3d t0_pos, Eigen::Vector3d t1_pos, int c1);
         // Remove a control

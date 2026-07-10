@@ -37,17 +37,15 @@ namespace DCurvenet {
             rewireVertAdjHE(v);
         }
 
-        if (mode == 0) {
-            // 4. Compute all corner normals and widths
-            allCornerNormalsAndWidths();
-            // 5. Transport normals and widths along all splines
-            transportNormalsAndWidths();
-            // 6. Compute scaled frames on all splines
-            computeScaledFrames();
+        // 4. Compute all corner normals and widths
+        allCornerNormalsAndWidths();
+        // 5. Transport normals and widths along all splines
+        transportNormalsAndWidths();
+        // 6. Compute scaled frames on all splines
+        computeScaledFrames();
 
-            // 7. Cleanup by copying realtime frames to rest frames
-            copyFramesToNew();
-        }
+        // 7. Cleanup by copying realtime frames to rest frames
+        copyFramesToNew();
     }
 
     // Update the new frames on all halfedges
@@ -158,9 +156,9 @@ namespace DCurvenet {
     }
     // Add a curve that matches an input curvenet curve
     int dcurvenet::addCurve(int crv) {
-        const std::vector<Curvenet::HalfEdge>& cnHE = CN->halfedges();
-        const std::vector<Curvenet::CubicSpline>& cnSpline = CN->splines();
-        const std::vector<Curvenet::Curve>& cnCrv = CN->curves();
+        const std::vector<Curvenet::HalfEdge>& cnHE = CN->HE;
+        const std::vector<Curvenet::CubicSpline>& cnSpline = CN->S;
+        const std::vector<Curvenet::Curve>& cnCrv = CN->Crv;
 
         const std::vector<int>& crvSplines = cnCrv[crv].splines;
         int c = C.size();

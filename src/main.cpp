@@ -27,13 +27,6 @@
 
 // Main file for visualization with Polyscope
 
-/*
-NOTES:
-- We store two copies of each object. One is for Polyscope to mess with, the other is the "neutral"/original copy
-- TODO: When a control moves, the associated tangents should all move by the same amount
-        Write a function which converts a curvenet to a polyscope curve network/ point cloud object
-*/
-
 // VARIABLES FOR POLYSCOPE OBJECTS
 
 // SURFACE MESH (M)
@@ -74,8 +67,8 @@ bool createSplineMode = false;  // Allow users to initialize new splines
 bool editCtrlMode = false;   // Allows users to modify controls
 bool editTanMode = false;   // Allows users to modify tangents
 
-bool removeCtrlMode = false;   // Allows users to remove control points
-bool removeSplineMode = false;  // Allows users to remove splines
+bool delCtrlMode = false;   // Allows users to remove control points
+bool delSplineMode = false;  // Allows users to remove splines
 
 // Spline creation/removal helpers
 int selectedIdx = -1;    // Index of selected vertex on mesh
@@ -250,8 +243,8 @@ int clearModes() {
     createSplineMode = false;
     editCtrlMode = false;
     editTanMode = false;
-    removeCtrlMode = false;
-    removeSplineMode = false;
+    delCtrlMode = false;
+    delSplineMode = false;
     
     removeGizmo();
 
@@ -355,9 +348,33 @@ void myCallback() {
     ImGui::SameLine();
     ImGui::Checkbox("Proj. Tans", &tanConstraint); // TODO: do not allow degenerate vectors --> Constrain tan vertex AND gizmo
 
+    // CONTROL/SPLINE DELETION
+    if (ImGui::Button(delCtrlMode ? "Stop Removing Controls" : "Remove Controls")) {
+        bool tempMode = delCtrlMode;
+        clearModes();
+        if (psControls_P.rows() == 0) {
+            std::cout << "Cannot delete. No existing controls." << std::endl;
+            delCtrlMode = false;
+        } else if (tempMode == false) {
+            delCtrlMode = true;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(delSplineMode ? "Stop Removing Splines" : "Remove Splines")) {
+        bool tempMode = delSplineMode;
+        clearModes();
+        if (psTangents_P.rows() == 0) {
+            std::cout << "Cannot delete. No existing splines." << std::endl;
+            delSplineMode = !tempMode;
+        } else if (tempMode == false) {
+            delSplineMode = true;
+        }
+    }
+    
+
     // May need to store a copy of the rest curvenet
     if (ImGui::Button("Reset Curvenet")) {
-        std::cout << "Resetting Controls and Tangents." << std::endl;
+        std::cout << "Resetting Splines." << std::endl;
         resetCurvenet();
         clearModes();
     }
@@ -376,6 +393,7 @@ void myCallback() {
             if (valid == 1) {
                 psCN->addControl(pos, normal);
                 updateCurvenet(true);
+                std::cout << "New Vert created at (" << pos[0] << ", " << pos[1] << ", " << pos[2] << ")" << std::endl;
             } else {
                 std::cout << "No valid point picked." << std::endl;
             }
@@ -390,12 +408,17 @@ void myCallback() {
 
             if (selectedPair.first == -1) {
                 selectedPair.first = selectedIdx;
+                Eigen::Vector3d pos = psControls_P.row(selectedIdx).transpose();
+                std::cout << "First Spline Vert: (" << pos[0] << ", " << pos[1] << ", " << pos[2] << ")" << std::endl;
             } else {
                 selectedPair.second = selectedIdx;
+                Eigen::Vector3d pos = psControls_P.row(selectedIdx).transpose();
+                std::cout << "Second Spline Vert: (" << pos[0] << ", " << pos[1] << ", " << pos[2] << ")" << std::endl;
                 // Compute initial tangent directions
                 psCN->addSpline(selectedPair.first, selectedPair.second);
                 // Reset pair
                 selectedPair = {-1, -1};
+                std::cout << "New Spline Created.\n" << std::endl;
                 updateCurvenet(true);
             }
         }
@@ -403,25 +426,25 @@ void myCallback() {
 
     // REMOVE MODE CLICKS
     // Clicked on control to remove
-    if (removeCtrlMode && mouseClicked && pick.isHit && pick.structure == psControlsPC) {
+    if (delCtrlMode && mouseClicked && pick.isHit && pick.structure == psControlsPC) {
         polyscope::PointCloudPickResult pcPick = psControlsPC->interpretPickResult(pick);
 
         psCN->removeControl(static_cast<int>(pcPick.index));
+        std::cout << "Control removed." << std::endl;
         updateCurvenet(true);
     }
     // Clicked on a tangent whose spline we should remove
-    if (removeSplineMode && mouseClicked && pick.isHit && pick.structure == psTangentsPC) {
+    if (delSplineMode && mouseClicked && pick.isHit && pick.structure == psTangentsPC) {
         polyscope::PointCloudPickResult pcPick = psTangentsPC->interpretPickResult(pick);
 
         psCN->removeSplineByTangent(static_cast<int>(pcPick.index));
+        std::cout << "Spline removed." << std::endl;
         updateCurvenet(true);
     }
 
     // EDIT MODE CLICKS
     // Select control to edit
     if (editCtrlMode && mouseClicked && pick.isHit && pick.structure == psControlsPC) {
-        // Index into tangent list. Get associated spline by integer dividing by 2.
-        // Then use the spline index to edit the tangent's position directly
         polyscope::PointCloudPickResult pcPick = psControlsPC->interpretPickResult(pick);
 
         selectedIdx = static_cast<int>(pcPick.index);
@@ -430,6 +453,7 @@ void myCallback() {
         Eigen::Vector3d selectedN = psCN->getNormal(selectedIdx);
         Eigen::Vector3d t0, t1;
         Utils::buildPlaneBasis(selectedN, t0, t1);
+        std::cout << "Editing Vert at (" << selectedPos[0] << ", " << selectedPos[1] << ", " << selectedPos[2] << ")" << std::endl;
         // add Gizmo at position
         addGizmoAtLocation(selectedPos, selectedN, t0, t1);
     } else if (editCtrlMode && mouseClicked && pick.isHit && pick.structure != psControlsPC) {  // or clear
@@ -446,6 +470,7 @@ void myCallback() {
 
         selectedIdx = static_cast<int>(pcPick.index);
         Eigen::Vector3d selectedPos = psTangents_P.row(selectedIdx).transpose();
+        std::cout << "Editing Spline Handle at (" << selectedPos[0] << ", " << selectedPos[1] << ", " << selectedPos[2] << ")" << std::endl;
         // add Gizmo at position
         addGizmoAtLocation(selectedPos);
     } else if (editTanMode && mouseClicked && pick.isHit && pick.structure != psTangentsPC) {  // or clear
@@ -477,15 +502,17 @@ void myCallback() {
         }
         updateCurvenet();
     }
+
+    return;
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3) {
+    if (argc < 2) {
         std::cout << "Too few arguments. Usage: ./profile_mover <input OBJ file path> <output file path>" << std::endl;
         return 1;
     }
     InputPath = argv[1];
-    OutputPath = argv[2];
+    // OutputPath = argv[2];
 
     // Initialize polyscope
     polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None; // Disable ground plane

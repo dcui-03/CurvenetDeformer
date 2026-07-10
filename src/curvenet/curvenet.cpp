@@ -70,6 +70,7 @@ namespace Curvenet {
         HE.emplace_back();
         int s = S.size();
         S.emplace_back();
+
         // Re-wire
         HE[he0].twin = he1;
         HE[he1].twin = he0;
@@ -82,6 +83,9 @@ namespace Curvenet {
         HE[he0].s = s;
         HE[he1].s = s;
         S[s].he = he0;
+        // Determine sampling
+        // NOTE: Setting sampling for the estimate to 75 for now
+        S[s].num_samples = computeNumSamples(arclenEst(s, 75));
         // Insert spline into vertex list
         C[start].adjHE.push_back(he0);
         C[end].adjHE.push_back(he1);

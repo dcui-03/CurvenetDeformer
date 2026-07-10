@@ -21,17 +21,15 @@ cd ..
 # Updates and Notes
 **Update 7/9**
 
-Finished the mesh splitting code. Yay!!!!! BUT haven't checked it yet so there could be logical bugs. Once the entire straightest geodesics pipeline is checked, I should probably do a bunch of reorganization and compartmentalization to start making modularity a priority (see below). After that, it's FINALLY time to finally move on to system assembly (i.e., the profilemover class).
-
-More practically speaking, adding polyscope test support for visual tests is also loooong overdue. This would be a good thing to work on when I'm tired of other stuff, although maintaining polyscope-consistent spline indexing AND allowing for various tools to break, merge, and restructure splines will be quite the challenge. This will definitely take its own day.
+Front end spline editing is essentially done, yay! There's a small number of loose threads though: First, I'm using libigl for closest point queries to assign normals to each new control. This is fine for triangles, but we'll need a custom version (potentially just ported directly from the mesh class) to handle more complex polygons. Second, the Polyscope is for testing and debugging, and therefore we need to be able to visualize the dCN and cutmesh eventually. This is going to be a little annoying, but we'll cross that bridge when we get there.
 
 Also, structs should be reorganized so that they're better compartmentalized... right now there's lots of loose variables that can be grouped together. This should also make it easier to switch modes (i.e., deformation vs. color (RGBA?) vs. scalar interpolation on cut-mesh).
 
-**NOTES**
+Lastly, another thought on parallelization: We can potentially parallelize the projection function itself by parallelizing projection over faces. NOTE that this is mostly only good when we need to do single point projection queries, as we always want to run the batch of points to project in parallel and we do NOT want nested parallelism for safety reasons. We can potentially do this by enforcing nested parallelism depth of 1, thus making each projection single-threaded when doing a batch, and multi-threaded otherwise.
 
-Important note about Eigen. For Eigen fixed-size containers that are a multiple of 16 in size (ex. Vector2d, Matrix4d), they cannot be directly placed into a std::vector<> if compiling with c++11 or 14, since they need to be placed at fixed sizes in memory. See utils.hpp or mesh.hpp for how to deal with this (i.e., allocator).
+**NOTE ON EIGEN**
 
-This does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects, though. In addition, c++17 handles this implicitly, so no need to handle if using c++17. However, it's good to put the allocators in for fixed-size 16 data types anyways for reliability if you happen to be below c++17.
+Important note about Eigen. For Eigen fixed-size containers that are a multiple of 16 in size (ex. Vector2d, Matrix4d), they cannot be directly placed into a std::vector<> if compiling with c++11 or 14, since they need to be placed at fixed sizes in memory. This can be circumvented, but it's an extra headache and not worth it imo. This is not an issue for c++17, so for simplicity, I recommend we stick with c++17 and above. Note also that this does NOT affect Vector3d, Matrix3d, or dynamic sized (ex. MatrixXd) objects, though.
 
 **Big TODOs**:
 

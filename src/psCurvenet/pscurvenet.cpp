@@ -147,7 +147,8 @@ int pscurvenet::addControl(Eigen::Vector3d pos, Eigen::Vector3d normal) {
 }
 
 // Add a spline given only the start and end. Estimate t0 and t1 from these
-int pscurvenet::addSpline(int c0, int c1) {
+int pscurvenet::addSpline(int c0, int c1, double init_factor) {
+    init_factor = std::max(1.0, init_factor);
     double eps = 1e-6;
     Eigen::Vector3d t0 = C[c1].pos - C[c0].pos;
     Eigen::Vector3d t1 = -1 * t0;
@@ -159,13 +160,13 @@ int pscurvenet::addSpline(int c0, int c1) {
     // Project each onto local tangent plane
     Eigen::Vector3d t0_proj;
     Eigen::Vector3d t1_proj;
-    double t0_norm = Utils::projectVectorOntoTangentPlane(C[c0].n, t0, t0_proj, dist / 3.0);
-    double t1_norm = Utils::projectVectorOntoTangentPlane(C[c1].n, t1, t1_proj, dist / 3.0);
+    double t0_norm = Utils::projectVectorOntoTangentPlane(C[c0].n, t0, t0_proj, dist / init_factor);
+    double t1_norm = Utils::projectVectorOntoTangentPlane(C[c1].n, t1, t1_proj, dist / init_factor);
     // If projection is ill-posed, then just pick a random orth direc
     if (t0_norm <= eps) {
         Eigen::Vector3d t0_temp;
         Utils::buildPlaneBasis(C[c0].n, t0_proj, t0_temp);
-        t0_proj *= dist / 3.0;
+        t0_proj *= dist / init_factor;
     }
     if (t1_norm <= eps) {
         Eigen::Vector3d t1_temp;
@@ -174,7 +175,7 @@ int pscurvenet::addSpline(int c0, int c1) {
         if (t0_proj.dot(t1_proj) < 0) {
             t1_proj *= -1.0;
         }
-        t1_proj *= dist / 3.0;
+        t1_proj *= dist / init_factor;
     }
     // Add in the new spline
     return addSpline(c0, C[c0].pos + t0_proj, C[c1].pos + t1_proj, c1);
