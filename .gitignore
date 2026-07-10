@@ -18,3 +18,7 @@ out/
 
 # vscode
 .vscode/
+
+# polyscope
+./.polyscope.ini
+./imgui.ini

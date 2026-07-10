@@ -47,9 +47,6 @@ Important note about Eigen. For Eigen fixed-size containers that are a multiple 
 
 **Small Steps**:
 - Check entire geodesics pipeline, from projection to cutting
-- Restructure code. Minor pointers: check that the sampling rate for curvenet curves is correct, and that the num_samples are actually applied to the curves. Also check to make sure that dCN anchors' halfedges are next and prev instead of dangling.
-- Move proj vector from mesh verts to dCN verts and add a function to pre-compute the deformed proj during runtime.
-- Add a function which checks if any edge chains are fully within a face, then removes them (and makes their associated dCN vertices inactive).
-- Finish Polyscope front end mesh and curvenet classes.
+- Restructure code. Minor pointers: check that the sampling rate for curvenet curves is correct.
 - Add IO function to visualize edits in polyscope.
 - See Appendix for DEC halfedge laplacian shortcut

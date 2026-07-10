@@ -227,9 +227,9 @@ namespace DCurvenet {
         }
         return c;
     }
-    // Rewire incoming and outgoing halfedges of intersection vertices
+    // Rewire incoming and outgoing halfedges of intersection and anchor vertices
     int dcurvenet::rewireVertAdjHE(int v) {
-        if (V[v].cn_type < 3) {
+        if (V[v].cn_type == 2) {
             return -1;
         }
         const std::vector<int> adjHE = V[v].adjHE;
