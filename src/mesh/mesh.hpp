@@ -1,8 +1,6 @@
 // mesh.hpp
 #pragma once
 
-#include "dcurvenet/dcurvenet.hpp"
-#include "cutmesh/cutmesh.hpp"
 #include "mesh_types.hpp"
 #include <Eigen/Core>
 #include <Eigen/StdVector>
@@ -11,8 +9,6 @@
 
 
 namespace Mesh {
-
-using vector2dList = std::vector<Eigen::Vector2d, Eigen::aligned_allocator<std::vector<Eigen::Vector2d>>>;
 
 // Template mesh class that augments our standard mesh setup with some quantities we need
 /* 
@@ -71,11 +67,11 @@ class mesh {
         // Returns a CCW list of a vertex's OUTGOING halfedge indices
         std::vector<int> vertAdjHEs(int v) const;
         // Returns a CCW list of all incoming AND outgoing halfedge indices
-        std::vector<int> mesh::vertAllHEs(int v) const;
+        std::vector<int> vertAllHEs(int v) const;
         // Returns a CCW list of a vertex's adjacent vertices
         std::vector<int> vertAdjVerts(int v) const;
         // Returns a list of vertices in a loop from a given halfedge
-        std::vector<int> mesh::vertLoop(int he) const;
+        std::vector<int> vertLoop(int he) const;
         // Returns a CCW list of a vertex's adjacent faces
         std::vector<int> vertAdjFaces(int v) const;
 
@@ -91,7 +87,7 @@ class mesh {
 
         // Returns a CCW list of a face's vertices
         std::vector<Eigen::Vector3d> faceAdjVerts(int f) const;
-        std::vector<Eigen::Vector3d> mesh::faceAdjVerts(std::vector<int> fVerts) const;
+        std::vector<Eigen::Vector3d> faceAdjVerts(std::vector<int> fVerts) const;
         // Returns a CCW list of a face's vertex indices
         std::vector<int> faceAdjVertIdxs(int f) const;
         // Returns a CCW list of a face's half edges

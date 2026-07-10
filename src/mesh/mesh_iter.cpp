@@ -143,7 +143,7 @@ std::vector<Eigen::Vector3d> mesh::faceAdjVerts(std::vector<int> fVerts) const {
 // Returns a CCW list of face vertex indices
 std::vector<int> mesh::faceAdjVertIdxs(int f) const {
     std::vector<int> fHalfEdges = faceAdjHalfEdges(f);
-    std::vector<int> fVerts(fVerts.size());
+    std::vector<int> fVerts(fHalfEdges.size());
     for (int he = 0; he < fHalfEdges.size(); he++) {
         fVerts[he] = HE[fHalfEdges[he]].dest;
     }

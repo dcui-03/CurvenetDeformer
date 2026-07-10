@@ -2,13 +2,189 @@
 
 #include <Eigen/Core>
 #include <Eigen/Dense>
+#include <igl/point_mesh_squared_distance.h>
 #include <glm/vec3.hpp>
+#include <limits>
 #include <vector>
 #include <algorithm>
 #include <random>
 #include <cmath>
 
 namespace Utils {
+
+// Helper for computing 
+// NOTE: This is TEMPORARY, only for triangle meshes
+int closestPointNormalOnMesh(
+    const Eigen::Vector3d& p,
+    const Eigen::MatrixXd& V,
+    const std::vector<std::vector<int>>& faces,
+    Eigen::Vector3d& n)
+{
+    n = Eigen::Vector3d::Zero();
+
+    // Failure cases
+    if (V.rows() == 0) {
+        return -1;
+    }
+    for (const auto& f : faces) {
+        if (f.size() != 3) {
+            return -1;
+        }
+    }
+    if (faces.empty()) {
+        return -1;
+    }
+
+    // Convert std::vector<std::vector<int>> faces to Eigen::MatrixXi
+    Eigen::MatrixXi F(faces.size(), 3);
+
+    for (int i = 0; i < static_cast<int>(faces.size()); ++i) {
+        for (int j = 0; j < 3; ++j) {
+            int vid = faces[i][j];
+            // Not explicitly requested, but prevents invalid memory access.
+            if (vid < 0 || vid >= V.rows()) {
+                return -1;
+            }
+            F(i, j) = vid;
+        }
+    }
+
+    // Bounding box diagonal tolerance
+    Eigen::Vector3d bbMin = V.colwise().minCoeff();
+    Eigen::Vector3d bbMax = V.colwise().maxCoeff();
+
+    double bboxDiag = (bbMax - bbMin).norm();
+    double snapTol = 1e-6 * bboxDiag;
+
+    // Query closest point on mesh
+    Eigen::MatrixXd P(1, 3);
+    P.row(0) = p.transpose();
+
+    Eigen::VectorXd sqrD;
+    Eigen::VectorXi I;
+    Eigen::MatrixXd C;
+
+    igl::point_mesh_squared_distance(P, V, F, sqrD, I, C);
+
+    int closestFace = I[0];
+    Eigen::Vector3d q = C.row(0).transpose();
+
+    // Precompute face normals and double areas
+    std::vector<Eigen::Vector3d> faceNormals(F.rows(), Eigen::Vector3d::Zero());
+    std::vector<double> faceDoubleAreas(F.rows(), 0.0);
+
+    for (int fi = 0; fi < F.rows(); ++fi) {
+        Eigen::Vector3d a = V.row(F(fi, 0)).transpose();
+        Eigen::Vector3d b = V.row(F(fi, 1)).transpose();
+        Eigen::Vector3d c = V.row(F(fi, 2)).transpose();
+
+        Eigen::Vector3d rawNormal = (b - a).cross(c - a);
+        double doubleArea = rawNormal.norm();
+
+        faceDoubleAreas[fi] = doubleArea;
+
+        if (doubleArea > 0.0) {
+            faceNormals[fi] = rawNormal / doubleArea;
+        }
+    }
+
+    // Precompute area-weighted vertex normals
+    std::vector<Eigen::Vector3d> vertexNormals(V.rows(), Eigen::Vector3d::Zero());
+
+    for (int fi = 0; fi < F.rows(); ++fi) {
+        Eigen::Vector3d areaWeightedNormal =
+            faceDoubleAreas[fi] * faceNormals[fi];
+
+        for (int lv = 0; lv < 3; ++lv) {
+            vertexNormals[F(fi, lv)] += areaWeightedNormal;
+        }
+    }
+
+    for (int vi = 0; vi < V.rows(); ++vi) {
+        if (vertexNormals[vi].norm() > 0.0) {
+            vertexNormals[vi].normalize();
+        }
+    }
+
+    auto closestPointOnSegment = [](
+        const Eigen::Vector3d& x,
+        const Eigen::Vector3d& a,
+        const Eigen::Vector3d& b) -> Eigen::Vector3d {
+        Eigen::Vector3d ab = b - a;
+        double denom = ab.squaredNorm();
+
+        if (denom == 0.0) {
+            return a;
+        }
+
+        double t = (x - a).dot(ab) / denom;
+        t = std::max(0.0, std::min(1.0, t));
+
+        return a + t * ab;
+    };
+
+    // First: snap to vertex if close enough
+    for (int lv = 0; lv < 3; ++lv) {
+        int vi = F(closestFace, lv);
+        Eigen::Vector3d v = V.row(vi).transpose();
+
+        if ((q - v).norm() <= snapTol) {
+            n = vertexNormals[vi];
+
+            if (n.norm() == 0.0) {
+                n = faceNormals[closestFace];
+            }
+
+            return 1;
+        }
+    }
+
+    // Second: snap to edge if close enough
+    for (int le = 0; le < 3; ++le) {
+        int v0 = F(closestFace, le);
+        int v1 = F(closestFace, (le + 1) % 3);
+
+        Eigen::Vector3d a = V.row(v0).transpose();
+        Eigen::Vector3d b = V.row(v1).transpose();
+
+        Eigen::Vector3d qEdge = closestPointOnSegment(q, a, b);
+
+        if ((q - qEdge).norm() <= snapTol) {
+            Eigen::Vector3d edgeNormal = Eigen::Vector3d::Zero();
+
+            // Average normals of all faces adjacent to this edge.
+            // For manifold meshes this is usually 1 or 2 faces.
+            for (int fj = 0; fj < F.rows(); ++fj) {
+                bool hasV0 = false;
+                bool hasV1 = false;
+
+                for (int k = 0; k < 3; ++k) {
+                    if (F(fj, k) == v0) hasV0 = true;
+                    if (F(fj, k) == v1) hasV1 = true;
+                }
+
+                if (hasV0 && hasV1) {
+                    edgeNormal += faceNormals[fj];
+                }
+            }
+
+            if (edgeNormal.norm() > 0.0) {
+                n = edgeNormal.normalized();
+            }
+            else {
+                n = faceNormals[closestFace];
+            }
+            return 1;
+        }
+    }
+
+    // Otherwise, closest point is treated as being on the face interior
+    n = faceNormals[closestFace];
+    if (n.norm() == 0.0) {
+        return -1;
+    }
+    return 1;
+}
 
 // HELPERS FOR CONVERSION/COPYING
 
@@ -128,23 +304,25 @@ Eigen::Matrix3d compressVector9d(const Eigen::VectorXd& f) {
 
 // Compute 3D signed angle between two vectors
 double signedAngle(const Eigen::Vector3d& v0, const Eigen::Vector3d& v1, const Eigen::Vector3d& axis, bool positive) {
+    const double eps = 1e-12;
+
+    if (v0.squaredNorm() <= eps || v1.squaredNorm() <= eps || axis.squaredNorm() <= eps) {
+        return 0.0;
+    }
+
     Eigen::Vector3d a = v0.normalized();
     Eigen::Vector3d b = v1.normalized();
     Eigen::Vector3d n = axis.normalized();
 
     double sinTheta = n.dot(a.cross(b));
-    double cosTheta = a.dot(b);
+    double cosTheta = std::clamp(a.dot(b), -1.0, 1.0);
 
     double sAngle = std::atan2(sinTheta, cosTheta);
-    // Positivity and safety clipping
-    if (positive) {
-        if (sAngle < 0.0) {
-            sAngle = 2*M_PI + sAngle;
-        }
-        sAngle = std::max(0.0, std::min(2*M_PI, sAngle));
-    } else {
-        sAngle = std::max(-1*M_PI, std::min(M_PI, sAngle));
+
+    if (positive && sAngle < 0.0) {
+        sAngle += 2.0 * M_PI;
     }
+
     return sAngle;
 }
 
@@ -288,84 +466,60 @@ bool anglesCoincident(double a, double b, double eps) {
 // Given two unit vectors, compute the rotation from one to the other
 // Rotation formulation taken from https://en.wikipedia.org/wiki/Rotation_matrix#Rotation_matrix_from_axis_and_angle
 Eigen::Matrix3d computeRotation(const Eigen::Vector3d& u, const Eigen::Vector3d& v) {
-    double eps = 1e-6;
-    // Check for degenerate vectors
+    const double eps = 1e-8;
+
     if (u.norm() <= eps || v.norm() <= eps) {
-        return Eigen::Matrix3d::Zero();
-    }
-    // For safety, re-normalize
-    Eigen::Vector3d u_norm = u.normalized();
-    Eigen::Vector3d v_norm = v.normalized();
-    double cosUV = u_norm.dot(v_norm);
-    if (cosUV >= 1-eps) {   // Same vector
         return Eigen::Matrix3d::Identity();
-    } else if (cosUV <= -1 + eps) { // Opposite vectors
-        return -1 * Eigen::Matrix3d::Identity();
     }
 
-    // Compute angle
-    Eigen::Vector3d axis = u_norm.cross(v_norm);
-    double sinUV = axis.norm(); // u and v are already unit
-    axis.normalize();
+    Eigen::Vector3d a = u.normalized();
+    Eigen::Vector3d b = v.normalized();
 
-    // Construct the rotation
-    Eigen::Matrix3d rot = Eigen::Matrix3d::Zero();
-    // row 0
-    rot(0, 0) = axis(0) * axis(0) * (1 - cosUV) + cosUV;
-    rot(0, 1) = axis(0) * axis(1) * (1 - cosUV) - axis(2)*sinUV;
-    rot(0, 2) = axis(0) * axis(2) * (1 - cosUV) + axis(1)*sinUV;
-    // row 1
-    rot(1, 0) = axis(1) * axis(0) * (1 - cosUV) + axis(2)*sinUV;
-    rot(1, 1) = axis(1) * axis(1) * (1 - cosUV) + cosUV;
-    rot(1, 2) = axis(1) * axis(2) * (1 - cosUV) - axis(0)*sinUV;
-    // row 2
-    rot(2, 0) = axis(2) * axis(0) * (1 - cosUV) - axis(1)*sinUV;
-    rot(2, 1) = axis(2) * axis(1) * (1 - cosUV) + axis(0)*sinUV;
-    rot(2, 2) = axis(2) * axis(2) * (1 - cosUV) + cosUV;
-    return rot;
+    double cosUV = std::clamp(a.dot(b), -1.0, 1.0);
+
+    if (cosUV >= 1.0 - eps) {
+        return Eigen::Matrix3d::Identity();
+    }
+
+    if (cosUV <= -1.0 + eps) {
+        Eigen::Vector3d axis = a.unitOrthogonal();
+        return Eigen::AngleAxisd(M_PI, axis).toRotationMatrix();
+    }
+
+    Eigen::Vector3d axis = a.cross(b).normalized();
+    double theta = std::acos(cosUV);
+
+    return Eigen::AngleAxisd(theta, axis).toRotationMatrix();
 }
 
 // Overload
 Eigen::Matrix3d computeRotation(const Eigen::Vector3d& axis, const double& theta) {
-    double eps = 1e-6;
-    // Check for degenerate vectors
-    if (axis.norm() <= eps) {
-        return Eigen::Matrix3d::Zero();
-    } else if (theta <= eps) {  // No rotation
-        return Eigen::Matrix3d::Identity();
-    } else if (theta >= M_PI-eps && theta <= M_PI+eps) {    // 180 rotation
-        return -1 * Eigen::Matrix3d::Identity();
-    }
-    // For safety, re-normalize
-    Eigen::Vector3d a_norm = axis.normalized();
-    double cosTheta = std::cos(theta);
-    double sinTheta = std::sin(theta);
+    const double eps = 1e-8;
 
-    // Construct the rotation
-    Eigen::Matrix3d rot = Eigen::Matrix3d::Zero();
-    // row 0
-    rot(0, 0) = axis(0) * axis(0) * (1 - cosTheta) + cosTheta;
-    rot(0, 1) = axis(0) * axis(1) * (1 - cosTheta) - axis(2)*sinTheta;
-    rot(0, 2) = axis(0) * axis(2) * (1 - cosTheta) + axis(1)*sinTheta;
-    // row 1
-    rot(1, 0) = axis(1) * axis(0) * (1 - cosTheta) + axis(2)*sinTheta;
-    rot(1, 1) = axis(1) * axis(1) * (1 - cosTheta) + cosTheta;
-    rot(1, 2) = axis(1) * axis(2) * (1 - cosTheta) - axis(0)*sinTheta;
-    // row 2
-    rot(2, 0) = axis(2) * axis(0) * (1 - cosTheta) - axis(1)*sinTheta;
-    rot(2, 1) = axis(2) * axis(1) * (1 - cosTheta) + axis(0)*sinTheta;
-    rot(2, 2) = axis(2) * axis(2) * (1 - cosTheta) + cosTheta;
-    return rot;
+    if (axis.norm() <= eps) {
+        return Eigen::Matrix3d::Identity();
+    }
+
+    return Eigen::AngleAxisd(theta, axis.normalized()).toRotationMatrix();
 }
 
 // Find basis vectors for a planar region (ex. tangent plane)
 // Build plane basis given only n, and unitialized t1, t2
 void buildPlaneBasis(const Eigen::Vector3d& n, Eigen::Vector3d& t1, Eigen::Vector3d& t2) {
+    const double eps = 1e-12;
+    if (n.squaredNorm() <= eps) {
+        t1 = Eigen::Vector3d::UnitX();
+        t2 = Eigen::Vector3d::UnitY();
+        return;
+    }
+
+    Eigen::Vector3d n_norm = n.normalized();
     if (std::abs(n(0)) < 0.9)
-        t1 = n.cross(Eigen::Vector3d::UnitX()).normalized();
+        t1 = n_norm.cross(Eigen::Vector3d::UnitX()).normalized();
     else
-        t1 = n.cross(Eigen::Vector3d::UnitY()).normalized();
-    t2 = n.cross(t1); // already unit
+        t1 = n_norm.cross(Eigen::Vector3d::UnitY()).normalized();
+    t2 = n_norm.cross(t1); // already unit
+    return;
 }
 
 // Given a point on a plane basis and the plane basis, convert to 2D planar point
@@ -414,17 +568,22 @@ double projectVectorOntoTangentPlane(const Eigen::Vector3d& normal, const Eigen:
 
 // Projects a point onto the tangent plane of a normal given a center 
 Eigen::Vector3d projectPointOntoPlane(const Eigen::Vector3d& normal, const Eigen::Vector3d& center, const Eigen::Vector3d& p) {
-    return p - (p - center).dot(normal) * normal;
+    const double eps = 1e-12;
+    if (normal.squaredNorm() <= eps) {
+        return p;
+    }
+    Eigen::Vector3d n = normal.normalized();
+    return p - (p - center).dot(n) * n;
 }
 
 // Check if a 2D point is in a 2D polygon
 // To do this, we do raycasting to the segment
-bool pointInPolygon2D(const Eigen::Vector2d& p, const vector2dList& poly) {
+bool pointInPolygon2D(const Eigen::Vector2d& p, const std::vector<Eigen::Vector2d>& poly) {
     bool inside = false;
     int n = poly.size();
 
     for (int v0 = 0; v0 < n; v0++) {
-        int v1 = (v0 - 1) % n;
+        int v1 = (v0 + n - 1) % n;
         const Eigen::Vector2d& p0 = poly[v0];
         const Eigen::Vector2d& p1 = poly[v1];
         // If 
@@ -459,7 +618,7 @@ double cross2D(const Eigen::Vector2d& a, const Eigen::Vector2d& b) {
 
 // TODO: Fix this function so that it properly sets u
 bool raycastToSegment2D(const Eigen::Vector2d& p, const Eigen::Vector2d& direc, const Eigen::Vector2d& v0, const Eigen::Vector2d& v1,
-                        double& t, double& u, bool clip) {
+                        double& t, double& u) {
     double eps = 1e-12;
     const Eigen::Vector2d seg = v1 - v0;
     Eigen::Vector2d direc_norm = direc.normalized();
@@ -528,7 +687,7 @@ double computeSign(const double& value) {
     return 0.0;
 }
 
-void meanValueCoordinates(const Eigen::Vector2d& target, const vector2dList& cage, Eigen::VectorXd& weights) {
+void meanValueCoordinates(const Eigen::Vector2d& target, const std::vector<Eigen::Vector2d>& cage, Eigen::VectorXd& weights) {
     weights.setZero();
 
     double W = 0.0;

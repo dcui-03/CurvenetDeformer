@@ -27,7 +27,7 @@ namespace DECUtils {
             // compute per-face Laplacian
             std::vector<Eigen::Vector3d> f(F[f_idx].size());
             for (int v_idx = 0; v_idx < F[f_idx].size(); v_idx++) {
-                f.push_back(V[F[f_idx][v_idx]]);
+                f[v_idx] = V[F[f_idx][v_idx]];
             }
             Eigen::MatrixXd faceL = faceLaplacianOp(f, lambda);
             for (int i = 0; i < faceL.rows(); i++) {
@@ -46,7 +46,7 @@ namespace DECUtils {
     // Face Laplacian operator
     Eigen::MatrixXd faceLaplacianOp(const std::vector<Eigen::Vector3d>& f, double lambda) {
         Eigen::SparseMatrix<double> D = diffOp(f.size());
-        Eigen::MatrixXd M = metricOp(f);
+        Eigen::MatrixXd M = metricOp(f, lambda);
         return D.transpose() * M * D;
     }
     Eigen::MatrixXd faceLaplacianOp(const Eigen::MatrixXd& D, const Eigen::MatrixXd& M) {
@@ -57,7 +57,7 @@ namespace DECUtils {
     // TODO: Check this
     Eigen::MatrixXd divOp(const std::vector<Eigen::Vector3d>& f, double lambda) {
         Eigen::SparseMatrix<double> D = diffOp(f.size());
-        Eigen::MatrixXd M = metricOp(f);
+        Eigen::MatrixXd M = metricOp(f, lambda);
         return D.transpose() * M;
     }
     Eigen::MatrixXd divOp(const Eigen::MatrixXd& D, const Eigen::MatrixXd& M) {
@@ -75,7 +75,7 @@ namespace DECUtils {
         double area = vectorArea(f, fNormal);
         Eigen::MatrixXd U = sharpOp(f);
         Eigen::MatrixXd V = flatOp(f);
-        Eigen::MatrixXd P = projOp(U, V);
+        Eigen::MatrixXd P = projOp(V, U);
         return area * (U.transpose() * U) + lambda * (P.transpose() * P);
     }
     Eigen::MatrixXd metricOp(double area, const Eigen::MatrixXd& V, const Eigen::MatrixXd& U, double lambda) {
@@ -120,7 +120,7 @@ namespace DECUtils {
         return Eigen::MatrixXd::Identity(n, n) - (V * U);
     }
     Eigen::MatrixXd projOp(const Eigen::MatrixXd& V, const Eigen::MatrixXd& U) {
-        int n = U.rows();
+        int n = V.rows();
         return Eigen::MatrixXd::Identity(n, n) - (V * U);
     }
 
@@ -129,9 +129,9 @@ namespace DECUtils {
     // Get face Position operator
     Eigen::MatrixXd posOp(const std::vector<Eigen::Vector3d>& f) {
         int n = f.size();
-        Eigen::MatrixXd pos(3, n);
+        Eigen::MatrixXd pos(n, 3);
         for (int v = 0; v < n; v++) {
-            pos.row(v) = f[v];
+            pos.row(v) = f[v].transpose();
         }
         return pos;
     }
@@ -209,7 +209,11 @@ namespace DECUtils {
         }
         fNormal *= 0.5;
         double area = fNormal.norm();
-        fNormal.normalize();
+        if (area > 1e-8) {
+            fNormal /= area;
+        } else {
+            fNormal = Eigen::Vector3d::Zero();
+        }
         return area;
     }
 
@@ -217,11 +221,11 @@ namespace DECUtils {
     Eigen::Vector3d computeBarycenter(const std::vector<Eigen::Vector3d>& f) {
         int n = f.size();
         Eigen::MatrixXd X = posOp(f);
-        return (1/n) * (X.transpose() * Eigen::VectorXd::Ones(n));
+        return (1.0/n) * (X.transpose() * Eigen::VectorXd::Ones(n));
     }
     Eigen::Vector3d computeBarycenter(const Eigen::MatrixXd& X) {
         int n = X.rows();
-        return (1/n) * (X.transpose() * Eigen::VectorXd::Ones(n));
+        return (1.0/n) * (X.transpose() * Eigen::VectorXd::Ones(n));
     }
 
     // compute skew-symmetric cross product matrix from a vector

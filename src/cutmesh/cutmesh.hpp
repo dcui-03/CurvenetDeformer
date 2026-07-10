@@ -2,14 +2,15 @@
 #pragma once
 
 #include "mesh/mesh.hpp"
-#include "profilemover/profilemover.hpp"
-#include "dcurvenet/dcurvenet.hpp"
 #include "mesh/mesh_types.hpp"
 #include <Eigen/Core>
 #include <Eigen/StdVector>
 #include <vector>
 #include <map>
 
+namespace DCurvenet {
+    class dcurvenet;
+}
 
 namespace Mesh {
 
@@ -48,7 +49,7 @@ class cutmesh : public mesh {
         // Get bbox diagonal length
         double getBBoxDiag() const;
 
-        friend class ProfileMover::profilemover;
+        // friend class ProfileMover::profilemover;
     protected:
     private:
         // ------------- INITIALIZATION (cutmesh.cpp)  -----------------

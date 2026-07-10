@@ -1,6 +1,5 @@
 #include "mesh.hpp"
 
-#include "dcurvenet/dcurvenet.hpp"
 #include "../utils/decUtils.hpp"
 #include "../utils/utils.hpp"
 #include <Eigen/Core>
@@ -201,7 +200,7 @@ bool mesh::clearMesh() {
     // Reset mesh qualities
     meanE = 0.0;
     bboxDiag = 0.0;
-    return;
+    return true;
 }
 
 // Getters
@@ -228,7 +227,7 @@ Eigen::Vector3d mesh::getVNormal(int v) const {
     return n;
 }
 Eigen::Vector3d mesh::getENormal(int e) const {
-    if (e < 0 || e >= V.size()) {
+    if (e < 0 || e >= E.size()) {
         return Eigen::Vector3d::Zero();
     }
     std::vector<int> eFaces = edgeAdjFaces(e);
@@ -242,7 +241,7 @@ Eigen::Vector3d mesh::getENormal(int e) const {
     return n;
 }
 Eigen::Vector3d mesh::getFNormal(int f) const {
-    if (f < 0 || f > F.size()) {
+    if (f < 0 || f >= F.size()) {
         return Eigen::Vector3d::Zero();
     }
     Eigen::Vector3d n = F[f].n;
@@ -265,14 +264,14 @@ Eigen::VectorXd mesh::computeFaceHeight(int f) const {
     Eigen::VectorXd faceH = Eigen::VectorXd::Zero(fSize);
     // Special handling for triangles (must be planar)
     if (fSize == 3) {
-        faceH = Eigen::VectorXd({0.0, 0.0, 0.0});
+        faceH.setZero();
         return faceH;
     }
     // 1. compute barycenter and face normal
     Eigen::Vector3d faceCenter = DECUtils::computeBarycenter(fVertsPos);
     Eigen::Vector3d faceN = F[f].n;
     // 2. Project face vertices onto the Newell plane and grab height
-    vector2dList proj_v(fSize);
+    std::vector<Eigen::Vector2d> proj_v(fSize);
     // Build a basis
     Eigen::Vector3d t1;
     Eigen::Vector3d t2;
@@ -322,7 +321,7 @@ double mesh::computeVNormalArea(int v, Eigen::Vector3d& vN, bool weight_fN) {
     double vArea = 0.0;
     // Iterate over face list and accumulate areas and normals
     for (int i = 0; i < fList.size(); i++) {
-        int f = fList[f];
+        int f = fList[i];
         std::vector<int> fVerts = faceAdjHalfEdges(f);
         double fArea = F[f].fArea/(fVerts.size());
         if (weight_fN) {

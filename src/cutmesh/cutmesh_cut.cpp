@@ -206,7 +206,6 @@ namespace Mesh {
             Eigen::Vector3d t1, t2;
             Utils::buildPlaneBasis(V[v].n, t1, t2);
             for (int he = 0; he < sortedHE.size(); he++) {
-                V[HE[sortedHE[he]].dest].pos;
                 double theta;
                 Utils::directionAngleInPlane(V[v].pos, V[HE[sortedHE[he]].dest].pos, V[v].n, t1, t2, theta);
                 projAngles[he] = theta;

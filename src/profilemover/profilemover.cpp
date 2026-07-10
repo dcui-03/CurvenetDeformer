@@ -10,7 +10,7 @@
 
 
 namespace ProfileMover {
-
+    /*
     profilemover::profilemover(std::vector<Eigen::Vector3d>& meshV, std::vector<std::vector<int>>& meshF) {
         M = Mesh::mesh(meshV, meshF);
     }
@@ -73,5 +73,5 @@ namespace ProfileMover {
         }
     }
 
-
+    */
 }   // namespace ProfileMover

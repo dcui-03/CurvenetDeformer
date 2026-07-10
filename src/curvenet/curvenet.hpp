@@ -2,11 +2,16 @@
 #pragma once
 
 #include "curvenet_types.hpp"
+#include "curvenet_types.hpp"
 #include "mesh/mesh.hpp"
 #include <Eigen/Core>
 #include <vector>
 #include <array>
 #include <map>
+
+namespace DCurvenet {
+    class dcurvenet;
+}
 
 namespace Curvenet {
 
@@ -83,6 +88,8 @@ class curvenet {
 
         // Returns vertices adjacent to a spline
         std::vector<int> splineAdjCtrls(int s) const;
+
+        std::vector<int> controlLocalSplineIdx(int c, int s);
 
         //  --------- OTHER -----------
         // Sort the halfedges of a control to be CCW

@@ -38,13 +38,13 @@ class profilemover {
         Eigen::MatrixXd estimateProjectionDefs();
 
         // Store copy of mesh
-        Mesh::mesh M;
+        // Mesh::mesh M;
         // Store a copy of cut-mesh
-        Mesh::cutmesh CM;
+        // Mesh::cutmesh CM;
         
-        Curvenet::curvenet CN;
+        // Curvenet::curvenet CN;
         // Store the neutral discrete curvenet
-        DCurvenet::dcurvenet dCN;
+        // DCurvenet::dcurvenet dCN;
         bool dCN_init = false;
 
         // Map from matrices (C, V) to cutmesh cut-vertices and vice versa

@@ -1,6 +1,5 @@
 #include "mesh.hpp"
 
-#include "dcurvenet/dcurvenet.hpp"
 #include "../utils/decUtils.hpp"
 #include "../utils/utils.hpp"
 #include <Eigen/Core>
@@ -58,7 +57,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
             Eigen::Vector2d v_proj2d = Utils::convertTo2D(v_proj3d, barycenter, t1, t2);
 
             // Project face vertices onto Newell plane using basis vectors
-            vector2dList fVert2D(fSize);
+            std::vector<Eigen::Vector2d> fVert2D(fSize);
             for (int fv = 0; fv < fSize; fv++) {
                 Eigen::Vector3d fv_proj3D = Utils::projectPointOntoPlane(fNormal, barycenter, fVertsPos[fv]);
                 fVert2D[fv] = Utils::convertTo2D(fv_proj3D, barycenter, t1, t2);
@@ -152,7 +151,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     Utils::buildPlaneBasis(fN, t1, t2);
     Eigen::Vector2d v_proj2d = Utils::convertTo2D(proj, barycenter, t1, t2);
 
-    vector2dList fVerts2D(fSize);
+    std::vector<Eigen::Vector2d> fVerts2D(fSize);
     for (int fv = 0; fv < fSize; fv++) {
         Eigen::Vector3d fv_proj3D = Utils::projectPointOntoPlane(fN, barycenter, fVertsPos[fv]);
         fVerts2D[fv] = Utils::convertTo2D(fv_proj3D, barycenter, t1, t2);
@@ -310,7 +309,7 @@ bool mesh::testVisibility(int f, Eigen::Vector3d start, Eigen::Vector3d end, dou
     Eigen::Vector3d t1, t2;
     Utils::buildPlaneBasis(F[f].n, t1, t2);
     // For simplicity, assume tangent plane is centered on the start
-    vector2dList projFVerts(fVerts.size());
+    std::vector<Eigen::Vector2d> projFVerts(fVerts.size());
     Eigen::Vector2d start2D = Eigen::Vector2d::Zero();
     Eigen::Vector2d end2D = Utils::convertTo2D(end, start, t1, t2);
     for (int v = 0; v < fVerts.size(); v++) {
@@ -360,7 +359,7 @@ int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eig
     Eigen::Vector3d t1, t2;
     Utils::buildPlaneBasis(F[f].n, t1, t2);
     // For simplicity, assume tangent plane is centered on the start
-    vector2dList projFVerts(fVerts.size());
+    std::vector<Eigen::Vector2d> projFVerts(fVerts.size());
     Eigen::Vector2d start2D = Eigen::Vector2d::Zero();
     Eigen::Vector2d direc2D = Utils::convertTo2D(projDirec, start, t1, t2);
     for (int v = 0; v < fVerts.size(); v++) {

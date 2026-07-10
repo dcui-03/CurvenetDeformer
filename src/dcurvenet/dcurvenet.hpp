@@ -3,9 +3,17 @@
 
 #include "dcurvenet_types.hpp"
 #include "curvenet/curvenet.hpp"
-#include "cutmesh/cutmesh.hpp"
 #include <Eigen/Core>
 #include <vector>
+#include <map>
+
+namespace Mesh {
+    class cutmesh;
+}
+
+namespace Curvenet {
+    class curvenet;
+}
 
 namespace DCurvenet {
 
@@ -32,7 +40,7 @@ class dcurvenet {
 
         // --------- RUNTIME COMPUTATION -----------
         // Update with new curvenet positions and local frames
-        void dcurvenet::updateDiscCurveNet();
+        void updateDiscCurveNet();
         // Move a single vertex to a new position
         int moveVert(int v, Eigen::Vector3d new_pos); 
         // Compute the deformation gradient on an edge given a new scaled frame

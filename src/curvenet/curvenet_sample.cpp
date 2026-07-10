@@ -26,7 +26,7 @@ namespace Curvenet {
 
     // NOTE: This is a naive, fast sampler that uniformly samples t's. Re-implement if desired
     // Returns n_samples points on the curve, including the endpoints
-    std::vector<Eigen::Vector3d> curvenet::sampleBezierNaive(int s, int n_samples = 50) const {
+    std::vector<Eigen::Vector3d> curvenet::sampleBezierNaive(int s, int n_samples) const {
         if (n_samples < 2) {
             return {};
         }
@@ -36,7 +36,7 @@ namespace Curvenet {
         double t = 0.0;
 
         samples[0] = C[HE[he].origin].pos;  // Start
-        for (int i = 1; i < n_samples; i++) {
+        for (int i = 1; i < n_samples - 1; i++) {
             t += h;
             t = std::min(1.0, t);
             samples[i] = tSampleBezier(s, t);
@@ -54,7 +54,7 @@ namespace Curvenet {
         }
         return length;
     }
-    double curvenet::arclenEst(int s, int n_samples = 50) const {
+    double curvenet::arclenEst(int s, int n_samples) const {
         std::vector<Eigen::Vector3d> samples = sampleBezierNaive(s, n_samples);
         return arclenEst(samples);
     }
