@@ -10,11 +10,11 @@ namespace DCurvenet {
     // Deformation
     struct vertColorData {
         // Runtime variables
-        Eigen::Vector3d rgb;
+        Eigen::Vector4d rgba;
     };
 
     struct heColorData {
-        Eigen::Vector3d rgb;
+        Eigen::Vector4d rgba;
     };
 
     struct faceDeformData {

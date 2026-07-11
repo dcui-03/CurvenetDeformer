@@ -9,7 +9,7 @@
 
 namespace DCurvenet {
     // Takes the original curvenet and discretizes it
-    dcurvenet::dcurvenet(Curvenet::curvenet* CN, double meanE, int alpha, int mode): CN(CN), alpha(alpha), meanE(meanE) {
+    dcurvenet::dcurvenet(Curvenet::curvenet* CN, double meanE): CN(CN), meanE(meanE) {
         const std::vector<Curvenet::Control>& cnCtrl = CN->controls();
         int num_curves = CN->numCurves();
         // Defensive reset
@@ -75,10 +75,10 @@ namespace DCurvenet {
                         V[HE[he_curr].dest].new_pos = samples[i];
                     }
                     Eigen::Vector3d tangent = V[HE[he_curr].dest].new_pos - V[v_prev].new_pos;
-                    HE[he_curr].tangent = tangent.normalized();
-                    HE[he_curr].l = tangent.norm();
-                    HE[HE[he_curr].twin].tangent = -1 * tangent.normalized();
-                    HE[HE[he_curr].twin].l = tangent.norm();
+                    HE[he_curr].defData.newFrame.tangent = tangent.normalized();
+                    HE[he_curr].defData.newFrame.l = tangent.norm();
+                    HE[HE[he_curr].twin].defData.newFrame.tangent = -1 * tangent.normalized();
+                    HE[HE[he_curr].twin].defData.newFrame.l = tangent.norm();
                     he_curr = HE[he_curr].next;
                     v_prev = HE[he_curr].dest;
                 }
@@ -145,10 +145,10 @@ namespace DCurvenet {
         if (next_he1 != -1) {
             HE[next_he1].prev = he1;
         }
-        HE[he0].tangent = edgeVec.normalized();
-        HE[he1].tangent = -1 * edgeVec.normalized();
-        HE[he0].l = edgeVec.norm();
-        HE[he1].l = edgeVec.norm();
+        HE[he0].defData.newFrame.tangent = edgeVec.normalized();
+        HE[he1].defData.newFrame.tangent = -1 * edgeVec.normalized();
+        HE[he0].defData.newFrame.l = edgeVec.norm();
+        HE[he1].defData.newFrame.l = edgeVec.norm();
         HE[he0].sign = true;    // left side
         HE[he1].sign = false;   // right side
 
@@ -261,7 +261,7 @@ namespace DCurvenet {
             }
             for (int he_idx = 0; he_idx < adjHE.size(); he_idx++) {
                 int he = adjHE[he_idx];
-                const Eigen::Vector3d& tan = HE[he].tangent;
+                const Eigen::Vector3d& tan = HE[he].defData.newFrame.tangent;
                 // Gram-schmidt to ensure the normal is orthogonal to each tangent
                 Eigen::Vector3d n = V[v].n - V[v].n.dot(tan) * tan;
                 if (n.norm() <= eps) {  // Extremely rare case where normal == tangent or normal == -tangent
@@ -275,17 +275,17 @@ namespace DCurvenet {
                 double l = n.norm();
                 n.normalize();
                 int next_he = adjHE[(he_idx+1)%adjHE.size()];
-                double w = HE[he].l + l * (HE[next_he].l - HE[he].l);
+                double w = HE[he].defData.newFrame.l + l * (HE[next_he].defData.newFrame.l - HE[he].defData.newFrame.l);
                 if (HE[he].sign) {
-                    C[c].N_pos.first = n;
-                    C[c].W_pos.first = w;
-                    C[c].N_neg.first = n;
-                    C[c].W_neg.first = w;
+                    C[c].defData.N_pos.first = n;
+                    C[c].defData.W_pos.first = w;
+                    C[c].defData.N_neg.first = n;
+                    C[c].defData.W_neg.first = w;
                 } else {
-                    C[c].N_pos.second = n;
-                    C[c].W_pos.second = w;
-                    C[c].N_neg.second = n;
-                    C[c].W_neg.second = w;
+                    C[c].defData.N_pos.second = n;
+                    C[c].defData.W_pos.second = w;
+                    C[c].defData.N_neg.second = n;
+                    C[c].defData.W_neg.second = w;
                 }
             }
             return 1;
@@ -300,12 +300,12 @@ namespace DCurvenet {
             int c1 = E[HE[he1].edge].curve;
             Eigen::Vector3d cornerNormal;
             // First check if we are parallel. If so skip for now
-            double dotProdTest = HE[he0].tangent.dot(HE[he1].tangent);
+            double dotProdTest = HE[he0].defData.newFrame.tangent.dot(HE[he1].defData.newFrame.tangent);
             if (dotProdTest <= -1.0+eps) {
                 skipList[he] = true;
                 continue;
             } else if (dotProdTest >= 1 - eps) {    // Two outgoing HEs are coincident
-                const Eigen::Vector3d& tan = HE[he0].tangent;
+                const Eigen::Vector3d& tan = HE[he0].defData.newFrame.tangent;
                 cornerNormal = V[v].n - V[v].n.dot(tan) * tan;
                 if (cornerNormal.norm() <= eps) {  // Extremely rare case where normal == tangent or normal == -tangent
                     // Just pick a random direction orthogonal to the tangent 
@@ -317,20 +317,20 @@ namespace DCurvenet {
                 }
             } else {
                 // Compute corner normal as usual
-                cornerNormal = HE[he0].tangent.cross(HE[he1].tangent);
+                cornerNormal = HE[he0].defData.newFrame.tangent.cross(HE[he1].defData.newFrame.tangent);
             }
 
             // Assign corner normals to curves
             // First figure out if this is the start halfedge of the curve
             if (HE[he0].sign) {
-                C[c0].N_pos.first = cornerNormal.normalized();
+                C[c0].defData.N_pos.first = cornerNormal.normalized();
             } else {
-                C[c0].N_neg.second = cornerNormal.normalized();
+                C[c0].defData.N_neg.second = cornerNormal.normalized();
             }
             if (HE[he1].sign) {
-                C[c1].N_neg.first = cornerNormal.normalized();
+                C[c1].defData.N_neg.first = cornerNormal.normalized();
             } else {
-                C[c1].N_pos.second = cornerNormal.normalized();
+                C[c1].defData.N_pos.second = cornerNormal.normalized();
             }
             adjNormals[he] = cornerNormal;
         }
@@ -352,7 +352,7 @@ namespace DCurvenet {
             Eigen::Vector3d cornerNormal = adjNormals[he_m1_local] + adjNormals[he1_local];
             // Extremely unlikely, but just in case, put in a safeguard...
             if (cornerNormal.norm() <= eps) {
-                Eigen::Vector3d tan = HE[he0].tangent;
+                Eigen::Vector3d tan = HE[he0].defData.newFrame.tangent;
                 cornerNormal = V[v].n - V[v].n.dot(tan) * tan;cornerNormal = V[v].n - V[v].n.dot(tan) * tan;
                 if (cornerNormal.norm() <= eps) {
                     // Just pick a random direction orthogonal to the tangent 
@@ -367,14 +367,14 @@ namespace DCurvenet {
 
             // Assign corner normals to curves
             if (HE[he0].sign) {
-                C[c0].N_pos.first = cornerNormal.normalized();
+                C[c0].defData.N_pos.first = cornerNormal.normalized();
             } else {
-                C[c0].N_neg.second = cornerNormal.normalized();
+                C[c0].defData.N_neg.second = cornerNormal.normalized();
             }
             if (HE[he1].sign) {
-                C[c1].N_neg.first = cornerNormal.normalized();
+                C[c1].defData.N_neg.first = cornerNormal.normalized();
             } else {
-                C[c1].N_pos.second = cornerNormal.normalized();
+                C[c1].defData.N_pos.second = cornerNormal.normalized();
             }
             adjNormals[he] = cornerNormal;
         }
@@ -386,9 +386,9 @@ namespace DCurvenet {
             int he_m1 = adjHE[(he-1+adjHE.size())%adjHE.size()];
             int c0 = E[HE[he0].edge].curve;
             double cornerNormalNorm0;
-            double he0_len = HE[he0].l;
-            double he_m1_len = HE[he_m1].l;
-            double he1_len = HE[he1].l;
+            double he0_len = HE[he0].defData.newFrame.l;
+            double he_m1_len = HE[he_m1].defData.newFrame.l;
+            double he1_len = HE[he1].defData.newFrame.l;
 
             // Compute corner widths
             double cornerWidth0 = he0_len + adjNormals[he].norm()*(he1_len - he0_len);
@@ -397,11 +397,11 @@ namespace DCurvenet {
             // Assign corner normals to curves
             // First figure out if this is the start halfedge of the curve
             if (HE[he0].sign) {
-                C[c0].W_pos.first = cornerWidth0;
-                C[c0].W_neg.first = cornerWidth1;
+                C[c0].defData.W_pos.first = cornerWidth0;
+                C[c0].defData.W_neg.first = cornerWidth1;
             } else {
-                C[c0].W_neg.second = cornerWidth0;
-                C[c0].W_pos.second = cornerWidth1;
+                C[c0].defData.W_neg.second = cornerWidth0;
+                C[c0].defData.W_pos.second = cornerWidth1;
             }
         }
         return 1;
@@ -433,38 +433,38 @@ namespace DCurvenet {
             // POSITIVE SIDE
             std::vector<Eigen::Matrix3d> rots;
             std::vector<double> lens;
-            Eigen::Vector3d start_n = C[c].N_pos.first;
-            Eigen::Vector3d end_n = C[c].N_pos.second;
-            double start_w = C[c].W_pos.first;
-            double end_w = C[c].W_pos.second;
+            Eigen::Vector3d start_n = C[c].defData.N_pos.first;
+            Eigen::Vector3d end_n = C[c].defData.N_pos.second;
+            double start_w = C[c].defData.W_pos.first;
+            double end_w = C[c].defData.W_pos.second;
             // 1. For the pos side, first trace until the end vertex, accumulating rotations and alpha values
             double total_len = accumulateRotations(C[c].he_start, end, rots, lens);
             // 2. Compute the torsion angle theta
-            double torsion = computeTorsion(start_n, end_n, rots[rots.size()-1], -1*HE[C[c].he_end].tangent);
+            double torsion = computeTorsion(start_n, end_n, rots[rots.size()-1], -1*HE[C[c].he_end].defData.newFrame.tangent);
             // 3. Propagate rotations and widths to halfedges
             int he_curr = he_start;
             for (int he = 0; he < rots.size(); he++) {
                 double alpha = lens[he]/total_len;
-                Eigen::Matrix3d he_torsion = Utils::computeRotation(HE[he_curr].tangent, alpha*torsion);
-                HE[he_curr].normal = he_torsion * rots[he] * start_n;
-                HE[he_curr].w = (1-alpha)*start_w + (alpha)*end_w;
+                Eigen::Matrix3d he_torsion = Utils::computeRotation(HE[he_curr].defData.newFrame.tangent, alpha*torsion);
+                HE[he_curr].defData.newFrame.normal = he_torsion * rots[he] * start_n;
+                HE[he_curr].defData.newFrame.w = (1-alpha)*start_w + (alpha)*end_w;
                 he_curr = HE[he_curr].next;
             }
 
             // NEGATIVE SIDE
             // The same thing but backwards (so we can trace using the same function of next halfedges)
-            start_n = C[c].N_neg.second;
-            end_n = C[c].N_neg.first;
-            start_w = C[c].W_neg.second;
-            end_w = C[c].W_neg.first;
+            start_n = C[c].defData.N_neg.second;
+            end_n = C[c].defData.N_neg.first;
+            start_w = C[c].defData.W_neg.second;
+            end_w = C[c].defData.W_neg.first;
             total_len = accumulateRotations(C[c].he_end, start, rots, lens);
-            torsion = computeTorsion(start_n, end_n, rots[rots.size()-1], -1*HE[C[c].he_start].tangent);
+            torsion = computeTorsion(start_n, end_n, rots[rots.size()-1], -1*HE[C[c].he_start].defData.newFrame.tangent);
             he_curr = he_end;
             for (int he = 0; he < rots.size(); he++) {
                 double alpha = lens[he]/total_len;
-                Eigen::Matrix3d he_torsion = Utils::computeRotation(HE[he_curr].tangent, alpha*torsion);
-                HE[he_curr].normal = he_torsion * rots[he] * start_n;
-                HE[he_curr].w = (1-alpha)*start_w + (alpha)*end_w;
+                Eigen::Matrix3d he_torsion = Utils::computeRotation(HE[he_curr].defData.newFrame.tangent, alpha*torsion);
+                HE[he_curr].defData.newFrame.normal = he_torsion * rots[he] * start_n;
+                HE[he_curr].defData.newFrame.w = (1-alpha)*start_w + (alpha)*end_w;
                 he_curr = HE[he_curr].next;
             }
             return 1;
@@ -474,26 +474,26 @@ namespace DCurvenet {
             // POSITIVE SIDE
             std::vector<Eigen::Matrix3d> rots;
             std::vector<double> lens;
-            Eigen::Vector3d start_n = C[c].N_pos.first;
-            double start_w = C[c].W_pos.first;
+            Eigen::Vector3d start_n = C[c].defData.N_pos.first;
+            double start_w = C[c].defData.W_pos.first;
             // 1. For the pos side, first trace until the end vertex, accumulating rotations and alpha values
             double total_len = accumulateRotations(C[c].he_start, end, rots, lens);
             // 3. Propagate rotations and widths to halfedges
             int he_curr = he_start;
             for (int he = 0; he < rots.size(); he++) {
-                HE[he_curr].normal = rots[he] * start_n;
-                HE[he_curr].w = start_w;
+                HE[he_curr].defData.newFrame.normal = rots[he] * start_n;
+                HE[he_curr].defData.newFrame.w = start_w;
                 he_curr = HE[he_curr].next;
             }
 
             // NEGATIVE SIDE
-            start_n = C[c].N_neg.first;
-            start_w = C[c].W_neg.first;
+            start_n = C[c].defData.N_neg.first;
+            start_w = C[c].defData.W_neg.first;
             he_curr = HE[he_start].twin;
             // Do not re-initialize rotations, since we only trace from interesection to anchor
             for (int he = 0; he < rots.size(); he++) {
-                HE[he_curr].normal = rots[he] * start_n;
-                HE[he_curr].w = start_w;
+                HE[he_curr].defData.newFrame.normal = rots[he] * start_n;
+                HE[he_curr].defData.newFrame.w = start_w;
                 he_curr = HE[he_curr].prev;
             }
             return 1;
@@ -504,23 +504,23 @@ namespace DCurvenet {
             // NEGATIVE SIDE
             std::vector<Eigen::Matrix3d> rots;
             std::vector<double> lens;
-            Eigen::Vector3d start_n = C[c].N_neg.second;
-            double start_w = C[c].W_neg.second;
+            Eigen::Vector3d start_n = C[c].defData.N_neg.second;
+            double start_w = C[c].defData.W_neg.second;
             double total_len = accumulateRotations(C[c].he_end, start, rots, lens);
             int he_curr = he_end;
             for (int he = 0; he < rots.size(); he++) {
-                HE[he_curr].normal = rots[he] * start_n;
-                HE[he_curr].w = start_w;
+                HE[he_curr].defData.newFrame.normal = rots[he] * start_n;
+                HE[he_curr].defData.newFrame.w = start_w;
                 he_curr = HE[he_curr].next;
             }
 
-            start_n = C[c].N_pos.second;
-            start_w = C[c].W_pos.second;
+            start_n = C[c].defData.N_pos.second;
+            start_w = C[c].defData.W_pos.second;
             he_curr = HE[he_end].twin;
             // Do not re-initialize rotations, since we only trace from interesection to anchor
             for (int he = 0; he < rots.size(); he++) {
-                HE[he_curr].normal = rots[he] * start_n;
-                HE[he_curr].w = start_w;
+                HE[he_curr].defData.newFrame.normal = rots[he] * start_n;
+                HE[he_curr].defData.newFrame.w = start_w;
                 he_curr = HE[he_curr].prev;
             }
             return 1;
@@ -554,16 +554,20 @@ namespace DCurvenet {
                 he_curr = HE[he_curr].next;
             }
             // Re-orthogonalize normals for safety
-            HE[he_curr].normal = (HE[he_curr].normal - HE[he_curr].normal.dot(HE[he_curr].tangent) * HE[he_curr].tangent).normalized();
+            HE[he_curr].defData.newFrame.normal = (HE[he_curr].defData.newFrame.normal - 
+                                                   HE[he_curr].defData.newFrame.normal.dot(HE[he_curr].defData.newFrame.tangent) * 
+                                                   HE[he_curr].defData.newFrame.tangent).normalized();
             // Positive side
-            HE[he_curr].binormal = (HE[he_curr].tangent.cross(HE[he_curr].normal)).normalized();
-            HE[he_curr].h = std::sqrt(HE[he_curr].l * HE[he_curr].w);
+            HE[he_curr].defData.newFrame.binormal = (HE[he_curr].defData.newFrame.tangent.cross(HE[he_curr].defData.newFrame.normal)).normalized();
+            HE[he_curr].defData.newFrame.h = std::sqrt(HE[he_curr].defData.newFrame.l * HE[he_curr].defData.newFrame.w);
             // Negative side
             int he_neg = HE[he_curr].twin;
             // Re-orthogonalize normals for safety
-            HE[he_neg].normal = (HE[he_neg].normal - HE[he_neg].normal.dot(HE[he_neg].tangent) * HE[he_neg].tangent).normalized();
-            HE[he_neg].binormal = (HE[he_neg].tangent.cross(HE[he_neg].normal)).normalized();
-            HE[he_neg].h = std::sqrt(HE[he_neg].l * HE[he_neg].w);
+            HE[he_neg].defData.newFrame.normal = (HE[he_neg].defData.newFrame.normal - 
+                                                  HE[he_neg].defData.newFrame.normal.dot(HE[he_neg].defData.newFrame.tangent) *
+                                                  HE[he_neg].defData.newFrame.tangent).normalized();
+            HE[he_neg].defData.newFrame.binormal = (HE[he_neg].defData.newFrame.tangent.cross(HE[he_neg].defData.newFrame.normal)).normalized();
+            HE[he_neg].defData.newFrame.h = std::sqrt(HE[he_neg].defData.newFrame.l * HE[he_neg].defData.newFrame.w);
         } while (he_curr != -1 && HE[he_curr].dest != end);
         return 1;
     }
@@ -579,13 +583,13 @@ namespace DCurvenet {
         if (he >= HE.size()) {
             return -1;
         }
-        HE[he].rest_tangent = HE[he].tangent;
-        HE[he].rest_binormal = HE[he].binormal;
-        HE[he].rest_normal = HE[he].normal;
+        HE[he].defData.restFrame.tangent = HE[he].defData.newFrame.tangent;
+        HE[he].defData.restFrame.binormal = HE[he].defData.newFrame.binormal;
+        HE[he].defData.restFrame.normal = HE[he].defData.newFrame.normal;
 
-        HE[he].rest_l = HE[he].l;
-        HE[he].rest_w = HE[he].w;
-        HE[he].rest_h = HE[he].h;
+        HE[he].defData.restFrame.l = HE[he].defData.newFrame.l;
+        HE[he].defData.restFrame.w = HE[he].defData.newFrame.w;
+        HE[he].defData.restFrame.h = HE[he].defData.newFrame.h;
         return 1;
     }
     int dcurvenet::copyFramesToNew() {

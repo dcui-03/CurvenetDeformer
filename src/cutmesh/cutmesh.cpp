@@ -62,6 +62,8 @@ bool cutmesh::copyFromMesh() {
     for (int e = 0; e < M->E.size(); e++) {
         // TODO
     }
+
+    // We will need to re-init faces later anyways, so we can just ignore for now
     return true;
 }
 

@@ -19,11 +19,11 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/9**
+**Update 7/11**
 
-Front end spline editing is essentially done, yay! There's a small number of loose threads though: First, I'm using libigl for closest point queries to assign normals to each new control. This is fine for triangles, but we'll need a custom version (potentially just ported directly from the mesh class) to handle more complex polygons. Second, the Polyscope is for testing and debugging, and therefore we need to be able to visualize the dCN and cutmesh eventually. This is going to be a little annoying, but we'll cross that bridge when we get there.
+Some minor fixes, including minor UI tweaks. Also began drafting profilemover class, and did some struct compacting in the mesh and dcurvenet namespaces. Still need to thoroughly re-check all this code once I feel satisfied about a stopping point.
 
-Also, structs should be reorganized so that they're better compartmentalized... right now there's lots of loose variables that can be grouped together. This should also make it easier to switch modes (i.e., deformation vs. color (RGBA?) vs. scalar interpolation on cut-mesh).
+A minor gripe: Currently, the way I'm computing corner normals to propagate normals along discrete splines forces me to store extra data for each curve, which is not terrible, but this data becomes obsolete once all the halfedges have their frames. Maybe try to reorganize functions such that this is just a temporary variable? If very difficult/requires major changes, then maybe prefer not to make this change.
 
 Lastly, another thought on parallelization: We can potentially parallelize the projection function itself by parallelizing projection over faces. NOTE that this is mostly only good when we need to do single point projection queries, as we always want to run the batch of points to project in parallel and we do NOT want nested parallelism for safety reasons. We can potentially do this by enforcing nested parallelism depth of 1, thus making each projection single-threaded when doing a batch, and multi-threaded otherwise.
 
@@ -33,7 +33,7 @@ Important note about Eigen. For Eigen fixed-size containers that are a multiple 
 
 **Big TODOs**:
 
-- *Code Restructuring*: Some major restructures would be nice, but best saved for later. For one, templating the mesh class would make the cut-mesh class easier to interface with and avoid storing a bunch of unused data in the mesh class. Potentially add cutVertex and cutHE to the struct list to accommodate this. The same could be done for the dCurvenet class, where instead of only storing deformation info, it could be used to store a bunch of other info. Combining struct info would make the code much cleaner. Look also into where we can do parallelization. Ex. during runtime, intermediate steps can be pretty cleanly parallelized to assemble all matrices, spline discretization (both splines themself and sampling).
+- *Code Restructuring*: Some major restructures would be nice, but best saved for later. For one, templating the mesh class would make the cut-mesh class easier to interface with and avoid storing a bunch of unused data in the mesh class. Potentially add cutVertex and cutHE to the struct list to accommodate this. The same could be done for the dCurvenet class, where instead of only storing deformation info, it could be used to store a bunch of other info. Look also into where we can do parallelization. Ex. during runtime, intermediate steps can be pretty cleanly parallelized to assemble all matrices, spline discretization (both splines themself and sampling).
 
 - *Polyscope Tests*: For running tests. Re-do polyscope front-end so visual debugging is enabled; this needs its own editable curve network class and converters from the new internal curvenet/dCN classes.
 
@@ -48,5 +48,5 @@ Important note about Eigen. For Eigen fixed-size containers that are a multiple 
 **Small Steps**:
 - Check entire geodesics pipeline, from projection to cutting
 - Restructure code. Minor pointers: check that the sampling rate for curvenet curves is correct.
-- Add IO function to visualize edits in polyscope.
+- Add IO functions to visualize edits in polyscope.
 - See Appendix for DEC halfedge laplacian shortcut

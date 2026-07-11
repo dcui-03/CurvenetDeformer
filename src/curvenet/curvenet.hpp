@@ -21,7 +21,7 @@ class curvenet {
     public:
         // Constructor takes four points [start, tangent 1, tangent 2, end], and associated normals
         // NOTE: Constructor assumes you already have no duplicates in your inputs
-        curvenet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents, std::vector<std::array<int, 4>> Splines, const Mesh::mesh& M, int alpha = 5);
+        curvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, const Mesh::mesh& M, int alpha = 5);
         // Empty constructor
         curvenet();
 

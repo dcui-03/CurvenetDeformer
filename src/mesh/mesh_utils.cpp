@@ -180,33 +180,33 @@ int mesh::traceGeodesic(const Vert& start,
     double eps = 1e-6;
     // First, do some simple tests for termination
     // It's good to have these to catch tiny directional drift
-    if (prev_ElType == end.mesh_elType && prev_ElIdx == end.mesh_elIdx) {   // The next mesh element is exactly the goal
+    if (prev_ElType == end.projData.elType && prev_ElIdx == end.projData.elIdx) {   // The next mesh element is exactly the goal
         return true;
-    } else if (start.mesh_elType == 0 && end.mesh_elType == 0) {    // Both are vertices
-        if (vertPairToHE.find(std::make_pair(start.mesh_elIdx, end.mesh_elIdx)) != vertPairToHE.end()) {
+    } else if (start.projData.elType == 0 && end.projData.elType == 0) {    // Both are vertices
+        if (vertPairToHE.find(std::make_pair(start.projData.elIdx, end.projData.elIdx)) != vertPairToHE.end()) {
             return true;
         }
-    } else if (start.mesh_elType == 0 && end.mesh_elType == 1) {    // Start is vertex, end is edge
+    } else if (start.projData.elType == 0 && end.projData.elType == 1) {    // Start is vertex, end is edge
         // Check if either end of the edge is the vertex
-        if (HE[E[end.mesh_elIdx].he].dest == start.mesh_elIdx || HE[HE[E[end.mesh_elIdx].he].twin].dest == start.mesh_elIdx) {
+        if (HE[E[end.projData.elIdx].he].dest == start.projData.elIdx || HE[HE[E[end.projData.elIdx].he].twin].dest == start.projData.elIdx) {
             return true;
         }
-    } else if (start.mesh_elType == 1 && end.mesh_elType == 0) {    // Start is edge, end is vertex
+    } else if (start.projData.elType == 1 && end.projData.elType == 0) {    // Start is edge, end is vertex
         // Check if either end of the edge is the vertex
-        if (HE[E[start.mesh_elIdx].he].dest == end.mesh_elIdx || HE[HE[E[start.mesh_elIdx].he].twin].dest == end.mesh_elIdx) {
+        if (HE[E[start.projData.elIdx].he].dest == end.projData.elIdx || HE[HE[E[start.projData.elIdx].he].twin].dest == end.projData.elIdx) {
             return true;
         }
-    } else if (start.mesh_elType == 1 && end.mesh_elType == 1) {    // Both are on edges
+    } else if (start.projData.elType == 1 && end.projData.elType == 1) {    // Both are on edges
         // Check if they share an edge
-        if (start.mesh_elIdx == end.mesh_elIdx) {
+        if (start.projData.elIdx == end.projData.elIdx) {
             return true;
         }
     }
 
     // Otherwise need to do a face-wise check
     // Find shared faces between start and end, if any
-    std::vector<int> startAdjF = adjFaces(start.mesh_elType, start.mesh_elIdx);
-    std::vector<int> endAdjF = adjFaces(end.mesh_elType, end.mesh_elIdx);
+    std::vector<int> startAdjF = adjFaces(start.projData.elType, start.projData.elIdx);
+    std::vector<int> endAdjF = adjFaces(end.projData.elType, end.projData.elIdx);
     std::vector<int> sharedAdjF;
     for (int i = 0; i < startAdjF.size(); i++) {
         if (startAdjF[i] == -1) {
@@ -238,7 +238,7 @@ int mesh::traceGeodesic(const Vert& start,
     int next_ElType, next_ElIdx;
     Eigen::Vector3d nextDirec;
     prevDirec.normalize();
-    if (recompute && start.mesh_elType == 2) {
+    if (recompute && start.projData.elType == 2) {
         Eigen::Vector3d refDirec = (end.pos - start.pos);
         next_ElType = prev_ElType;
         next_ElIdx = prev_ElIdx;
@@ -249,10 +249,10 @@ int mesh::traceGeodesic(const Vert& start,
             nextDirec *= -1;
         }
     } else {
-        if (start.mesh_elType == 0) {
-            next_ElType = nextEl_Vert(start.mesh_elIdx, prev_ElType, prev_ElIdx, prevDirec, nextDirec, next_ElIdx, true);
-        } else if (start.mesh_elType == 1) {
-            next_ElType = nextEl_Edge(start.mesh_elIdx, prev_ElIdx, prevDirec, nextDirec, next_ElIdx, true);
+        if (start.projData.elType == 0) {
+            next_ElType = nextEl_Vert(start.projData.elIdx, prev_ElType, prev_ElIdx, prevDirec, nextDirec, next_ElIdx, true);
+        } else if (start.projData.elType == 1) {
+            next_ElType = nextEl_Edge(start.projData.elIdx, prev_ElIdx, prevDirec, nextDirec, next_ElIdx, true);
         } else {
             next_ElType = prev_ElType;
             next_ElIdx = prev_ElIdx;

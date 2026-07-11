@@ -21,9 +21,11 @@ namespace DCurvenet {
 
     // Compute the deformation gradient of a halfedge
     Eigen::Matrix3d dcurvenet::computeHEDefGrad(int he) {
-        Eigen::Matrix3d F = (HE[he].l / HE[he].rest_l) * (HE[he].tangent * HE[he].rest_tangent.transpose()) + 
-                            (HE[he].w / HE[he].rest_w) * (HE[he].binormal * HE[he].rest_binormal.transpose()) + 
-                            (HE[he].h / HE[he].rest_h) * (HE[he].normal * HE[he].rest_normal.transpose());
+        const scaledFrame& heRestFrame = HE[he].defData.restFrame;
+        const scaledFrame& heNewFrame = HE[he].defData.newFrame;
+        Eigen::Matrix3d F = (heNewFrame.l / heRestFrame.l) * (heNewFrame.tangent * heRestFrame.tangent.transpose()) + 
+                            (heNewFrame.w / heRestFrame.w) * (heNewFrame.binormal * heRestFrame.binormal.transpose()) + 
+                            (heNewFrame.h / heRestFrame.h) * (heNewFrame.normal * heRestFrame.normal.transpose());
         return F;
     }
 
@@ -36,15 +38,15 @@ namespace DCurvenet {
         if (start_he < 0) {
             return 0.0;
         }
-        Eigen::Vector3d tan_prev = HE[he_curr].tangent;
+        Eigen::Vector3d tan_prev = HE[he_curr].defData.newFrame.tangent;
         Eigen::Matrix3d curr_rot = Eigen::Matrix3d::Identity();
         double curr_len = 0.0;
         // Traverse halfedges until we hit the end vertex
         do {
-            Eigen::Vector3d tan_curr = HE[he_curr].tangent;
+            Eigen::Vector3d tan_curr = HE[he_curr].defData.newFrame.tangent;
             curr_rot = Utils::computeRotation(tan_prev, tan_curr) * curr_rot;   // Left multiply to accumulate rotations
             rots.push_back(curr_rot);
-            curr_len += HE[he_curr].l;
+            curr_len += HE[he_curr].defData.newFrame.l;
             lens.push_back(curr_len);
 
             he_prev = he_curr;

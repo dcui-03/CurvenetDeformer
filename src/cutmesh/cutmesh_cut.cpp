@@ -41,8 +41,8 @@ namespace Mesh {
         std::map<int, std::vector<std::pair<double, int>>> edgeMap;
         for (int v = 0; v < proj_V.size(); v++) {
             // First, identify what kind of vertex should be inserted
-            int elType = proj_V[v].mesh_elType;
-            int elIdx = proj_V[v].mesh_elIdx;
+            int elType = proj_V[v].projData.elType;
+            int elIdx = proj_V[v].projData.elIdx;
             // If it landed on a vertex, then modify the existing vertex
             if (elType == 0) {
                 V[elIdx] = proj_V[v];
@@ -106,7 +106,7 @@ namespace Mesh {
             traceVerts.push_back(V[v0]);
             Eigen::Vector3d direc = (V[v1].pos - V[v0].pos).normalized();
             int success = M->traceGeodesic(V[v0], V[v1], direc, 
-                                           V[v0].mesh_elType, V[v0].mesh_elIdx, 
+                                           V[v0].projData.elType, V[v0].projData.elIdx, 
                                            traceVerts);
             // This is a likely spot for failure, so flag it
             if (success == -1) {
@@ -122,16 +122,16 @@ namespace Mesh {
                 // TODO: Is this a safe thing to do?
                 // i.e., the projVector taken using the midpoint of the associated halfedge, thus being deterministic without 
                 // Requiring us to subdivide the dCN edge OR change the projection estimate formula (sort of)
-                traceVerts[v_idx].projVector = ((dCN_V[dCN_v1].pos + dCN_V[dCN_v0].pos) / 2) - traceVerts[v_idx].pos;
+                traceVerts[v_idx].defData.projVector = ((dCN_V[dCN_v1].pos + dCN_V[dCN_v0].pos) / 2) - traceVerts[v_idx].pos;
                 // First, compute an estimated curvenet position so we can take the difference
-                if (traceVerts[v_idx].mesh_elType == 0) {  // Check if we are on a vertex
-                    V[traceVerts[v_idx].mesh_elIdx] = traceVerts[v_idx];
-                    traceList.push_back(traceVerts[v_idx].mesh_elIdx);
+                if (traceVerts[v_idx].projData.elType == 0) {  // Check if we are on a vertex
+                    V[traceVerts[v_idx].projData.elIdx] = traceVerts[v_idx];
+                    traceList.push_back(traceVerts[v_idx].projData.elIdx);
                 } else { // We must be on an edge
                     int new_v = insertVertex(traceVerts[v_idx]);
                     // Check if the edge was already split. If so, find where to split it.
                     int insert_index = 0;
-                    int orig_e = V[new_v].mesh_elIdx;   // Edge from the original mesh
+                    int orig_e = V[new_v].projData.elIdx;   // Edge from the original mesh
                     int e_insert = orig_e;      // Edge in cut-mesh to insert at
                     Eigen::Vector3d v0 = M->V[HE[E[e_insert].he].dest].pos;
                     Eigen::Vector3d v1 = M->V[HE[HE[E[e_insert].he].twin].dest].pos;
@@ -265,7 +265,7 @@ namespace Mesh {
             bool deactivate = true;
             for (int he = 0; he < adjHE.size(); he++) {
                 int v = HE[adjHE[he]].dest;
-                if ((V[v].mesh_elType != 2)) {
+                if ((V[v].projData.elType != 2)) {
                     // At least one vertex in the face is either from the original mesh, landed on a mesh vertex, or split a mesh edge
                     deactivate = false;
                 }
@@ -353,7 +353,7 @@ namespace Mesh {
                     if (i == 0) {
                         v_current = v;
                     } else {
-                        v_current = insertVertex(V[v].pos, V[v].n, V[v].label, -1, V[v].mesh_elType, V[v].mesh_elIdx, V[v].projVector);
+                        v_current = insertVertex(V[v].pos, V[v].n, V[v].label, -1, V[v].projData.elType, V[v].projData.elIdx, V[v].defData.projVector);
                     }
                     // Rewire corner index
                     V[v_current].corner_idx = cornerIdxs[i];

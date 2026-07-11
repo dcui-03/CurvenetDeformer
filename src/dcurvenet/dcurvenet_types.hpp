@@ -10,6 +10,10 @@
 
 namespace DCurvenet {
 
+    struct colorData {
+        Eigen::Vector4d rgba = Eigen::Vector4d::Zero();
+    };
+
     struct Vert {
         Eigen::Vector3d pos;
         Eigen::Vector3d n = Eigen::Vector3d::Zero();    // Init to zero, since most vertices will not receive an initial normal
@@ -36,23 +40,8 @@ namespace DCurvenet {
 
         // Scaled Local Frame
         bool sign;  // true for positive, false for negative
-        // Note, we can save these each separately for easy access.
-        // Paper provides an easy method for computing def grad using components rather than matrices
-        Eigen::Vector3d rest_tangent;
-        Eigen::Vector3d rest_binormal;
-        Eigen::Vector3d rest_normal;
-        double rest_l, rest_w, rest_h; // length, width, and height
-
-        // Runtime info: Altered frame needed for def grad computation
-        Eigen::Vector3d tangent;
-        Eigen::Vector3d binormal;
-        Eigen::Vector3d normal;
-        double l, w, h;
-
-        /*
-        // TODO
+        // Deformation data, including the scaled frames (old and new)
         heDeformData defData;
-        */
     };
 
     // Edge in a curve
@@ -70,14 +59,9 @@ namespace DCurvenet {
         int end = -1;      // The other endpoint vertex
         bool active = true;     // For safety, say if the component is active (ignore for now)
 
-        // NOTE: Not sure if corner attributes need to be kept as permanent fixtures. Maybe move to a temp variable instead?
-        //       Right now, at runtime I'm just letting the new versions overwrite the old ones
-        // Corner normals
-        std::pair<Eigen::Vector3d, Eigen::Vector3d> N_pos;  // first is start, second is end
-        std::pair<Eigen::Vector3d, Eigen::Vector3d> N_neg;  // first is start, second is end
-        // Corner widths
-        std::pair<double, double> W_pos;    // first is start, second is end
-        std::pair<double, double> W_neg;    // first is start, second is end
+        // Deformation data for the curve
+        // TODO: Find a way to make this temporary so that we don't need to store this every time
+        faceDeformData defData;
 
         // Other info
         int cn_idx = -1;    // Curvenet index if parent is a spline

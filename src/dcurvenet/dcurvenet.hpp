@@ -25,7 +25,7 @@ class dcurvenet {
         //       Curves are similar.
         // Takes the original curvenet and discretizes it
         // Alpha is the user-inputted sampling parameter
-        dcurvenet(Curvenet::curvenet* CN, double meanE, int alpha = 5, int mode = 0);
+        dcurvenet(Curvenet::curvenet* CN, double meanE);
         // Initialize with empty constructor
         dcurvenet();
 

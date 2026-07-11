@@ -11,7 +11,7 @@
 
 namespace Curvenet {
     // Initialize from an existing list of controls, splines
-    curvenet::curvenet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents, std::vector<std::array<int, 4>> Splines, const Mesh::mesh& M, int alpha): alpha(alpha) {
+    curvenet::curvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, const Mesh::mesh& M, int alpha): alpha(alpha) {
         for (int c = 0; c < Controls.size(); c++) {
             int new_c = addControl(Controls[c]);
             inputCtoC[c] = new_c;

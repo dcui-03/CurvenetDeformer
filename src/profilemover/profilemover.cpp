@@ -1,8 +1,9 @@
 #include "profilemover.hpp"
 
-#include "curvenet/curvenet.hpp"
 #include "mesh/mesh.hpp"
+#include "curvenet/curvenet.hpp"
 #include "dcurvenet/dcurvenet.hpp"
+#include "cutmesh/cutmesh.hpp"
 #include "utils/decUtils.hpp"
 #include <Eigen/Core>
 #include <Eigen/Sparse>
@@ -10,68 +11,104 @@
 
 
 namespace ProfileMover {
-    /*
-    profilemover::profilemover(std::vector<Eigen::Vector3d>& meshV, std::vector<std::vector<int>>& meshF) {
-        M = Mesh::mesh(meshV, meshF);
+    profilemover::profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF, 
+                               const std::vector<Eigen::Vector3d> Controls, const std::vector<Eigen::Vector3d> Tangents, 
+                               const std::vector<std::array<int, 4>> Splines, int alpha = 5) {
+        applyMesh(meshV, meshF);
+        applyCurvenet(Controls, Tangents, Splines, alpha);
+        
+        precomputation();
     }
 
-    void profilemover::precomputation(std::vector<Eigen::Vector3d> Controls, 
-                                      std::vector<Eigen::Vector3d> Tangents, 
-                                      std::vector<std::array<int, 4>> Splines,
-                                      int alpha) {
-        // Initialize curvenet
-        CN = Curvenet::curvenet(Controls, Tangents, Splines, M, alpha);
-        // Initialize discrete curvenet
-        dCN = DCurvenet::dcurvenet(&CN, M.getMeanE(), alpha);
-        dCN_init = true;
+    void profilemover::applyMesh(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF) {
+        if (!M_init) {
+            M = Mesh::mesh(meshV, meshF);
+            M_init = true;
+        }
+    }
+
+    void profilemover::applyCurvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, int alpha = 5) {
+        if (M_init && !CN_init) {
+            CN = Curvenet::curvenet(Controls, Tangents, Splines, &M, alpha);
+            CN_init = true;
+        } else {
+            // throw an error
+        }
+        return;
+    }
+
+    void profilemover::precomputation() {
+        if (!M_init || !CN_init) {
+            // Throw an error
+            return;
+        } else if (!dCN_init) {
+            // Initialize discrete curvenet
+            dCN = DCurvenet::dcurvenet(&CN, M.getMeanE());
+            dCN_init = true;
+        }
         // Compute Cut-mesh
-        M.computeCutMesh();
+        CM = Mesh::cutmesh(&M, &dCN);
+        CM_init = true;
+
         // Compute operators
-        // C
-        // V
-        std::pair<Eigen::SparseMatrix<double>, Eigen::SparseMatrix<double>> VC = M.computeVC();
-        V = VC.first;
-        C = VC.second;
+        V = CM.computeVMatrix(vToCM, mToV);
+        C = CM.computeCMatrix(cToCM, mToC);
         // Face-based Laplacian with values pushed onto halfedges
-        Eigen::SparseMatrix<double> L = M.computeHELaplacian();
+        Eigen::SparseMatrix<double> L = CM.computeHELaplacian();
         // mVtL
         mVtL = -1 * V.transpose() * L;
         // Factor V^TLV
         Eigen::SparseMatrix<double> VtLV_Mat = V.transpose() * L * V;
         VtLV.analyzePattern(VtLV_Mat);
         VtLV.factorize(VtLV_Mat);
+        return;
     }
 
     // Runtime deformation
     std::vector<Eigen::Vector3d> profilemover::deform(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents) {
+        if (!M_init || !CN_init || !dCN_init || !CM_init) {
+            // TODO: throw error
+        }
         // 1. Compute new curvenet
         CN.updateCurveNet(Controls, Tangents);
         // 2. Compute new discrete curvenet and frames
         dCN.updateDiscCurveNet();
         // FIRST SOLVE: Deformation gradients
-        // 3. Compute flattened deformation gradient matrix
-        Eigen::MatrixXd cnDefGrads = M.computeDefGrads();
-        // 4. Solve system using precomputed factorization
-        // First, build RHS (TODO: This is a placeholder)
-        Eigen::MatrixXd RHSdefGrad = mVtL * (cnDefGrads);
-        Eigen::MatrixXd defGrads = VtLV.solve(RHSdefGrad);
+        // Compute flattened deformation gradient matrix
+        Eigen::MatrixXd f_c = CM.computeDefGrads(cToCM);    // TODO: This can be done in parallel over halfedges
+        // Solve system to get interpolated 
+        Eigen::MatrixXd f_v = VtLV.solve(mVtL * (C * f_c));
+        // Fold back together and redistribute to their vertices
+        CM.applyDefGrads(f_v, vToCM);                   // TODO: This can be done in parallel over 
         // SECOND SOLVE: Positions
-        // 5. Redistribute def grads onto mesh vertices
+        // Estimate new projected positions using the distributed def grads
+        Eigen::MatrixXd x_c = CM.estimateCNPositions(cToCM);
+        // Compute per-face deformation matrix + assemble
+        Eigen::MatrixXd y_h = CM.estimateFaceDeformations(vToCM);
+        // Compute new positions
+        Eigen::MatrixXd x_v = VtLV.solve(mVtL * (C * x_c - y_h));
 
-        // 6. Compute per-face matrix + assemble
-
-        // 7. Compute vertex projections
-        Eigen::MatrixXd projDefs = M.estimateProjectionDefs();
-        // 8. Assemble RHS
-
-        // 9. Compute new positions
-        Eigen::MatrixXd newPositions = VtLV.solve(projDefs);
-        // Re-format to return type (maybe just return the new positions and handle at the hand-off?)
-        std::vector<Eigen::Vector3d> 
-        for (int i = 0; i < num_v; i++) {
-
-        }
+        return assembleFinalPositions(x_v, x_c);
     }
 
-    */
+    // Assemble final positions into our standard data type
+    std::vector<Eigen::Vector3d> profilemover::assembleFinalPositions(Eigen::MatrixXd x_v, Eigen::MatrixXd x_c) {
+        std::vector<Eigen::Vector3d> newV(M.active_v);
+        // Average to get the constraint positions
+        for (int m = 0; m < mToC.size(); m++) {
+            Eigen::Vector3d new_v = Eigen::Vector3d::Zero();
+            int m_size = mToC[m].size();
+            for (int c = 0; c < m_size; c++) {
+                new_v += x_c.row(mToC[m][c]).transpose();
+            }
+            new_v /= m_size;
+            newV[m] = new_v;
+        }
+        // Directly copy to get the new position for original mesh vertices
+        for (int v = 0; v < mToV.size(); v++) {
+            newV[v] = x_v.row(mToV[v]).transpose();
+        }
+        return newV;
+    }
+
 }   // namespace ProfileMover
