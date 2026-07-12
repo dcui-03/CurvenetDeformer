@@ -46,7 +46,7 @@ namespace DCurvenet {
         computeScaledFrames();
 
         // 7. Cleanup by copying realtime frames to rest frames
-        copyFramesToNew();
+        copyFramesToRest();
     }
 
     // Update the new frames on all halfedges
@@ -75,13 +75,17 @@ namespace DCurvenet {
                     if (i != samples.size() - 1) {
                         V[HE[he_curr].dest].new_pos = samples[i];
                     }
-                    Eigen::Vector3d tangent = V[HE[he_curr].dest].new_pos - V[v_prev].new_pos;
+                    int v_dest = HE[he_curr].dest;
+                    Eigen::Vector3d tangent = V[v_dest].new_pos - V[v_prev].new_pos;
                     HE[he_curr].defData.newFrame.tangent = tangent.normalized();
                     HE[he_curr].defData.newFrame.l = tangent.norm();
-                    HE[HE[he_curr].twin].defData.newFrame.tangent = -1 * tangent.normalized();
-                    HE[HE[he_curr].twin].defData.newFrame.l = tangent.norm();
+
+                    int he_twin = HE[he_curr].twin;
+                    HE[he_twin].defData.newFrame.tangent = -tangent.normalized();
+                    HE[he_twin].defData.newFrame.l = tangent.norm();
+
+                    v_prev = v_dest;
                     he_curr = HE[he_curr].next;
-                    v_prev = HE[he_curr].dest;
                 }
             }
         }
@@ -92,6 +96,10 @@ namespace DCurvenet {
         transportNormalsAndWidths(curveData);
         // Compute scaled frames on all splines
         computeScaledFrames();
+        // Check to make sure new frames are valid
+        validateFrames();
+        // Compute the deformation gradients
+        computeDefGradAll();
         return;
     }
 
@@ -121,7 +129,7 @@ namespace DCurvenet {
     }
     // Add a new edge in and return its halfedges
     int dcurvenet::addEdge(int origin, int dest, int prev_he0, int next_he1, int c) {
-        if (origin > V.size() || dest > V.size()) {
+        if (origin < 0 || origin >= V.size() || dest < 0 || dest >= V.size()) {
             return -1;
         }
         int e = E.size();
@@ -141,6 +149,8 @@ namespace DCurvenet {
         HE[he1].twin = he0;
         HE[he0].prev = prev_he0;
         HE[he1].next = next_he1;
+        HE[he0].edge = e;
+        HE[he1].edge = e;
         if (prev_he0 != -1) {
             HE[prev_he0].next = he0;
         }
@@ -151,8 +161,6 @@ namespace DCurvenet {
         HE[he1].defData.newFrame.tangent = -1 * edgeVec.normalized();
         HE[he0].defData.newFrame.l = edgeVec.norm();
         HE[he1].defData.newFrame.l = edgeVec.norm();
-        HE[he0].sign = true;    // left side
-        HE[he1].sign = false;   // right side
 
         return e;
     }
@@ -161,72 +169,96 @@ namespace DCurvenet {
         const std::vector<Curvenet::HalfEdge>& cnHE = CN->HE;
         const std::vector<Curvenet::CubicSpline>& cnSpline = CN->S;
         const std::vector<Curvenet::Curve>& cnCrv = CN->Crv;
-
+        if (crv < 0 || crv >= cnCrv.size()) {
+            return -1;
+        }
         const std::vector<int>& crvSplines = cnCrv[crv].splines;
+        if (crvSplines.empty()) {
+            return -1;
+        }
         int c = C.size();
         C.emplace_back();
         C[c].cn_idx = crv;
-        // Track the halfedges between splines in the curve
+
+        // Track the previous positive halfedge and previous negative halfedge
+        // so that each newly added segment is wired into the curve chain.
         int prev_he0 = -1;
         int next_he1 = -1;
-        int temp_origin = -1;   // Tracks the new halfedge's origin
-        // For each curve, initialize all its splines (+ edges, halfedges, verts)
+        // Current origin vertex in the discrete curvenet
+        int temp_origin = -1;
+
         for (int s_idx = 0; s_idx < crvSplines.size(); s_idx++) {
             int s = crvSplines[s_idx];
-            // Get start and endpoint controls
-            int s_start = cnHE[cnSpline[s].he].origin;
-            int s_end = cnHE[cnHE[cnSpline[s].he].twin].origin;
-            if (s_idx == 0) {   // Initialize curve start on first spline
+            if (s < 0 || s >= cnSpline.size()) {
+                return -1;
+            }
+            // Get the CN halfedges for this spline
+            int cn_he = cnSpline[s].he;
+            int cn_he_twin = cnHE[cn_he].twin;
+            // Get the start and end CN control indices
+            int cn_start = cnHE[cn_he].origin;
+            int cn_end   = cnHE[cn_he_twin].origin;
+            // Get the start and end dCN vertices
+            int s_start = inputCtoV.at(cn_start);
+            int s_end   = inputCtoV.at(cn_end);
+            if (s_idx == 0) {
                 C[c].start = s_start;
                 temp_origin = s_start;
-            } 
-            if (s_idx == crvSplines.size() - 1) {   // Initialize curve end on the last spline
+            }
+            if (s_idx == static_cast<int>(crvSplines.size()) - 1) {
                 C[c].end = s_end;
             }
 
-            // Compute samples
+            // Sample the spline
             int n_samples = cnSpline[s].num_samples;
-            // Assume n_samples will always be > 3
             const std::vector<Eigen::Vector3d> samples = CN->unifSample(s, n_samples);
-            // Get local spline idx. If multiple, then this spline must make a self-loop
-            std::vector<int> startLocalSplineIdx = CN->controlLocalSplineIdx(s_start, s);
-            std::vector<int> endLocalSplineIdx = CN->controlLocalSplineIdx(s_end, s);
-            if (s_start == s_end && startLocalSplineIdx.size() == 2) {  // Check self-loops
+            // Get the local spline index for the start and end vertices
+            std::vector<int> startLocalSplineIdx = CN->controlLocalSplineIdx(cn_start, s);
+            std::vector<int> endLocalSplineIdx   = CN->controlLocalSplineIdx(cn_end, s);
+
+            // Self-loop: parent curvenet has two local halfedges at the same control
+            if (cn_start == cn_end && startLocalSplineIdx.size() == 2) {
                 endLocalSplineIdx[0] = startLocalSplineIdx[1];
             }
-            // Start outgoing edge
+            // Insert the discretized spline (i = 0 is the start vert)
             for (int i = 1; i < n_samples; i++) {
-                int v;
-                // Initialize new structures
-                if (i == n_samples -1) {    // Last sample
+                int v = -1;
+
+                if (i == n_samples - 1) {   // Last sample is the end vert
                     v = s_end;
-                } else {    // Initialize a new sample
+                } else {    // Interior sample
                     v = addVert(samples[i]);
                 }
+                // Add a new edge
                 int new_edge = addEdge(temp_origin, v, prev_he0, next_he1, c);
-                int he0 = E[new_edge].he;
-                int he1 = HE[he0].twin;
-                
-                if (i == n_samples - 1) {    // End vertex is the next
-                    V[v].adjHE[endLocalSplineIdx[0]] = he1;  // Add he1 to outgoing of end
-                    if (s_idx == crvSplines.size()-1) {
-                        C[c].he_end = he1;
-                    }
-                } else if (i == 1) { // Start vertex is the prev
-                    V[temp_origin].adjHE[startLocalSplineIdx[0]] = he0;  // Add he0 to outgoing
-                    // Also set the first halfedge of the curve
-                    if (s_idx == 0) {
+
+                int he0 = E[new_edge].he;       // positive/canonical direction
+                int he1 = HE[he0].twin;         // negative/opposite direction
+
+                // Assign adjacent halfedge(s) for each prev vert
+                if (V[temp_origin].cn_idx < 0) {    // Interior vert
+                    V[temp_origin].adjHE.clear();
+                    V[temp_origin].adjHE.push_back(he0);
+                } else if (i == 1) {    // Previous vert must be the spline start
+                    V[temp_origin].adjHE[startLocalSplineIdx[0]] = he0;
+                    if (s_idx == 0) {   // If we are starting the curve, make it the curve starting halfedge
                         C[c].he_start = he0;
                     }
-                } else { // Middle vertex (symmetrize next and prev)
-                    V[temp_origin].adjHE.push_back(he0);
                 }
-                // Update loop params
+                // Assign outgoing halfedge for the end vert when the spline ends
+                if (i == n_samples - 1) {
+                    V[v].adjHE[endLocalSplineIdx[0]] = he1;
+                    if (s_idx == crvSplines.size() - 1) {  // We are ending the curve, so add the outgoing halfedge to the end vert
+                        C[c].he_end = he1;
+                    }
+                }
+
                 prev_he0 = he0;
                 next_he1 = he1;
                 temp_origin = v;
             }
         }
+
         return c;
     }
     // Rewire incoming and outgoing halfedges of intersection and anchor vertices
@@ -248,6 +280,10 @@ namespace DCurvenet {
     // For intersections, computes their corner normals. For non-controls, this method does nothing (return -1)
     int dcurvenet::vertCornerNormalsWidths(int v, std::vector<curveDeformData>& curveData) {
         if (!V[v].active) {
+            return -1;
+        }
+        // Only original curvenet controls have corner data
+        if (V[v].cn_idx < 0 || V[v].cn_type < 1) {
             return -1;
         }
         double eps = 1e-6;
@@ -278,7 +314,7 @@ namespace DCurvenet {
                 n.normalize();
                 int next_he = adjHE[(he_idx+1)%adjHE.size()];
                 double w = HE[he].defData.newFrame.l + l * (HE[next_he].defData.newFrame.l - HE[he].defData.newFrame.l);
-                if (HE[he].sign) {
+                if (isPositiveHalfedge(he)) {
                     curveData[c].N_pos.first = n;
                     curveData[c].W_pos.first = w;
                     curveData[c].N_neg.first = n;
@@ -324,12 +360,12 @@ namespace DCurvenet {
 
             // Assign corner normals to curves
             // First figure out if this is the start halfedge of the curve
-            if (HE[he0].sign) {
+            if (isPositiveHalfedge(he0)) {
                 curveData[c0].N_pos.first = cornerNormal.normalized();
             } else {
                 curveData[c0].N_neg.second = cornerNormal.normalized();
             }
-            if (HE[he1].sign) {
+            if (isPositiveHalfedge(he1)) {
                 curveData[c1].N_neg.first = cornerNormal.normalized();
             } else {
                 curveData[c1].N_pos.second = cornerNormal.normalized();
@@ -343,7 +379,6 @@ namespace DCurvenet {
             }
             int he0 = adjHE[he];
             int he_m1_local = (he + adjHE.size() - 1)%adjHE.size();
-            int he_m1 = adjHE[he_m1];
             int he1_local = (he + 1)%adjHE.size();
             int he1 = adjHE[he1_local];
             // Get adjacent curves
@@ -355,7 +390,7 @@ namespace DCurvenet {
             // Extremely unlikely, but just in case, put in a safeguard...
             if (cornerNormal.norm() <= eps) {
                 Eigen::Vector3d tan = HE[he0].defData.newFrame.tangent;
-                cornerNormal = V[v].n - V[v].n.dot(tan) * tan;cornerNormal = V[v].n - V[v].n.dot(tan) * tan;
+                cornerNormal = V[v].n - V[v].n.dot(tan) * tan;
                 if (cornerNormal.norm() <= eps) {
                     // Just pick a random direction orthogonal to the tangent 
                     if (std::abs(tan(0)) < 0.9) {
@@ -368,12 +403,12 @@ namespace DCurvenet {
             cornerNormal.normalize();
 
             // Assign corner normals to curves
-            if (HE[he0].sign) {
+            if (isPositiveHalfedge(he0)) {
                 curveData[c0].N_pos.first = cornerNormal.normalized();
             } else {
                 curveData[c0].N_neg.second = cornerNormal.normalized();
             }
-            if (HE[he1].sign) {
+            if (isPositiveHalfedge(he1)) {
                 curveData[c1].N_neg.first = cornerNormal.normalized();
             } else {
                 curveData[c1].N_pos.second = cornerNormal.normalized();
@@ -398,7 +433,7 @@ namespace DCurvenet {
 
             // Assign corner normals to curves
             // First figure out if this is the start halfedge of the curve
-            if (HE[he0].sign) {
+            if (isPositiveHalfedge(he0)) {
                 curveData[c0].W_pos.first = cornerWidth0;
                 curveData[c0].W_neg.first = cornerWidth1;
             } else {
@@ -582,8 +617,21 @@ namespace DCurvenet {
         return 1;
     }
 
+    // Make sure frames don't 
+    int dcurvenet::validateFrames() {
+        double eps = 1e-12;
+        for (int he = 0; he < HE.size(); he++) {
+            const scaledFrame& newFrame = HE[he].defData.newFrame;
+            if (newFrame.l <= eps || newFrame.w <= eps || newFrame.h <= eps) {
+                throw std::runtime_error("validateFrames(): degenerate frame");
+            }
+            if (!std::isfinite(newFrame.l) || !std::isfinite(newFrame.w) || !std::isfinite(newFrame.h)) {
+                throw std::runtime_error("validateFrames(): non-finite scaled frame scale");
+            }
+        }
+    }
     // Copy scaled frame data to new local variables
-    int dcurvenet::copyFrameToNew(int he) {
+    int dcurvenet::copyFrameToRest(int he) {
         if (he >= HE.size()) {
             return -1;
         }
@@ -596,9 +644,9 @@ namespace DCurvenet {
         HE[he].defData.restFrame.h = HE[he].defData.newFrame.h;
         return 1;
     }
-    int dcurvenet::copyFramesToNew() {
+    int dcurvenet::copyFramesToRest() {
         for (int he = 0; he < HE.size(); he++) {
-            copyFrameToNew(he);
+            copyFrameToRest(he);
         }
         return 1;
     }

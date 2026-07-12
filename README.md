@@ -21,7 +21,9 @@ cd ..
 # Updates and Notes
 **Update 7/11**
 
-Some minor fixes, including minor UI tweaks. Also began drafting profilemover class, and did some struct compacting in the mesh and dcurvenet namespaces. Still need to thoroughly re-check all this code once I feel satisfied about a stopping point.
+Doing a full code debug pass to identify logical errors and bugs. Currently finished the curvenet and dcurvenet classes, as well as the normal part of the mesh class. Next is the the projection part of the mesh class, then the cutmesh class, including the geodesic part, which should both take much longer to debug. When I get the chance, should also do a visual debug on dcurvenet class by adding conversion functions for polyscope.
+
+TODO later: in dCN class, change adjHE to a single stored halfedge, and then add an iterator to get all adjacent halfedges; add a safe normalization function to check certain that inputs will not normalize to a NaN or 0.
 
 Lastly, another thought on parallelization: We can potentially parallelize the projection function itself by parallelizing projection over faces. NOTE that this is mostly only good when we need to do single point projection queries, as we always want to run the batch of points to project in parallel and we do NOT want nested parallelism for safety reasons. We can potentially do this by enforcing nested parallelism depth of 1, thus making each projection single-threaded when doing a batch, and multi-threaded otherwise.
 
@@ -46,5 +48,5 @@ Important note about Eigen. For Eigen fixed-size containers that are a multiple 
 **Small Steps**:
 - Check entire geodesics pipeline, from projection to cutting
 - Restructure code. Minor pointers: check that the sampling rate for curvenet curves is correct.
-- Add IO functions to visualize edits in polyscope.
+- Add IO functions to visualize profilemover components in polyscope.
 - See Appendix for DEC halfedge laplacian shortcut

@@ -16,22 +16,20 @@ namespace Mesh {
 // Project a vertex onto the mesh. If multiple, just picks the one with smaller index.
 // Also returns the element type that was landed on.
 // For non-planar faces, I am just going to fit a Newell plane using the barycenter and vector area + a barycentric height interpolation
-int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap, bool fast) const {
+vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, bool snap, bool fast) const {
     double tol = 1e-6 * bboxDiag;
     double min_dist = std::numeric_limits<double>::infinity();
-
+    vertProjData projData({-1, -1});
     int closest_f = -1;
-    elIdx = -1;
     if (active_f == 0) {
-        return -1;
+        return projData;
     }
     // First find closest face by iterating over faces
     // NOTE: For triangles, this can be done much more simply using
     // barycentric coordinates w/ a linear solve. For arbitrary non-planar polygons,
     // this isn't possible, since polygons may not be convex
     for (int f = 0; f < F.size(); f++) {
-        int local_elType = 2;
-        int local_elIdx = -1;
+        vertProjData localProjData({2, -1});
         Eigen::Vector3d v_proj;
         // Skip inactive faces
         if (!F[f].active) {
@@ -88,15 +86,15 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
         if (dist < min_dist) {
             min_dist = dist;
             proj = v_proj;
-            elIdx = f;
+            projData.elIdx = f;
         }
     }
 
     // Definitive closest face's data
-    std::vector<int> fVerts = faceAdjVertIdxs(elIdx);
+    std::vector<int> fVerts = faceAdjVertIdxs(projData.elIdx);
     int fSize = fVerts.size();
     std::vector<Eigen::Vector3d> fVertsPos = adjVerts(fVerts);
-    Eigen::Vector3d fN = F[elIdx].n;
+    Eigen::Vector3d fN = F[projData.elIdx].n;
 
     // Snap to nearby vertex or edge if we are too close
     // NOTE: using Euclidean, not geodesic distance, since this is too hard for non-planar faces
@@ -106,8 +104,9 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
             // Once found, we can just return immediately
             if ((proj - fVertsPos[fv]).norm() <= tol) {
                 proj = fVertsPos[fv];
-                elIdx = fVerts[fv];
-                return 0;
+                projData.elIdx = fVerts[fv];
+                projData.elType = 0;
+                return projData;
             }
         }
 
@@ -119,8 +118,9 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
             if ((proj - v_projE).norm() <= tol) {
                 proj = v_projE;
                 int he_idx = vertPairToHE.at({fVerts[fv], fVerts[fv1]});
-                elIdx = HE[he_idx].edge;
-                return 1;
+                projData.elIdx = HE[he_idx].edge;
+                projData.elType = 1;
+                return projData;
             }
         }
     }
@@ -128,11 +128,11 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     // If not snapping, then we must be on a face
     // If using the fast version, just take the current Newell plane nearest
     if (fast) {
-        return 2;
+        return projData;
     }
     // Else do the slow way: lift proj using height
     // Check if we are on a non-planar face. If so, pin-point the location using MVC
-    Eigen::VectorXd fHeight = computeFaceHeight(elIdx);
+    Eigen::VectorXd fHeight = computeFaceHeight(projData.elIdx);
     bool planar = true;
     for (int v = 0; v < fSize; v++) {
         if (std::abs(fHeight(v)) >= 1e-6) {
@@ -140,7 +140,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
         }
     }
     if (planar || fHeight.size() == 3) {   // Planar face, no MVC interpolation to be done
-        return 2;
+        return projData;
     }
 
     // Otherwise, we need to compute mean value coordinates to get projection location
@@ -165,7 +165,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     // Add height to current Newell projection
     proj += h * fN;
 
-    return 2;
+    return projData;
 }
 
 // Trace a "straightest" geodesic (ish) from the start vert to the end
@@ -287,13 +287,14 @@ int mesh::traceGeodesic(const Vert& start,
     // If we reached this point, we are definitely walking on a face
     // Project walk direction onto specified direction
     Eigen::Vector3d hit;
+    vertProjData hit_Data;
     int hit_ElIdx;
-    int hit_ElType = rayCastOnFace(next_ElIdx, start.pos, nextDirec, hit, hit_ElIdx);
-    if (hit_ElType == -1) {
+    int valid = rayCastOnFace(next_ElIdx, start.pos, nextDirec, hit, hit_Data);
+    if (valid == -1) {
         return -1;
     }
     // Create a new vertex at intersection and append to list
-    Vert nextVert = createVertex(hit, getNormal(hit_ElType, hit_ElIdx), 2, -1, hit_ElType, hit_ElIdx);
+    Vert nextVert = createVertex(hit, getNormal(hit_Data), 2, -1, hit_Data);
 
     tracedVerts.push_back(nextVert);
     traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, true, fast);
@@ -349,7 +350,7 @@ bool mesh::testVisibility(int f, Eigen::Vector3d start, Eigen::Vector3d end, dou
 }
 
 // Find the next intersection point while walking on a particular face
-int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eigen::Vector3d& hit, int& hit_ElIdx, double eps) {
+int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eigen::Vector3d& hit, vertProjData& hitData, double eps) {
     double tol = 1e-6 * bboxDiag;
     Eigen::Vector3d projDirec;
     Utils::projectVectorOntoTangentPlane(F[f].n, direc, projDirec);
@@ -403,14 +404,14 @@ int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eig
     double u = intersections[nearest_idx].second;
     hit = fVerts[v] + u * (fVerts[(v+1)%fVerts.size()] - fVerts[v]);
     // Apply snapping as necessary
-    int next_ElType = 1;
-    int next_ElIdx = HE[vertPairToHE[std::make_pair(fVertIdxs[v], fVertIdxs[(v+1)%fVertIdxs.size()])]].edge;
+    hitData.elType = 1;
+    hitData.elIdx = HE[vertPairToHE[std::make_pair(fVertIdxs[v], fVertIdxs[(v+1)%fVertIdxs.size()])]].edge;
     if ((hit - fVerts[v]).norm() <= tol) {
         hit = fVerts[v];
-        next_ElType = 0;
-        next_ElIdx = fVertIdxs[v];
+        hitData.elType = 0;
+        hitData.elIdx = fVertIdxs[v];
     }
-    return next_ElType;
+    return 1;
 }
 
 // Compute the next walk element given that we intersected with an edge

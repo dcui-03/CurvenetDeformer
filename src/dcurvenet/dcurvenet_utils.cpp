@@ -18,6 +18,9 @@ namespace DCurvenet {
         return 1;
     }
 
+    bool dcurvenet::isPositiveHalfedge(int he) const {
+        return E[HE[he].edge].he == he;
+    }
 
     // Compute the deformation gradient of a halfedge
     Eigen::Matrix3d dcurvenet::computeHEDefGrad(int he) {
@@ -27,6 +30,13 @@ namespace DCurvenet {
                             (heNewFrame.w / heRestFrame.w) * (heNewFrame.binormal * heRestFrame.binormal.transpose()) + 
                             (heNewFrame.h / heRestFrame.h) * (heNewFrame.normal * heRestFrame.normal.transpose());
         return F;
+    }
+
+    int dcurvenet::computeDefGradAll() {
+        for (int he = 0; he < HE.size(); he++) {
+            HE[he].defData.defGrad = computeHEDefGrad(he);
+        }
+        return 1;
     }
 
     // Accumulate rotation matrices, starting from an initial halfedge and tracing forward until we hit the goal vertex

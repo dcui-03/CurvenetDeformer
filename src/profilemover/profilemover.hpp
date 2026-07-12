@@ -61,6 +61,7 @@ class profilemover {
 
         // Map from the orginal mesh's vertices to the C and V vertices
         // Note that I'm opting to use a map here, since we need to split between C and V
+        // Instead of maps, store these as precomputed operators?
         std::map<int, std::vector<int>> mToC;
         std::map<int, int> mToV;
         

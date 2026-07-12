@@ -65,6 +65,7 @@ namespace ProfileMover {
         return;
     }
 
+    // Runtime solvers
     // Runtime deformation
     std::vector<Eigen::Vector3d> profilemover::deform(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents) {
         if (!M_init || !CN_init || !dCN_init || !CM_init) {
@@ -93,6 +94,7 @@ namespace ProfileMover {
     }
 
     // Assemble final positions into our standard data type
+    // TODO: Can we not precompute a sparse operator which does this automatically, and then simply transform result to a std::vector?
     std::vector<Eigen::Vector3d> profilemover::assembleFinalPositions(Eigen::MatrixXd x_v, Eigen::MatrixXd x_c) {
         std::vector<Eigen::Vector3d> newV(M.getNumActiveV());
         // Average to get the constraint positions

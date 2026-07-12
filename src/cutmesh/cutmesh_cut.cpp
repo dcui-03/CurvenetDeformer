@@ -25,16 +25,15 @@ namespace Mesh {
             Eigen::Vector3d pos = dCN_V[v].pos;
             Eigen::Vector3d proj;
             Eigen::Vector3d n;
-            int elIdx;
-            int elType = M->computeVProjection(pos, proj, elIdx);
-            if (elType == 0) {  // Vertex
-                n = M->V[elIdx].n;
-            } else if (elType == 1) {   // Edge
-                n = M->E[elIdx].n;
+            vertProjData projData = M->computeVProjection(pos, proj);
+            if (projData.elType == 0) {  // Vertex
+                n = M->V[projData.elIdx].n;
+            } else if (projData.elType == 1) {   // Edge
+                n = M->E[projData.elIdx].n;
             } else {    // Face
-                n = M->F[elIdx].n;
+                n = M->F[projData.elIdx].n;
             }
-            proj_V[v] = createVertex(proj, n, 1, -1, elType, elIdx, pos-proj);
+            proj_V[v] = createVertex(proj, n, 1, -1, projData, pos-proj);
         }
         
         // Now, add all vertices into the cutmesh (SEQUENTIAL)
@@ -455,7 +454,7 @@ namespace Mesh {
                 }
             }
         }
-        
+
         countNumActive();
         return 1;
     }

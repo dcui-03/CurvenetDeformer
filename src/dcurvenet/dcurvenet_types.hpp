@@ -10,10 +10,6 @@
 
 namespace DCurvenet {
 
-    struct colorData {
-        Eigen::Vector4d rgba = Eigen::Vector4d::Zero();
-    };
-
     struct Vert {
         Eigen::Vector3d pos;
         Eigen::Vector3d n = Eigen::Vector3d::Zero();    // Init to zero, since most vertices will not receive an initial normal
@@ -38,8 +34,6 @@ namespace DCurvenet {
         int edge = -1;
         bool active = true;     // For safety, say if the component is active (ignore for now)
 
-        // Scaled Local Frame
-        bool sign;  // true for positive, false for negative
         // Deformation data, including the scaled frames (old and new)
         heDeformData defData;
     };
@@ -60,6 +54,6 @@ namespace DCurvenet {
         bool active = true;     // For safety, say if the component is active (ignore for now)
 
         // Other info
-        int cn_idx = -1;    // Curvenet index if parent is a spline
+        int cn_idx = -1;    // Curvenet index of parent curve
     };
 }   // namespace DCurvenet

@@ -12,6 +12,7 @@
 namespace Curvenet {
     // Initialize from an existing list of controls, splines
     curvenet::curvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, const Mesh::mesh& M, int alpha): alpha(alpha) {
+        meanE = M.getMeanE();
         for (int c = 0; c < Controls.size(); c++) {
             int new_c = addControl(Controls[c]);
             inputCtoC[c] = new_c;
@@ -22,15 +23,18 @@ namespace Curvenet {
                 S[0] < 0 || S[0] >= Controls.size() || S[3] < 0 || S[3] >= Controls.size()) {
                 throw std::runtime_error("Failed to initialize curve network.");
             }
-            std::pair<int, int> he = addSpline(S[0], S[3], Tangents[S[1]], Tangents[S[2]]);
+            int c0 = inputCtoC.at(S[0]);
+            int c1 = inputCtoC.at(S[3]);
+            std::pair<int, int> he = addSpline(c0, c1, Tangents[S[1]], Tangents[S[2]]);
             inputTtoHE[S[1]] = he.first;
             inputTtoHE[S[2]] = he.second;
         }
         ctrlNormalsFromMesh(M);
         sortAdjHEAll();
         assignCtrlTypeAll();
-        traceCurves();
-        meanE = M.getMeanE();
+        if (!traceCurves()) {
+            throw std::runtime_error("Failed to trace curve network.");
+        }
         return;
     }
 
@@ -79,7 +83,7 @@ namespace Curvenet {
         HE[he0].tan = t0;
         HE[he1].tan = t1;
         HE[he0].rest_tan = t0;
-        HE[he0].rest_tan = t1;
+        HE[he1].rest_tan = t1;
         HE[he0].s = s;
         HE[he1].s = s;
         S[s].he = he0;
@@ -97,7 +101,7 @@ namespace Curvenet {
         if (!C[c].active) {
             return -1;
         }
-        C[c].pos = pos;
+        C[c].new_pos = pos;
         return c;
     }
     // Change control normal
@@ -192,9 +196,9 @@ namespace Curvenet {
         }
         return 1;
     }
-
     // Trace spline curves
     int curvenet::traceCurves() {
+        Crv.clear();
         std::vector<bool> splineFound(S.size(), false);
         // Search from intersection and anchor controls
         for (int c = 0; c < C.size(); c++) {

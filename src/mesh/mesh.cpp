@@ -47,6 +47,12 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
         if (faceVerts.size() < 3) { // Not a valid face
             return false;
         }
+        for (int vi : faceVerts) {
+            if (vi < 0 || vi >= V_List.size()) {
+                return false;
+            }
+        }
+
         numFaceCorners += faceVerts.size();
     }
     HE.reserve(2 * numFaceCorners);
@@ -138,6 +144,8 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
         HE[bhe].dest = u;
         HE[bhe].twin = he;
         HE[bhe].edge = HE[he].edge;
+        HE[bhe].face = -1;
+        HE[bhe].boundary = true;
 
         HE[he].twin = bhe;
 
@@ -208,13 +216,13 @@ Eigen::Vector3d mesh::getVPos(int v) const {
     Eigen::Vector3d pos = V[v].pos;
     return pos;
 }
-Eigen::Vector3d mesh::getNormal(int elType, int elIdx) const {
-    if (elType == 0) {
-        return getVNormal(elIdx);
-    } else if (elType == 1) {
-        return getENormal(elIdx);
-    } else if (elType == 2) {
-        return getFNormal(elIdx);
+Eigen::Vector3d mesh::getNormal(vertProjData projData) const {
+    if (projData.elType == 0) {
+        return getVNormal(projData.elIdx);
+    } else if (projData.elType == 1) {
+        return getENormal(projData.elIdx);
+    } else if (projData.elType == 2) {
+        return getFNormal(projData.elIdx);
     } else {
         return Eigen::Vector3d::Zero();
     }
@@ -223,22 +231,13 @@ Eigen::Vector3d mesh::getVNormal(int v) const {
     if (v < 0 || v >= V.size()) {
         return Eigen::Vector3d::Zero();
     }
-    Eigen::Vector3d n = V[v].n;
-    return n;
+    return V[v].n;
 }
 Eigen::Vector3d mesh::getENormal(int e) const {
     if (e < 0 || e >= E.size()) {
         return Eigen::Vector3d::Zero();
     }
-    std::vector<int> eFaces = edgeAdjFaces(e);
-    Eigen::Vector3d n = Eigen::Vector3d::Zero();
-    if (eFaces[0] != -1) {
-        n += F[eFaces[0]].n;
-    }
-    if (eFaces[1] != -1) {
-        n += F[eFaces[1]].n;
-    }
-    return n;
+    return E[e].n;
 }
 Eigen::Vector3d mesh::getFNormal(int f) const {
     if (f < 0 || f >= F.size()) {
@@ -282,16 +281,11 @@ Eigen::VectorXd mesh::computeFaceHeight(int f) const {
     Eigen::Vector3d faceN = F[f].n;
     // 2. Project face vertices onto the Newell plane and grab height
     std::vector<Eigen::Vector2d> proj_v(fSize);
-    // Build a basis
-    Eigen::Vector3d t1;
-    Eigen::Vector3d t2;
-    Utils::buildPlaneBasis(faceN, t1, t2);
     for (int v = 0; v < fSize; v++) {
         Eigen::Vector3d proj3d = Utils::projectPointOntoPlane(faceN, faceCenter, fVertsPos[v]);
         // vector from old point to plane point
         Eigen::Vector3d heightVec = fVertsPos[v] - proj3d;
         // Get 2D version
-        proj_v[v] = Utils::convertTo2D(proj3d, faceCenter, t1, t2);
         double height = heightVec.norm();   // How far we are from the plane
         if (height <= 1e-6) {   // If we are on/close to the surface, just snap to the plane
             faceH(v) = 0.0;
@@ -307,7 +301,7 @@ Eigen::VectorXd mesh::computeFaceHeight(int f) const {
 // Function which computes a single face's normal/area
 double mesh::computeFVectorArea(int f, Eigen::Vector3d& fN) {
     std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(f);
-    return DECUtils::vectorArea(fVertsPos, fN);
+    return DECUtils::vectorArea(fVertsPos, fN); // TODO: Be careful about degenerate normals!
 }
 
 // Internal function to precompute normals on all mesh structures
@@ -323,6 +317,31 @@ void mesh::computeFNormalsAreas() {
     return;
 }
 
+// Compute edge normals
+int mesh::computeENormal(int e, Eigen::Vector3d& eN, bool weight_fN) {
+    std::vector<int> eFaces = edgeAdjFaces(e);
+    Eigen::Vector3d n = Eigen::Vector3d::Zero();
+    if (eFaces[0] != -1) {
+        n += F[eFaces[0]].n;
+    }
+    if (eFaces[1] != -1) {
+        n += F[eFaces[1]].n;
+    }
+    n.normalize();  // TODO: needs safe normalization
+    return 1;
+}
+void mesh::computeENormals(bool weight_fN) {
+    for (int e = 0; e < E.size(); e++) {
+        if (!E[e].active) {
+            continue;
+        }
+        Eigen::Vector3d eN = Eigen::Vector3d::Zero();
+        double vArea = computeENormal(e, eN, weight_fN);
+        E[e].n = eN;
+    }
+    return;
+}
+
 // Function which computes a single vertex's normal/area
 double mesh::computeVNormalArea(int v, Eigen::Vector3d& vN, bool weight_fN) {
     // Iterate around the adjacent faces
@@ -332,6 +351,9 @@ double mesh::computeVNormalArea(int v, Eigen::Vector3d& vN, bool weight_fN) {
     // Iterate over face list and accumulate areas and normals
     for (int i = 0; i < fList.size(); i++) {
         int f = fList[i];
+        if (f == -1) {  // Ignore boundary faces
+            continue;
+        }
         std::vector<int> fVerts = faceAdjHalfEdges(f);
         double fArea = F[f].fArea/(fVerts.size());
         if (weight_fN) {
@@ -341,12 +363,12 @@ double mesh::computeVNormalArea(int v, Eigen::Vector3d& vN, bool weight_fN) {
         }
         vArea += fArea;
     }
-    vN.normalize();
+    vN.normalize(); // TODO: Needs safe normalization
     return vArea;
 }
 
 void mesh::computeVNormalsAreas(bool weight_fN) {
-    for (int v = 0; v < active_v; v++) {
+    for (int v = 0; v < V.size(); v++) {
         if (!V[v].active) {
             continue;
         }
@@ -377,29 +399,23 @@ void mesh::computeMeanE() {
 
 // Computes the diagonal length of the mesh's AABB
 void mesh::computeBBoxDiag() {
-    int start = 0;
-    Eigen::Vector3d minV;
-    Eigen::Vector3d maxV;
-    for (int v = 0; v < V.size() - 1; v++) {
-        start = v;
-        if (V[v].active) {
+    bool found = false;     // Safety
+    Eigen::Vector3d minV, maxV;
+
+    for (int v = 0; v < V.size(); v++) {
+        if (!V[v].active) {
+            continue;
+        }
+        if (!found) {
             minV = V[v].pos;
             maxV = V[v].pos;
-            break;
+            found = true;
+        } else {
+            minV = minV.cwiseMin(V[v].pos);
+            maxV = maxV.cwiseMax(V[v].pos);
         }
     }
-    // Note: 0 or 1 point will collapse the bbox. Return an error for debug
-    if ((active_v == 0) || (start >= V.size() - 1)) {
-        // std::cout << "No BBox computable. Too few active vertices." << std::endl;
-        return;
-    }
-    // Find most extreme points in mesh
-    for (int v = start + 1; v < V.size(); v++) {
-        minV = minV.cwiseMin(V[v].pos);
-        maxV = maxV.cwiseMax(V[v].pos);
-    }
-    // get norm of the most extreme points
-    bboxDiag = (maxV - minV).norm();
+    bboxDiag = found ? (maxV - minV).norm() : 0.0;
     return;
 }
 
@@ -413,6 +429,16 @@ Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int c
     v.corner_idx = cornerIdx;
     v.projData.elType = ref_Type;
     v.projData.elIdx = ref_Idx;
+    return v;
+}
+
+Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, vertProjData projData, Eigen::Vector3d proj) {
+    Vert v;
+    v.pos = pos;
+    v.n = n;
+    v.label = label;
+    v.corner_idx = cornerIdx;
+    v.projData = projData;
     return v;
 }
 

@@ -17,10 +17,10 @@ namespace Curvenet {
     Eigen::Vector3d curvenet::tSampleBezier(int s, double t) const {
         Eigen::Vector3d c0, c1, c2, c3;
         int he = S[s].he;
-        c0 = C[HE[he].origin].pos;
+        c0 = C[HE[he].origin].new_pos;
         c1 = HE[he].tan;
         c2 = HE[HE[he].twin].tan;
-        c3 = C[HE[HE[he].twin].origin].pos;
+        c3 = C[HE[HE[he].twin].origin].new_pos;
         return tSampleBezier(c0, c1, c2, c3, t);
     }
 
@@ -35,19 +35,22 @@ namespace Curvenet {
         double h = 1.0/(n_samples - 1);
         double t = 0.0;
 
-        samples[0] = C[HE[he].origin].pos;  // Start
+        samples[0] = C[HE[he].origin].new_pos;  // Start
         for (int i = 1; i < n_samples - 1; i++) {
             t += h;
             t = std::min(1.0, t);
             samples[i] = tSampleBezier(s, t);
         }
-        samples[n_samples-1] = C[HE[HE[he].twin].origin].pos;   // End
+        samples[n_samples-1] = C[HE[HE[he].twin].origin].new_pos;   // End
 
         return samples;
     }
 
     // Estimate the arclength
     double curvenet::arclenEst(const std::vector<Eigen::Vector3d>& samples) const {
+        if (samples.size() < 2) {
+            return 0.0;
+        }
         double length = 0.0;
         for (int i = 0; i < samples.size() - 1; i++) {
             length += (samples[i+1] - samples[i]).norm();
@@ -61,7 +64,8 @@ namespace Curvenet {
 
     // Compute number of samples to take on a spline given a user parameter alpha
     int curvenet::computeNumSamples(double arclen) {
-        return std::max(3, static_cast<int>(alpha * (arclen)/meanE));
+        if (meanE <= 1e-16) return 3;
+        return std::max(3, static_cast<int>(std::ceil(alpha * arclen / meanE)));
     }
 
     // Uniformly sample based on arclength estimator and returns the length of the returned curve

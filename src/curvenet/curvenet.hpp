@@ -89,8 +89,6 @@ class curvenet {
         // Returns vertices adjacent to a spline
         std::vector<int> splineAdjCtrls(int s) const;
 
-        std::vector<int> controlLocalSplineIdx(int c, int s);
-
         //  --------- OTHER -----------
         // Sort the halfedges of a control to be CCW
         // Should only be performed AFTER assigning normals to all verts

@@ -10,6 +10,7 @@
 namespace Curvenet {
     // Returns a list of the tangents to a specified control
     std::vector<Eigen::Vector3d> curvenet::ctrlAdjTans(int c) const {
+        assert(c >= 0 && c < static_cast<int>(C.size()));
         std::vector<Eigen::Vector3d> adjT;
         for (int he = 0; he < C[c].adjHE.size(); he++) {
             adjT.push_back(HE[C[c].adjHE[he]].tan);
@@ -19,6 +20,7 @@ namespace Curvenet {
 
     // Returns a list of the splines adjacent to a control 
     std::vector<int> curvenet::ctrlAdjSplines(int c) const {
+        assert(c >= 0 && c < static_cast<int>(C.size()));
         std::vector<int> adjS;
         std::vector<int> adjHE = C[c].adjHE;
         for (int he = 0; he < adjHE.size(); he++) {
@@ -31,6 +33,7 @@ namespace Curvenet {
 
     // Returns vertices adjacent to a spline
     std::vector<int> curvenet::splineAdjCtrls(int s) const {
+        assert(s >= 0 && s < static_cast<int>(S.size()));
         std::vector<int> adjC;
         int he0 = S[s].he;
         adjC.push_back(HE[he0].origin);   // First vertex
@@ -42,7 +45,9 @@ namespace Curvenet {
 
     // Because we sort the outgoing halfedges in CCW order,
     // we can get the local indices of adjHE s.t. the adjacent halfedge is part of the specified spline
-    std::vector<int> curvenet::controlLocalSplineIdx(int c, int s) {
+    std::vector<int> curvenet::controlLocalSplineIdx(int c, int s) const {
+        assert(c >= 0 && c < static_cast<int>(C.size()));
+        assert(s >= 0 && s < static_cast<int>(S.size()));
         std::vector<int> local_idxs;
         const std::vector<int> cAdjHE = C[c].adjHE;
         for (int he = 0; he < cAdjHE.size(); he++) {

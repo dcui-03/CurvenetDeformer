@@ -26,15 +26,17 @@ class mesh {
 
         // Project a vertex onto the mesh
         // mesh_utils.cpp
-        int computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap = true, bool fast = true) const;
+        vertProjData computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, bool snap = true, bool fast = true) const;
         
         // Getters
         Eigen::Vector3d getVPos(int v) const;
-        Eigen::Vector3d getNormal(int elType, int elIdx) const;
+        Eigen::Vector3d getNormal(vertProjData projData) const;
         Eigen::Vector3d getVNormal(int v) const;
         Eigen::Vector3d getENormal(int e) const;
         Eigen::Vector3d getFNormal(int f) const;
         int getNumActiveV() const;
+        int getNumActiveE() const;
+        int getNumActiveF() const;
 
         // Get mean edge length
         double getMeanE() const;
@@ -48,6 +50,9 @@ class mesh {
         // Internal function to precompute normals and areas on mesh structures
         double computeFVectorArea(int f, Eigen::Vector3d& fN);  // 1 face
         void computeFNormalsAreas();        // All faces
+        // Compute edge normals
+        int computeENormal(int e, Eigen::Vector3d& eN, bool weight_fN = true);   // 1 edge
+        void computeENormals(bool weight_fN = true);       // All edges
         // weight_fN weights by adjacent face areas
         double computeVNormalArea(int v, Eigen::Vector3d& vN, bool weight_fN = true);   // 1 vertex
         void computeVNormalsAreas(bool weight_fN = true);       // All vertices
@@ -60,6 +65,12 @@ class mesh {
                           int cornerIdx = -1, 
                           int ref_Type = -1, 
                           int ref_Idx = -1, 
+                          Eigen::Vector3d proj = Eigen::Vector3d::Zero());
+        Vert createVertex(Eigen::Vector3d pos,
+                          Eigen::Vector3d n, 
+                          int label = 0, 
+                          int cornerIdx = -1, 
+                          vertProjData projData = vertProjData({-1, -1}),
                           Eigen::Vector3d proj = Eigen::Vector3d::Zero());
 
 
@@ -98,7 +109,7 @@ class mesh {
         std::vector<int> adjFaces(int elType, int elIdx) const;
 
         // Returns the outgoing boundary HE if a vertex is a boundary vertex, else returns -1
-        int vertIsBoundary(int v, bool fast = true) const;
+        int vertIsBoundary(int v) const;
 
         // ------------- ATTRIBUTES -----------------
         // List of primal mesh elements
@@ -149,7 +160,7 @@ class mesh {
                         Eigen::Vector3d start, 
                         Eigen::Vector3d direc, 
                         Eigen::Vector3d& hit, 
-                        int& hit_ElIdx,
+                        vertProjData& hitData,
                         double eps = 1e-4);
         // Compute the next walk element given that we intersected with an edge
         int nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& prev_direc, 

@@ -95,6 +95,12 @@ class cutmesh : public mesh {
                          int ref_Type = 0, 
                          int ref_Idx = -1, 
                          Eigen::Vector3d proj = Eigen::Vector3d::Zero());
+        int insertVertex(Eigen::Vector3d pos, 
+                        Eigen::Vector3d n, 
+                        int label = 0, 
+                        int cornerIdx = -1, 
+                        vertProjData projData = vertProjData({-1, -1}), 
+                        Eigen::Vector3d proj = Eigen::Vector3d::Zero());
         int insertVertex(Vert splitV);
         // Topologically split an edge with an existing vertex
         int splitEdge(int e, int new_v);

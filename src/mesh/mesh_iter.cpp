@@ -10,6 +10,9 @@ namespace Mesh {
 
 // Returns a CCW list of a vertex's OUTGOING halfedge indices
 std::vector<int> mesh::vertAdjHEs(int v) const {
+    if (v < 0 || v >= V.size() || V[v].he < 0) {
+        return {};
+    }
     std::vector<int> outgoingHEs;
     const int he0 = V[v].he;
     int he_curr = he0;
@@ -22,6 +25,9 @@ std::vector<int> mesh::vertAdjHEs(int v) const {
 
 // Returns a CCW list of ALL of a vertex's incoming and outgoin halfedge indices
 std::vector<int> mesh::vertAllHEs(int v) const {
+    if (v < 0 || v >= V.size() || V[v].he < 0) {
+        return {};
+    }
     std::vector<int> adjHEs;
     const int he0 = V[v].he;
     int he_curr = he0;
@@ -35,6 +41,9 @@ std::vector<int> mesh::vertAllHEs(int v) const {
 
 // Returns a CCW list of a vertex's adjacent vertices
 std::vector<int> mesh::vertAdjVerts(int v) const {
+    if (v < 0 || v >= V.size() || V[v].he < 0) {
+        return {};
+    }
     std::vector<int> adjHE = vertAdjHEs(v);
     std::vector<int> adjVerts(adjHE.size());
     for (int he = 0; he < adjHE.size(); he++) {
@@ -46,6 +55,9 @@ std::vector<int> mesh::vertAdjVerts(int v) const {
 // Returns a CCW list of a vertex's adjacent faces
 // INCLUDES BOUNDARY if a boundary is adjacent
 std::vector<int> mesh::vertAdjFaces(int v) const {
+    if (v < 0 || v >= V.size() || V[v].he < 0) {
+        return {};
+    }
     std::vector<int> adjHE = vertAdjHEs(v);
     std::vector<int> adjFaces(adjHE.size());
     for (int he = 0; he < adjHE.size(); he++) {
@@ -123,7 +135,7 @@ std::vector<int> mesh::halfedgeLoop(int he) const {
 
 // Returns a CCW list of a face's vertices
 // NOTE: In case of scrambled vertex ordering (ex. interior loops), it's safest to do this by halfedge
-// origin flag: order this based on the hlafedge origins vs. as halfedge dests
+// origin flag: order this based on the halfedge origins vs. as halfedge dests
 std::vector<Eigen::Vector3d> mesh::faceAdjVerts(int f, bool origin) const {
     std::vector<int> fVerts = faceAdjVertIdxs(f, origin);
     std::vector<Eigen::Vector3d> fVertsPos(fVerts.size());
@@ -148,7 +160,7 @@ std::vector<int> mesh::faceAdjVertIdxs(int f, bool origin) const {
     for (int he = 0; he < fHalfEdges.size(); he++) {
         int he_idx = he;
         if (origin) {
-            he_idx = (he+1)%fHalfEdges.size();
+            he_idx = (he + fHalfEdges.size() - 1)%fHalfEdges.size();
         }
         fVerts[he] = HE[fHalfEdges[he_idx]].dest;
     }
@@ -157,13 +169,16 @@ std::vector<int> mesh::faceAdjVertIdxs(int f, bool origin) const {
 
 // Returns a CCW list of a face's halfedges
 std::vector<int> mesh::faceAdjHalfEdges(int f) const {
+    int max_search = active_e / 2;
     std::vector<int> fHalfEdges;
     const int he0 = F[f].he;
     int he_curr = he0;
+    int iter = 0;
     do {
         fHalfEdges.push_back(he_curr);
         he_curr = HE[he_curr].next;
-    } while(he_curr != he0);
+        iter++;
+    } while(he_curr != he0 && iter < max_search);
     return fHalfEdges;
 }
 
@@ -180,26 +195,19 @@ std::vector<int> mesh::adjFaces(int elType, int elIdx) const {
 }
 
 // Returns the outgoing boundary HE if a vertex is a boundary vertex, else returns -1
-int mesh::vertIsBoundary(int v, bool fast) const {
-    // Fast check: grab the outgoing halfedge
-    if (fast) {
-        if (HE[V[v].he].face == -1) {
-            return true;
-        } else {
-            return false;
-        }
+int mesh::vertIsBoundary(int v) const {
+    if (v < 0 || v >= V.size() || V[v].he < 0) {
+        return {};
     }
     // Hard check: Check all outgoing halfedges
     // Safety in case the soft boundary halfedge rule is accidentally violated
-    const int he0 = V[v].he;
-    int he_curr = he0;
-    do {
-        if (HE[he_curr].face == -1) {
-            return true;
+    std::vector<int> adjHE = vertAdjHEs(v);
+    for (int he = 0; he < adjHE.size(); he++) {
+        if (HE[he].boundary) {
+            return 1;
         }
-        he_curr = HE[HE[he0].prev].twin;
-    } while (he_curr != he0);
-    return false;
+    }
+    return -1;
 }
 
 }   // namespace Mesh

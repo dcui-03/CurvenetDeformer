@@ -24,6 +24,13 @@ int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int
     return v;
 }
 
+int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, vertProjData projData, Eigen::Vector3d proj) {
+    Vert newV = createVertex(pos, n, label, cornerIdx, projData, proj);
+    int v = V.size();
+    V.push_back(newV);
+    return v;
+}
+
 int cutmesh::insertVertex(Vert splitV) {
     int v = V.size();
     V.push_back(splitV);

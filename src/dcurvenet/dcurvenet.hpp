@@ -82,8 +82,10 @@ class dcurvenet {
         // Compute scaled frames on all curves
         int computeScaledFrames();
         // Initialize new frames as copies of old
-        int copyFrameToNew(int he);
-        int copyFramesToNew();
+        int copyFrameToRest(int he);
+        int copyFramesToRest();
+        // Validate that frames are not zero or NaN
+        int validateFrames();
         
         // --------- SCALED FRAME HELPERS -----------
         
@@ -95,6 +97,9 @@ class dcurvenet {
         // --------- OTHER -----------
         // Compute number of samples to take for a given
         int computeNumSamples(double arclen);
+
+        // Check if a halfedge is the positive or negative side
+        bool isPositiveHalfedge(int he) const;
 
         // Attributes as lists
         std::vector<Vert> V;
