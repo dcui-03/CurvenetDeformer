@@ -33,9 +33,23 @@ class cutmesh : public mesh {
         // Add a discrete Curvenetwork Pointer
         bool applyDiscreteCurvenet(DCurvenet::dcurvenet* dCurvenet);
         // Assign a discrete curvenet index to a halfedge
-        bool assignDCNtoHE(int he, const int dCN_idx, bool positive);
+        bool assignDCNtoHE(int he, const int dCN_idx);
         // Add a reference mesh
         bool applyMeshRef(mesh* MRef);
+
+        // Helpers for profilemover class
+        void computeHEMap(std::vector<int>& heToCMhe, std::map<int, int>& CMheTohe);
+        Eigen::SparseMatrix<double> computeVMatrix(std::vector<int>& vToCM, std::map<int, int>& mToV, const std::vector<int>& heToCMhe);
+        Eigen::SparseMatrix<double> computeCMatrix(std::vector<int>& cToCM, std::map<int, std::vector<int>>& mToC, const std::vector<int>& heToCMhe);
+        Eigen::SparseMatrix<double> computeHELaplacian(std::map<int, int>& CMheTohe);
+        // Compute the deformation gradient on the initial cutmesh dCN verts
+        Eigen::MatrixXd computeDefGrads(const std::vector<int>& cToCM);
+        // Apply solved deformation gradients to the cutmesh
+        void applyDefGrads(Eigen::MatrixXd defGrads, const std::vector<int>& vToCM);
+        // Estimate projected curvenet positions
+        Eigen::MatrixXd estimateCNPositions(const std::vector<int>& cToCM);
+        // Estimate the deformed faces
+        Eigen::MatrixXd estimateFaceDeformations(const std::map<int, int>& CMheTohe);
 
         // Getters
         Eigen::Vector3d getVPos(int v) const;
@@ -48,6 +62,8 @@ class cutmesh : public mesh {
         double getMeanE() const;
         // Get bbox diagonal length
         double getBBoxDiag() const;
+
+        void countNumActive();
 
         // friend class ProfileMover::profilemover;
     protected:

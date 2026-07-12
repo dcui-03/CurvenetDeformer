@@ -29,7 +29,7 @@ namespace DCurvenet {
         Eigen::Matrix3d defGrad;
     };
 
-    struct faceDeformData {
+    struct curveDeformData {
         // Corner normals
         std::pair<Eigen::Vector3d, Eigen::Vector3d> N_pos;  // first is start, second is end
         std::pair<Eigen::Vector3d, Eigen::Vector3d> N_neg;  // first is start, second is end

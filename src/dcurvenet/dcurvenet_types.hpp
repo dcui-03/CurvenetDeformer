@@ -59,10 +59,6 @@ namespace DCurvenet {
         int end = -1;      // The other endpoint vertex
         bool active = true;     // For safety, say if the component is active (ignore for now)
 
-        // Deformation data for the curve
-        // TODO: Find a way to make this temporary so that we don't need to store this every time
-        faceDeformData defData;
-
         // Other info
         int cn_idx = -1;    // Curvenet index if parent is a spline
     };

@@ -258,6 +258,16 @@ double mesh::getBBoxDiag() const {
     return bboxDiag;
 }
 
+int mesh::getNumActiveV() const {
+    return active_v;
+}
+int mesh::getNumActiveE() const {
+    return active_e;
+}
+int mesh::getNumActiveF() const {
+    return active_f;
+}
+
 Eigen::VectorXd mesh::computeFaceHeight(int f) const {
     const std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(f);
     int fSize = fVertsPos.size();
@@ -401,8 +411,8 @@ Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int c
     v.n = n;
     v.label = label;
     v.corner_idx = cornerIdx;
-    v.mesh_elType = ref_Type;
-    v.mesh_elIdx = ref_Idx;
+    v.projData.elType = ref_Type;
+    v.projData.elIdx = ref_Idx;
     return v;
 }
 

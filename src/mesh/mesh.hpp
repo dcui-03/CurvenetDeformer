@@ -34,6 +34,7 @@ class mesh {
         Eigen::Vector3d getVNormal(int v) const;
         Eigen::Vector3d getENormal(int e) const;
         Eigen::Vector3d getFNormal(int f) const;
+        int getNumActiveV() const;
 
         // Get mean edge length
         double getMeanE() const;
@@ -86,10 +87,10 @@ class mesh {
         std::vector<int> halfedgeLoop(int he) const;
 
         // Returns a CCW list of a face's vertices
-        std::vector<Eigen::Vector3d> faceAdjVerts(int f) const;
-        std::vector<Eigen::Vector3d> faceAdjVerts(std::vector<int> fVerts) const;
+        std::vector<Eigen::Vector3d> faceAdjVerts(int f, bool origin = false) const;
+        std::vector<Eigen::Vector3d> adjVerts(std::vector<int> vertIdxs) const;
         // Returns a CCW list of a face's vertex indices
-        std::vector<int> faceAdjVertIdxs(int f) const;
+        std::vector<int> faceAdjVertIdxs(int f, bool origin = false) const;
         // Returns a CCW list of a face's half edges
         std::vector<int> faceAdjHalfEdges(int f) const;
 

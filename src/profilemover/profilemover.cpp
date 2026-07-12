@@ -51,10 +51,11 @@ namespace ProfileMover {
         CM_init = true;
 
         // Compute operators
-        V = CM.computeVMatrix(vToCM, mToV);
-        C = CM.computeCMatrix(cToCM, mToC);
+        CM.computeHEMap(heToCMhe, CMheTohe);
+        V = CM.computeVMatrix(vToCM, mToV, heToCMhe);
+        C = CM.computeCMatrix(cToCM, mToC, heToCMhe);
         // Face-based Laplacian with values pushed onto halfedges
-        Eigen::SparseMatrix<double> L = CM.computeHELaplacian();
+        Eigen::SparseMatrix<double> L = CM.computeHELaplacian(CMheTohe);
         // mVtL
         mVtL = -1 * V.transpose() * L;
         // Factor V^TLV
@@ -79,12 +80,12 @@ namespace ProfileMover {
         // Solve system to get interpolated 
         Eigen::MatrixXd f_v = VtLV.solve(mVtL * (C * f_c));
         // Fold back together and redistribute to their vertices
-        CM.applyDefGrads(f_v, vToCM);                   // TODO: This can be done in parallel over 
+        CM.applyDefGrads(f_v, vToCM);                   // TODO: This can be done in parallel
         // SECOND SOLVE: Positions
         // Estimate new projected positions using the distributed def grads
         Eigen::MatrixXd x_c = CM.estimateCNPositions(cToCM);
         // Compute per-face deformation matrix + assemble
-        Eigen::MatrixXd y_h = CM.estimateFaceDeformations(vToCM);
+        Eigen::MatrixXd y_h = CM.estimateFaceDeformations(CMheTohe);
         // Compute new positions
         Eigen::MatrixXd x_v = VtLV.solve(mVtL * (C * x_c - y_h));
 
@@ -93,7 +94,7 @@ namespace ProfileMover {
 
     // Assemble final positions into our standard data type
     std::vector<Eigen::Vector3d> profilemover::assembleFinalPositions(Eigen::MatrixXd x_v, Eigen::MatrixXd x_c) {
-        std::vector<Eigen::Vector3d> newV(M.active_v);
+        std::vector<Eigen::Vector3d> newV(M.getNumActiveV());
         // Average to get the constraint positions
         for (int m = 0; m < mToC.size(); m++) {
             Eigen::Vector3d new_v = Eigen::Vector3d::Zero();

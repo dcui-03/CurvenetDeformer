@@ -250,10 +250,12 @@ namespace Mesh {
                 counter++;
             } while (curr_he != he || counter >= HE.size());
             F.emplace_back();
+            active_f++;
             F[f].he = he;
         }
         // Compute areas and normals for all created faces
         computeFNormalsAreas();
+        countNumActive();
         return 1;
     }
 
@@ -280,6 +282,7 @@ namespace Mesh {
                     E[HE[adjHE[he]].edge].active = false;
                 }
                 F[f].active = false;
+                active_f--;
             }
         }
 
@@ -292,6 +295,7 @@ namespace Mesh {
                 V[HE[he].dest].active = false;
                 E[HE[he].edge].active = false;
                 HE[he].active = false;
+                HE[HE[he].twin].active = false;
             }
         }
 
@@ -301,6 +305,8 @@ namespace Mesh {
                 V[v].active = false;
             }
         }
+
+        countNumActive();
 
         return 1;
     }
@@ -449,7 +455,8 @@ namespace Mesh {
                 }
             }
         }
-
+        
+        countNumActive();
         return 1;
     }
 

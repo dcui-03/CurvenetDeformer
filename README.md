@@ -23,8 +23,6 @@ cd ..
 
 Some minor fixes, including minor UI tweaks. Also began drafting profilemover class, and did some struct compacting in the mesh and dcurvenet namespaces. Still need to thoroughly re-check all this code once I feel satisfied about a stopping point.
 
-A minor gripe: Currently, the way I'm computing corner normals to propagate normals along discrete splines forces me to store extra data for each curve, which is not terrible, but this data becomes obsolete once all the halfedges have their frames. Maybe try to reorganize functions such that this is just a temporary variable? If very difficult/requires major changes, then maybe prefer not to make this change.
-
 Lastly, another thought on parallelization: We can potentially parallelize the projection function itself by parallelizing projection over faces. NOTE that this is mostly only good when we need to do single point projection queries, as we always want to run the batch of points to project in parallel and we do NOT want nested parallelism for safety reasons. We can potentially do this by enforcing nested parallelism depth of 1, thus making each projection single-threaded when doing a batch, and multi-threaded otherwise.
 
 **NOTE ON EIGEN**

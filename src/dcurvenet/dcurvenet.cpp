@@ -38,9 +38,10 @@ namespace DCurvenet {
         }
 
         // 4. Compute all corner normals and widths
-        allCornerNormalsAndWidths();
+        std::vector<curveDeformData> curveData;
+        allCornerNormalsAndWidths(curveData);
         // 5. Transport normals and widths along all splines
-        transportNormalsAndWidths();
+        transportNormalsAndWidths(curveData);
         // 6. Compute scaled frames on all splines
         computeScaledFrames();
 
@@ -84,10 +85,11 @@ namespace DCurvenet {
                 }
             }
         }
+        std::vector<curveDeformData> curveData;
         // Compute corner normals and widths
-        allCornerNormalsAndWidths();
+        allCornerNormalsAndWidths(curveData);
         // Transport all normals and widths
-        transportNormalsAndWidths();
+        transportNormalsAndWidths(curveData);
         // Compute scaled frames on all splines
         computeScaledFrames();
         return;
@@ -244,7 +246,7 @@ namespace DCurvenet {
 
 
     // For intersections, computes their corner normals. For non-controls, this method does nothing (return -1)
-    int dcurvenet::vertCornerNormalsWidths(int v) {
+    int dcurvenet::vertCornerNormalsWidths(int v, std::vector<curveDeformData>& curveData) {
         if (!V[v].active) {
             return -1;
         }
@@ -277,15 +279,15 @@ namespace DCurvenet {
                 int next_he = adjHE[(he_idx+1)%adjHE.size()];
                 double w = HE[he].defData.newFrame.l + l * (HE[next_he].defData.newFrame.l - HE[he].defData.newFrame.l);
                 if (HE[he].sign) {
-                    C[c].defData.N_pos.first = n;
-                    C[c].defData.W_pos.first = w;
-                    C[c].defData.N_neg.first = n;
-                    C[c].defData.W_neg.first = w;
+                    curveData[c].N_pos.first = n;
+                    curveData[c].W_pos.first = w;
+                    curveData[c].N_neg.first = n;
+                    curveData[c].W_neg.first = w;
                 } else {
-                    C[c].defData.N_pos.second = n;
-                    C[c].defData.W_pos.second = w;
-                    C[c].defData.N_neg.second = n;
-                    C[c].defData.W_neg.second = w;
+                    curveData[c].N_pos.second = n;
+                    curveData[c].W_pos.second = w;
+                    curveData[c].N_neg.second = n;
+                    curveData[c].W_neg.second = w;
                 }
             }
             return 1;
@@ -323,14 +325,14 @@ namespace DCurvenet {
             // Assign corner normals to curves
             // First figure out if this is the start halfedge of the curve
             if (HE[he0].sign) {
-                C[c0].defData.N_pos.first = cornerNormal.normalized();
+                curveData[c0].N_pos.first = cornerNormal.normalized();
             } else {
-                C[c0].defData.N_neg.second = cornerNormal.normalized();
+                curveData[c0].N_neg.second = cornerNormal.normalized();
             }
             if (HE[he1].sign) {
-                C[c1].defData.N_neg.first = cornerNormal.normalized();
+                curveData[c1].N_neg.first = cornerNormal.normalized();
             } else {
-                C[c1].defData.N_pos.second = cornerNormal.normalized();
+                curveData[c1].N_pos.second = cornerNormal.normalized();
             }
             adjNormals[he] = cornerNormal;
         }
@@ -367,14 +369,14 @@ namespace DCurvenet {
 
             // Assign corner normals to curves
             if (HE[he0].sign) {
-                C[c0].defData.N_pos.first = cornerNormal.normalized();
+                curveData[c0].N_pos.first = cornerNormal.normalized();
             } else {
-                C[c0].defData.N_neg.second = cornerNormal.normalized();
+                curveData[c0].N_neg.second = cornerNormal.normalized();
             }
             if (HE[he1].sign) {
-                C[c1].defData.N_neg.first = cornerNormal.normalized();
+                curveData[c1].N_neg.first = cornerNormal.normalized();
             } else {
-                C[c1].defData.N_pos.second = cornerNormal.normalized();
+                curveData[c1].N_pos.second = cornerNormal.normalized();
             }
             adjNormals[he] = cornerNormal;
         }
@@ -397,26 +399,28 @@ namespace DCurvenet {
             // Assign corner normals to curves
             // First figure out if this is the start halfedge of the curve
             if (HE[he0].sign) {
-                C[c0].defData.W_pos.first = cornerWidth0;
-                C[c0].defData.W_neg.first = cornerWidth1;
+                curveData[c0].W_pos.first = cornerWidth0;
+                curveData[c0].W_neg.first = cornerWidth1;
             } else {
-                C[c0].defData.W_neg.second = cornerWidth0;
-                C[c0].defData.W_pos.second = cornerWidth1;
+                curveData[c0].W_neg.second = cornerWidth0;
+                curveData[c0].W_pos.second = cornerWidth1;
             }
         }
         return 1;
     }
 
     // Corner normals on only intersections
-    int dcurvenet::allCornerNormalsAndWidths() {
+    int dcurvenet::allCornerNormalsAndWidths(std::vector<curveDeformData>& curveData) {
+        curveData.clear();
+        curveData.resize(C.size());
         for (int v = 0; v < V.size(); v++) {
-            vertCornerNormalsWidths(v);
+            vertCornerNormalsWidths(v, curveData);
         }
         return 1;
     }
 
     // Transport corner normals and widths from the two ends of a curve
-    int dcurvenet::transportNWOnCurve(int c) {
+    int dcurvenet::transportNWOnCurve(int c, const curveDeformData& cData) {
         if (!C[c].active) {
             return -1;
         }
@@ -433,10 +437,10 @@ namespace DCurvenet {
             // POSITIVE SIDE
             std::vector<Eigen::Matrix3d> rots;
             std::vector<double> lens;
-            Eigen::Vector3d start_n = C[c].defData.N_pos.first;
-            Eigen::Vector3d end_n = C[c].defData.N_pos.second;
-            double start_w = C[c].defData.W_pos.first;
-            double end_w = C[c].defData.W_pos.second;
+            Eigen::Vector3d start_n = cData.N_pos.first;
+            Eigen::Vector3d end_n = cData.N_pos.second;
+            double start_w = cData.W_pos.first;
+            double end_w = cData.W_pos.second;
             // 1. For the pos side, first trace until the end vertex, accumulating rotations and alpha values
             double total_len = accumulateRotations(C[c].he_start, end, rots, lens);
             // 2. Compute the torsion angle theta
@@ -453,10 +457,10 @@ namespace DCurvenet {
 
             // NEGATIVE SIDE
             // The same thing but backwards (so we can trace using the same function of next halfedges)
-            start_n = C[c].defData.N_neg.second;
-            end_n = C[c].defData.N_neg.first;
-            start_w = C[c].defData.W_neg.second;
-            end_w = C[c].defData.W_neg.first;
+            start_n = cData.N_neg.second;
+            end_n = cData.N_neg.first;
+            start_w = cData.W_neg.second;
+            end_w = cData.W_neg.first;
             total_len = accumulateRotations(C[c].he_end, start, rots, lens);
             torsion = computeTorsion(start_n, end_n, rots[rots.size()-1], -1*HE[C[c].he_start].defData.newFrame.tangent);
             he_curr = he_end;
@@ -474,8 +478,8 @@ namespace DCurvenet {
             // POSITIVE SIDE
             std::vector<Eigen::Matrix3d> rots;
             std::vector<double> lens;
-            Eigen::Vector3d start_n = C[c].defData.N_pos.first;
-            double start_w = C[c].defData.W_pos.first;
+            Eigen::Vector3d start_n = cData.N_pos.first;
+            double start_w = cData.W_pos.first;
             // 1. For the pos side, first trace until the end vertex, accumulating rotations and alpha values
             double total_len = accumulateRotations(C[c].he_start, end, rots, lens);
             // 3. Propagate rotations and widths to halfedges
@@ -487,8 +491,8 @@ namespace DCurvenet {
             }
 
             // NEGATIVE SIDE
-            start_n = C[c].defData.N_neg.first;
-            start_w = C[c].defData.W_neg.first;
+            start_n = cData.N_neg.first;
+            start_w = cData.W_neg.first;
             he_curr = HE[he_start].twin;
             // Do not re-initialize rotations, since we only trace from interesection to anchor
             for (int he = 0; he < rots.size(); he++) {
@@ -504,8 +508,8 @@ namespace DCurvenet {
             // NEGATIVE SIDE
             std::vector<Eigen::Matrix3d> rots;
             std::vector<double> lens;
-            Eigen::Vector3d start_n = C[c].defData.N_neg.second;
-            double start_w = C[c].defData.W_neg.second;
+            Eigen::Vector3d start_n = cData.N_neg.second;
+            double start_w = cData.W_neg.second;
             double total_len = accumulateRotations(C[c].he_end, start, rots, lens);
             int he_curr = he_end;
             for (int he = 0; he < rots.size(); he++) {
@@ -514,8 +518,8 @@ namespace DCurvenet {
                 he_curr = HE[he_curr].next;
             }
 
-            start_n = C[c].defData.N_pos.second;
-            start_w = C[c].defData.W_pos.second;
+            start_n = cData.N_pos.second;
+            start_w = cData.W_pos.second;
             he_curr = HE[he_end].twin;
             // Do not re-initialize rotations, since we only trace from interesection to anchor
             for (int he = 0; he < rots.size(); he++) {
@@ -528,9 +532,9 @@ namespace DCurvenet {
         return -1;
     }
     // Transport normals for all curves
-    int dcurvenet::transportNormalsAndWidths() {
+    int dcurvenet::transportNormalsAndWidths(const std::vector<curveDeformData>& curveData) {
         for (int c = 0; c < C.size(); c++) {
-            transportNWOnCurve(c);
+            transportNWOnCurve(c, curveData[c]);
         }
         return 1;
     }

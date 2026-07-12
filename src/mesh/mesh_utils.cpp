@@ -95,7 +95,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     // Definitive closest face's data
     std::vector<int> fVerts = faceAdjVertIdxs(elIdx);
     int fSize = fVerts.size();
-    std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(fVerts);
+    std::vector<Eigen::Vector3d> fVertsPos = adjVerts(fVerts);
     Eigen::Vector3d fN = F[elIdx].n;
 
     // Snap to nearby vertex or edge if we are too close
@@ -354,7 +354,7 @@ int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eig
     Eigen::Vector3d projDirec;
     Utils::projectVectorOntoTangentPlane(F[f].n, direc, projDirec);
     std::vector<int> fVertIdxs = faceAdjVertIdxs(f);
-    std::vector<Eigen::Vector3d> fVerts = faceAdjVerts(fVertIdxs);
+    std::vector<Eigen::Vector3d> fVerts = adjVerts(fVertIdxs);
 
     Eigen::Vector3d t1, t2;
     Utils::buildPlaneBasis(F[f].n, t1, t2);

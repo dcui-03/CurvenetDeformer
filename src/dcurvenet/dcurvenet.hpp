@@ -69,16 +69,16 @@ class dcurvenet {
 
         // --------- SCALED FRAME COMPUTATION -----------
         // For controls, computes their corner normals and widths. For non-intersections, this method does nothing (return -1)
-        int vertCornerNormalsWidths(int v);
+        int vertCornerNormalsWidths(int v, std::vector<curveDeformData>& curveData);
         // Corner normals on all vertices
-        int allCornerNormalsAndWidths();
+        int allCornerNormalsAndWidths(std::vector<curveDeformData>& curveData);
         // Transport corner normals and widths from the two end corners of a curve
-        int transportNWOnCurve(int c);
+        int transportNWOnCurve(int c, const curveDeformData& cData);
         // Transport normals and widths for all curves
-        int transportNormalsAndWidths();
+        int transportNormalsAndWidths(const std::vector<curveDeformData>& curveData);
 
         // Compute local frame on a curve
-        int computeScaledFrameOnCurve(int c);   // Notice that we need to do this
+        int computeScaledFrameOnCurve(int c);
         // Compute scaled frames on all curves
         int computeScaledFrames();
         // Initialize new frames as copies of old

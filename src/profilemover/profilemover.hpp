@@ -55,10 +55,14 @@ class profilemover {
         std::vector<int> vToCM;
         // Map from matrices to cutmesh regular vertices and vice versa
         std::vector<int> cToCM;
+        // Map from halfedge indices in V and C to the cutmesh
+        std::vector<int> heToCMhe;
+        std::map<int, int> CMheTohe;
 
-        // Map C to the associated mesh vertices if they land on vertices
-        std::vector<std::vector<int>> mToC;
-        std::vector<int> mToV;
+        // Map from the orginal mesh's vertices to the C and V vertices
+        // Note that I'm opting to use a map here, since we need to split between C and V
+        std::map<int, std::vector<int>> mToC;
+        std::map<int, int> mToV;
         
         // Store operators
         // TODO: Need functions to compute V and C

@@ -123,29 +123,34 @@ std::vector<int> mesh::halfedgeLoop(int he) const {
 
 // Returns a CCW list of a face's vertices
 // NOTE: In case of scrambled vertex ordering (ex. interior loops), it's safest to do this by halfedge
-std::vector<Eigen::Vector3d> mesh::faceAdjVerts(int f) const {
-    std::vector<int> fVerts = faceAdjVertIdxs(f);
+// origin flag: order this based on the hlafedge origins vs. as halfedge dests
+std::vector<Eigen::Vector3d> mesh::faceAdjVerts(int f, bool origin) const {
+    std::vector<int> fVerts = faceAdjVertIdxs(f, origin);
     std::vector<Eigen::Vector3d> fVertsPos(fVerts.size());
     for (int v = 0; v < fVerts.size(); v++) {
         fVertsPos[v] = V[fVerts[v]].pos;
     }
     return fVertsPos;
 }
-// Overload if given an fVerts
-std::vector<Eigen::Vector3d> mesh::faceAdjVerts(std::vector<int> fVerts) const {
-    std::vector<Eigen::Vector3d> fVertsPos(fVerts.size());
-    for (int v = 0; v < fVerts.size(); v++) {
-        fVertsPos[v] = V[fVerts[v]].pos;
+// If given adjacent indices
+std::vector<Eigen::Vector3d> mesh::adjVerts(std::vector<int> vertIdxs) const {
+    std::vector<Eigen::Vector3d> vertsPos(vertIdxs.size());
+    for (int v = 0; v < vertIdxs.size(); v++) {
+        vertsPos[v] = V[vertIdxs[v]].pos;
     }
-    return fVertsPos;
+    return vertsPos;
 }
 
 // Returns a CCW list of face vertex indices
-std::vector<int> mesh::faceAdjVertIdxs(int f) const {
+std::vector<int> mesh::faceAdjVertIdxs(int f, bool origin) const {
     std::vector<int> fHalfEdges = faceAdjHalfEdges(f);
     std::vector<int> fVerts(fHalfEdges.size());
     for (int he = 0; he < fHalfEdges.size(); he++) {
-        fVerts[he] = HE[fHalfEdges[he]].dest;
+        int he_idx = he;
+        if (origin) {
+            he_idx = (he+1)%fHalfEdges.size();
+        }
+        fVerts[he] = HE[fHalfEdges[he_idx]].dest;
     }
     return fVerts;
 }
