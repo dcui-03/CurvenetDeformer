@@ -6,6 +6,8 @@
 #include <Eigen/Core>
 #include <vector>
 #include <map>
+#include <glm/glm.hpp>
+#include <glm/vec3.hpp>
 
 namespace Mesh {
     class cutmesh;
@@ -25,7 +27,7 @@ class dcurvenet {
         //       Curves are similar.
         // Takes the original curvenet and discretizes it
         // Alpha is the user-inputted sampling parameter
-        dcurvenet(Curvenet::curvenet* CN, double meanE);
+        dcurvenet(Curvenet::curvenet* CN);
         // Initialize with empty constructor
         dcurvenet();
 
@@ -37,6 +39,16 @@ class dcurvenet {
         const std::vector<HalfEdge>& halfedges() const { return HE; }
         const std::vector<Curve>& curves() const { return C; }
 
+        // --------- POLYSCOPE VIZ -----------
+        int polyscopeFormat(Eigen::MatrixXd& Verts, 
+                            std::vector<std::array<int, 2>>& Edges, 
+                            std::vector<glm::vec3>& posEdgeTangents,
+                            std::vector<glm::vec3>& posEdgeBinormals,
+                            std::vector<glm::vec3>& posEdgeNormals,
+                            std::vector<glm::vec3>& negEdgeTangents,
+                            std::vector<glm::vec3>& negEdgeBinormals,
+                            std::vector<glm::vec3>& negEdgeNormals) const;
+
 
         // --------- RUNTIME COMPUTATION -----------
         // Update with new curvenet positions and local frames
@@ -47,10 +59,6 @@ class dcurvenet {
         Eigen::Matrix3d computeHEDefGrad(int he);
         // Compute deformation gradients on all halfedges
         int computeDefGradAll();
-
-        // Sampling parameters
-        int alpha = 5;          // User param
-        double meanE = 0.0;     // Mean edge length on mesh
 
         friend class Mesh::cutmesh;    // Friend class to access curvenet variables
     protected:

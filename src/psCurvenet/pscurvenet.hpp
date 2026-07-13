@@ -60,6 +60,8 @@ class pscurvenet {
         void cnAsCurveNetwork(Eigen::MatrixXd& verts, std::vector<std::array<int, 2>>& connectivity);
         void tansAsCurveNetwork(Eigen::MatrixXd& verts, std::vector<std::array<int, 2>>& connectivity);
 
+        // Convert to vector of control + tangent positions, and spline indices
+        void cnAsStdVector(std::vector<Eigen::Vector3d>& controls, std::vector<Eigen::Vector3d>& tangents, std::vector<std::array<int, 4>>& splines);
 
         // --------- SAMPLING -----------
         // Sample a bezier curve at time t

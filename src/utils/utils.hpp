@@ -26,6 +26,9 @@ namespace Utils {
     // Eigen::Vector3d to GLM::vec3 converter
     glm::vec3 eigenToGLM(const Eigen::Vector3d input);
 
+    // Convert an eigen matrix with 3 columns to a std::vector of vector3d's
+    void EigM3toStdV(const Eigen::MatrixXd& mat, std::vector<Eigen::Vector3d>& vec);
+
     // Entire mesh conversion routine Eigen to GLM
     void meshConversionEigentoGLM(const std::vector<Eigen::Vector3d>& Eig, std::vector<glm::vec3>& GLM);
 
@@ -52,7 +55,11 @@ namespace Utils {
     // Compresses a 9x1 Eigen::VectorXd into an Eigen::Matrix3d
     // Assumes column-wise storage
     Eigen::Matrix3d compressVector9d(const Eigen::VectorXd& f);
-    
+
+    // MESH INIT HELPERS
+    std::pair<int, int> undirectedKey(int a, int b);
+    int edgeDirRelativeToKey(int a, int b);
+    bool orientFacesConsistently(std::vector<std::vector<int>>& F_List);
 
     // VECTOR/PROJECTION HELPERS
 

@@ -13,42 +13,69 @@
 namespace ProfileMover {
     profilemover::profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF, 
                                const std::vector<Eigen::Vector3d> Controls, const std::vector<Eigen::Vector3d> Tangents, 
-                               const std::vector<std::array<int, 4>> Splines, int alpha = 5) {
+                               const std::vector<std::array<int, 4>> Splines, int alpha) {
         applyMesh(meshV, meshF);
         applyCurvenet(Controls, Tangents, Splines, alpha);
+        computeDiscreteCurvenet();
+        // computeCutMesh();
         
-        precomputation();
+        // precomputation();
+    }
+    // Blank init
+    profilemover::profilemover() {
+
     }
 
     void profilemover::applyMesh(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF) {
-        if (!M_init) {
-            M = Mesh::mesh(meshV, meshF);
-            M_init = true;
+        if (M_init) {
+            throw std::runtime_error("profilemover::applyMesh(): mesh already initialized");
         }
-    }
-
-    void profilemover::applyCurvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, int alpha = 5) {
-        if (M_init && !CN_init) {
-            CN = Curvenet::curvenet(Controls, Tangents, Splines, &M, alpha);
-            CN_init = true;
-        } else {
-            // throw an error
-        }
+        M = Mesh::mesh(meshV, meshF);
+        M_init = true;
         return;
     }
 
-    void profilemover::precomputation() {
+    void profilemover::applyCurvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, int alpha) {
+        if (!M_init) {
+            throw std::runtime_error("profilemover::applyCurvenet(): mesh must be initialized first");
+        }
+        if (CN_init) {
+            throw std::runtime_error("profilemover::applyCurvenet(): curvenet already initialized");
+        }
+        CN = Curvenet::curvenet(Controls, Tangents, Splines, M, alpha);
+        CN_init = true;
+        return;
+    }
+
+    void profilemover::computeDiscreteCurvenet() {
         if (!M_init || !CN_init) {
             // Throw an error
             return;
         } else if (!dCN_init) {
             // Initialize discrete curvenet
-            dCN = DCurvenet::dcurvenet(&CN, M.getMeanE());
+            dCN = DCurvenet::dcurvenet(&CN);
             dCN_init = true;
         }
-        // Compute Cut-mesh
-        CM = Mesh::cutmesh(&M, &dCN);
-        CM_init = true;
+        return;
+    }
+
+    void profilemover::computeCutMesh() {
+        if (!M_init || !CN_init || !dCN_init) {
+            // Throw an error
+            return;
+        } else if (!CM_init) {
+            // Compute Cut-mesh
+            CM = Mesh::cutmesh(&M, &dCN);
+            CM_init = true;
+        }
+        return;
+    }
+
+    void profilemover::precomputation() {
+        if (!M_init || !CN_init || !dCN_init || !CM_init) {
+            // Throw an error
+            return;
+        }
 
         // Compute operators
         CM.computeHEMap(heToCMhe, CMheTohe);
@@ -65,16 +92,43 @@ namespace ProfileMover {
         return;
     }
 
+    const Mesh::mesh& profilemover::mesh() const {
+        if (!M_init) {
+            throw std::runtime_error("profilemover::mesh(): mesh not initialized");
+        }
+        return M;
+    }
+
+    const Curvenet::curvenet& profilemover::curvenet() const {
+        if (!CN_init) {
+            throw std::runtime_error("profilemover::curvenet(): curvenet not initialized");
+        }
+        return CN;
+    }
+
+    const DCurvenet::dcurvenet& profilemover::discreteCurvenet() const {
+        if (!dCN_init) {
+            throw std::runtime_error("profilemover::discreteCurvenet(): discrete curvenet not initialized");
+        }
+        return dCN;
+    }
+
     // Runtime solvers
     // Runtime deformation
     std::vector<Eigen::Vector3d> profilemover::deform(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents) {
-        if (!M_init || !CN_init || !dCN_init || !CM_init) {
+        /*if (!M_init || !CN_init || !dCN_init || !CM_init) {
+            // TODO: throw error
+        }*/
+        if (!M_init || !CN_init || !dCN_init) {
             // TODO: throw error
         }
         // 1. Compute new curvenet
         CN.updateCurveNet(Controls, Tangents);
         // 2. Compute new discrete curvenet and frames
         dCN.updateDiscCurveNet();
+        std::vector<Eigen::Vector3d> temp;
+        return temp;
+        /*
         // FIRST SOLVE: Deformation gradients
         // Compute flattened deformation gradient matrix
         Eigen::MatrixXd f_c = CM.computeDefGrads(cToCM);    // TODO: This can be done in parallel over halfedges
@@ -89,8 +143,9 @@ namespace ProfileMover {
         Eigen::MatrixXd y_h = CM.estimateFaceDeformations(CMheTohe);
         // Compute new positions
         Eigen::MatrixXd x_v = VtLV.solve(mVtL * (C * x_c - y_h));
-
+        
         return assembleFinalPositions(x_v, x_c);
+        */
     }
 
     // Assemble final positions into our standard data type

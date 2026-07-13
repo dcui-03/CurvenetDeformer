@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 #include <map>
+#include <stdexcept>
 
 
 namespace Curvenet {
@@ -32,7 +33,7 @@ namespace Curvenet {
         ctrlNormalsFromMesh(M);
         sortAdjHEAll();
         assignCtrlTypeAll();
-        if (!traceCurves()) {
+        if (traceCurves() == -1) {
             throw std::runtime_error("Failed to trace curve network.");
         }
         return;
@@ -123,6 +124,9 @@ namespace Curvenet {
             int elType, elIdx;
             Eigen::Vector3d proj;
             elType = m.computeVProjection(C[c].pos, proj, elIdx);
+            if (elType == -1) {
+                throw std::runtime_error("curvenet::ctrlNormalsFromMesh(): invalid normals");
+            }
             Eigen::Vector3d n = m.getNormal(elType, elIdx);
             editControlN(c, n);
         }
@@ -175,7 +179,9 @@ namespace Curvenet {
     int curvenet::sortAdjHEAll() {
         for (int c = 0; c < C.size(); c++) {
             if (C[c].active && !C[c].sorted) {
-                sortAdjHE(c);
+                if (sortAdjHE(c) == -1) {
+                    return -1;
+                }
             }
         }
         return 1;
@@ -239,7 +245,11 @@ namespace Curvenet {
                     if (C[curr_end].cType == 1 || C[curr_end].cType == 3) {
                         curveEnd = true;
                     } else {    // Must be 2 outgoing HE's from this one. Pick the one we haven't gone to yet
-                        curr_he = HE[curr_he].next;
+                        int next_he = nextHEFromControl(curr_he, curr_end);
+                        if (next_he < 0) {
+                            return -1;
+                        }
+                        curr_he = next_he;
                     }
                 } while (!curveEnd && counter < S.size());
                 if (!curveEnd) {    // Error check
@@ -289,7 +299,11 @@ namespace Curvenet {
                     if (curr_end == c) {    // Hit the start point again
                         curveEnd = true;
                     } else {    // Must be 2 outgoing HE's from this one. Pick the one we haven't gone to yet
-                        curr_he = HE[curr_he].next;
+                        int next_he = nextHEFromControl(curr_he, curr_end);
+                        if (next_he < 0) {
+                            return -1;
+                        }
+                        curr_he = next_he;
                     }
                 } while (!curveEnd && counter < S.size());
                 if (!curveEnd) {    // Error check
@@ -300,5 +314,30 @@ namespace Curvenet {
             }
         }
         return 1;
+    }
+
+    // Helper for computeCurves
+    // Compute the next halfedge from a degree 2 control
+    int curvenet::nextHEFromControl(int curr_he, int curr_end) {
+        if (curr_end < 0 || curr_end >= C.size()) {
+            return -1;
+        }
+        if (C[curr_end].cType != 2) {
+            return -1;
+        }
+        const std::vector<int>& adjHE = C[curr_end].adjHE;
+        if (adjHE.size() != 2) {
+            return -1;
+        }
+        int back_he = HE[curr_he].twin;
+        if (adjHE[0] == back_he) {
+            return adjHE[1];
+        }
+        if (adjHE[1] == back_he) {
+            return adjHE[0];
+        }
+        // The halfedge we arrived on does not actually end at this control
+        // according to the control's adjacency list.
+        return -1;
     }
 }   // namespace Curvenet

@@ -27,6 +27,10 @@ cutmesh::cutmesh(mesh* MRef, DCurvenet::dcurvenet* dCN): M(MRef), dCN(dCN) {
     return;
 }
 
+cutmesh::cutmesh() {
+    
+}
+
 // Add a discrete Curvenetwork Pointer
 bool cutmesh::applyDiscreteCurvenet(DCurvenet::dcurvenet* dCurvenet) {
     dCN = dCurvenet;

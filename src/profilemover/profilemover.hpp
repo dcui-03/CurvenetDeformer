@@ -6,6 +6,10 @@
 #include "mesh/mesh.hpp"
 #include "cutmesh/cutmesh.hpp"
 #include "utils/decUtils.hpp"
+#include <vector>
+#include <array>
+#include <map>
+#include <stdexcept>
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
@@ -20,10 +24,16 @@ class profilemover {
                                const std::vector<Eigen::Vector3d> Controls, const std::vector<Eigen::Vector3d> Tangents, 
                                const std::vector<std::array<int, 4>> Splines, int alpha = 5);
         profilemover();
+
+        // Getters in case we need it
+        const Mesh::mesh& mesh() const;
+        const Curvenet::curvenet& curvenet() const;
+        const DCurvenet::dcurvenet& discreteCurvenet() const;
         
         void applyMesh(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF);
         void applyCurvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, int alpha = 5);
-
+        void computeDiscreteCurvenet();
+        void computeCutMesh();
         // Apply deformation given the new control and tangent locations (connectivity should be same)
         // Returns new mesh positions as an Nx3 matrix
         std::vector<Eigen::Vector3d> deform(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents);

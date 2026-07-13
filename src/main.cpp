@@ -5,6 +5,7 @@
 
 #include <Eigen/Core>
 #include <chrono>
+#include <memory>
 #include <iostream>
 #include <string>
 #include <cmath>
@@ -52,13 +53,35 @@ Eigen::MatrixXd psTangentsVec; // Aggregate list of controls and tangents
 std::vector<std::array<int, 2>> psTangents_E; // Edge List between controls and tangents
 polyscope::CurveNetwork* psTangentsCN = nullptr;  // Connects controls to their tangents
 
+// DEBUG OBJECTS
+
+// discrete Curvenet
+Eigen::MatrixXd psDCN_P; // Aggregate list of controls and tangents
+std::vector<std::array<int, 2>> psDCN_E; // Edge List between controls and tangents
+polyscope::CurveNetwork* psDCN = nullptr;
+// Local frames
+std::vector<glm::vec3> posScaledTangents;
+std::vector<glm::vec3> posScaledBinormals;
+std::vector<glm::vec3> posScaledNormals;
+std::vector<glm::vec3> negScaledTangents;
+std::vector<glm::vec3> negScaledBinormals;
+std::vector<glm::vec3> negScaledNormals;
+
+// Cutmesh
+/*
+Eigen::MatrixXd psCutMesh_V; // Vertex list
+std::vector<std::vector<int>> psCutMesh_F; // Face list: Note the inner list has arbitrary size for non-triangle faces
+polyscope::SurfaceMesh* psCutMesh = nullptr;
+*/
+
 
 // VARIABLES FOR PARSING AND WRITING FILES
 std::string InputPath;
 std::string OutputPath;
 
 // UI HELPERS
-bool precompDone = false;   // Once precomputation is done, we can no longer edit the curves
+bool PM_init = false;
+bool CM_init = false;
 
 bool createCtrlMode = false;  // Allows users to place control points
 bool createSplineMode = false;  // Allow users to initialize new splines
@@ -88,26 +111,10 @@ int samplingParam = 5;
 std::unique_ptr<psCurvenet::pscurvenet> psCN = nullptr; // Curvenet that polyscope will use for updates
 
 // Profile Mover
-//ProfileMover::profilemover PM;
+std::unique_ptr<ProfileMover::profilemover> PM = nullptr;
 
 
 // ----------------- FUNCTIONS BEGIN HERE -------------------------
-
-// Performs call to pre-computation of cut-mesh and operators
-int performPrecomp() {
-    // Make a hard copy of the neutral curvenet and pass it as the profile mover's copy
-    // That way we maintain one copy to that polyscope can edit
-    // TODO: Initialize global profile mover object
-
-    // TODO: Time the pre-computation to see how time-intensive it is.
-    // TODO: Catch and handle errors here
-    return 1;
-}
-
-// Performs call to surface deformation and updates PS mesh
-int computeDeformation() {
-    return 1;
-}
 
 // Saves current curvenet to some file format
 int saveCurvenet() {
@@ -191,6 +198,55 @@ void removeAllCurvenetPS() {
     return;
 }
 
+void updateProfileMover(bool recompute = true) {
+    if (!PM_init || !PM) {
+        return;
+    }
+
+    if (recompute) {
+        std::vector<Eigen::Vector3d> controlsV, tangentsV;
+        std::vector<std::array<int, 4>> splines;
+        psCN->cnAsStdVector(controlsV, tangentsV, splines);
+
+        PM->deform(controlsV, tangentsV);
+    }
+
+    if (psDCN) {
+        psDCN->remove();
+        psDCN = nullptr;
+    }
+
+    // We have to re-get the scaled frames anyways, so no point in flagging for a simple update
+    // Recompute all attributes
+    (PM->discreteCurvenet()).polyscopeFormat(psDCN_P, psDCN_E, posScaledTangents, 
+                                                        posScaledBinormals,
+                                                        posScaledNormals,
+                                                        negScaledTangents,
+                                                        negScaledBinormals,
+                                                        negScaledNormals);
+    psDCN = polyscope::registerCurveNetwork("Disc. Curvenet", psDCN_P, psDCN_E);
+    psDCN->setColor({0.8f, 0.8f, 0.1f}); // Yellow-ish
+    psDCN->setMaterial("flat");
+    psDCN->setTransparency(0.8);
+    psDCN->setRadius(0.003);
+    psDCN->setEnabled(true);
+    // Vector fields
+    auto* posTan = psDCN->addEdgeVectorQuantity("Pos. Tangents", posScaledTangents);
+    posTan->setVectorColor(glm::vec3{1.0f, 0.05f, 0.02f});
+    auto* posBin = psDCN->addEdgeVectorQuantity("Pos. Binormals", posScaledBinormals);
+    posBin->setVectorColor(glm::vec3{1.0f, 0.45f, 0.0f});
+    auto* posNorm =psDCN->addEdgeVectorQuantity("Pos. Normals", posScaledNormals);
+    posNorm->setVectorColor(glm::vec3{1.0f, 0.95f, 0.05f});
+    auto* negTan = psDCN->addEdgeVectorQuantity("Neg. Tangents", negScaledTangents);
+    negTan->setVectorColor(glm::vec3{0.0f, 1.0f, 0.15f});
+    auto* negBin = psDCN->addEdgeVectorQuantity("Neg. Binormals", negScaledBinormals);
+    negBin->setVectorColor(glm::vec3{0.0f, 0.45f, 1.0f});
+    auto* negNorm = psDCN->addEdgeVectorQuantity("Neg. Normals", negScaledNormals);
+    negNorm->setVectorColor(glm::vec3{0.65f, 0.1f, 1.0f});
+    return;
+}
+
+
 void updateCurvenet(bool conn = false) {
     // Reset curvenet
     psCN->cnAsCurveNetwork(psCN_P, psCN_E);
@@ -252,12 +308,26 @@ void updateCurvenet(bool conn = false) {
 
 // Reset all control positions in Polyscope
 void resetCurvenet() {
-    // If not precomputed
-    if (!precompDone) {
-        std::cout << "Cannot reset. Precomputation not performed." << std::endl;
-        return;
+    return;
+}
+
+void clearPM() {
+    PM_init = false;
+    CM_init = false;
+    psDCN_P.resize(0, 0); // Aggregate list of controls and tangents
+    psDCN_E.clear(); // Edge List between controls and tangents
+    PM = nullptr;
+    if (psDCN) {
+        psDCN->remove();
+        psDCN = nullptr;
     }
-    // TODO: Reset curvenet
+    // Local frames
+    posScaledTangents.clear();
+    posScaledBinormals.clear();
+    posScaledNormals.clear();
+    negScaledTangents.clear();
+    negScaledBinormals.clear();
+    negScaledNormals.clear();
     return;
 }
 
@@ -279,6 +349,17 @@ int clearModes() {
     return 1;
 }
 
+// Performs call to surface deformation and updates PS mesh
+int computeDeformation() {
+    std::vector<Eigen::Vector3d> controlsV, tangentsV;
+    std::vector<std::array<int, 4>> splines;
+    psCN->cnAsStdVector(controlsV, tangentsV, splines);
+    PM->deform(controlsV, tangentsV);
+    // Update the dCN
+    updateProfileMover(true);
+    return 1;
+}
+
 // A user-defined callback, for creating control panels (etc)
 // Use ImGUI commands to build whatever you want here, see
 // https://github.com/ocornut/imgui/blob/master/imgui.h
@@ -292,20 +373,26 @@ void myCallback() {
     polyscope::PickResult pick = polyscope::pickAtScreenCoords(screen);
 
     // Pre-compute cut-mesh and operators
-    if (ImGui::Button("Perform Pre-Computation")) {
+    if (ImGui::Button("Reset Profile Mover")) {
         clearModes();
-        if (precompDone) {
-            std::cout << "Pre-computation on neutral pose already performed." << std::endl;
-        } else if (psControls_P.rows() <= 1) {
-            std::cout << "No splines specified. Add one or more spline before pre-computing." << std::endl;
+        PM_init = false;
+        if (psControls_P.rows() <= 1) {
+            std::cout << "No splines specified. Add one or more splines." << std::endl;
         } else {
             // Compress the curvenet
             psCN->cleanupControls();
+            clearPM();
             updateCurvenet();
-            // Precompute
-            std::cout << "Performing pre-computation on neutral pose." << std::endl;
-            performPrecomp();
-            precompDone = true;
+            // Convert to input format
+            std::vector<Eigen::Vector3d> meshV;
+            Utils::EigM3toStdV(psMesh_V, meshV);
+            std::vector<Eigen::Vector3d> controlsV, tangentsV;
+            std::vector<std::array<int, 4>> splines;
+            psCN->cnAsStdVector(controlsV, tangentsV, splines);
+            // Apply mesh and curvenet
+            PM = std::make_unique<ProfileMover::profilemover>(meshV, psMesh_F, controlsV, tangentsV, splines, samplingParam);
+            PM_init = true;
+            updateProfileMover(false);
         }
     }
 
@@ -313,11 +400,12 @@ void myCallback() {
     // TODO: In the future, make this mode automatic after running precomp
     if (ImGui::Button("Deformation Mode")) {
         clearModes();
-        if (!precompDone) {
+        if (!PM_init) {
             std::cout << "Perform pre-computation before applying deformation." << std::endl;
         } else {
             std::cout << "Computing Deformation." << std::endl;
-            computeDeformation();
+            // computeDeformation();
+            updateProfileMover();
         }
     }
 
@@ -405,7 +493,9 @@ void myCallback() {
     if (ImGui::Button("Clear Curvenet")) {
         std::cout << "Clearing entire curvenet." << std::endl;
         psCN->resetCurvenet();
+        clearPM();
         updateCurvenet(true);
+        updateProfileMover(true);
     }
     // May need to store a copy of the rest curvenet
     if (ImGui::Button("Reset Curvenet")) {
@@ -427,6 +517,7 @@ void myCallback() {
             int valid = Utils::closestPointNormalOnMesh(pos, psMesh_V, psMesh_F, normal);
             if (valid == 1) {
                 psCN->addControl(pos, normal);
+                clearPM();
                 updateCurvenet(true);
                 std::cout << "New Vert created at (" << pos[0] << ", " << pos[1] << ", " << pos[2] << ")" << std::endl;
             } else {
@@ -454,6 +545,7 @@ void myCallback() {
                 // Reset pair
                 selectedPair = {-1, -1};
                 std::cout << "New Spline Created.\n" << std::endl;
+                clearPM();
                 updateCurvenet(true);
             }
         }
@@ -466,6 +558,7 @@ void myCallback() {
 
         psCN->removeControl(static_cast<int>(pcPick.index));
         std::cout << "Control removed." << std::endl;
+        clearPM();
         updateCurvenet(true);
     }
     // Clicked on a tangent whose spline we should remove
@@ -474,7 +567,9 @@ void myCallback() {
 
         psCN->removeSplineByTangent(static_cast<int>(pcPick.index));
         std::cout << "Spline removed." << std::endl;
+        clearPM();
         updateCurvenet(true);
+        updateProfileMover(true);
     }
 
     // EDIT MODE CLICKS
@@ -528,6 +623,7 @@ void myCallback() {
         vertexGizmo->setPosition(Utils::eigenToGLM(gizmoPosF));
 
         updateCurvenet();
+        updateProfileMover(true);
     }
     // Update tangent position per-frame
     if (editTanMode && activeGizmo && selectedIdx >= 0) {
@@ -536,6 +632,7 @@ void myCallback() {
         // If we are too close to either endpoint, do not update
         bool updated = psCN->updateTangentPos(selectedIdx, gizmoPosF, tanConstraint);
         updateCurvenet();
+        updateProfileMover(true);
         if (updated) {
             Eigen::Vector3d tangentPos = psTangents_P.row(selectedIdx).transpose();
             vertexGizmo->setPosition(Utils::eigenToGLM(tangentPos));

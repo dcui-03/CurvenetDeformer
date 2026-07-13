@@ -206,6 +206,19 @@ glm::vec3 eigenToGLM(const Eigen::Vector3d input) {
     return output;
 }
 
+// Convert an eigen matrix with 3 columns to a std::vector
+void EigM3toStdV(const Eigen::MatrixXd& mat, std::vector<Eigen::Vector3d>& vec) {
+    // Assert that matrix columns = 3
+    if (mat.cols() != 3) {
+        return;
+    }
+    vec.resize(mat.rows());
+    for (int v = 0; v < mat.rows(); v++) {
+        vec[v] = mat.row(v).transpose();
+    }
+    return;
+}
+
 // Entire mesh conversion routine Eigen to GLM
 void meshConversionEigentoGLM(const std::vector<Eigen::Vector3d>& Eig, std::vector<glm::vec3>& GLM) {
     GLM.clear();
@@ -298,6 +311,123 @@ Eigen::VectorXd flattenMatrix3d(const Eigen::Matrix3d& F) {
 Eigen::Matrix3d compressVector9d(const Eigen::VectorXd& f) {
     assert(f.size() == 9);
     return Eigen::Map<const Eigen::Matrix3d>(f.data());
+}
+
+// MESH HELPERS
+std::pair<int, int> undirectedKey(int a, int b) {
+    return (a < b) ? std::make_pair(a, b) : std::make_pair(b, a);
+}
+
+int edgeDirRelativeToKey(int a, int b) {
+    return (a < b) ? +1 : -1;
+}
+
+bool orientFacesConsistently(std::vector<std::vector<int>>& F_List) {
+    struct FaceEdgeUse {
+        int face = -1;
+        int localEdge = -1;
+        int dir = 0; // +1 if stored as min->max, -1 if max->min
+    };
+    using EdgeKey = std::pair<int, int>;
+
+    std::map<EdgeKey, std::vector<FaceEdgeUse>> edgeUses;
+
+    // 1. Build undirected edge -> incident face uses.
+    for (int f = 0; f < static_cast<int>(F_List.size()); f++) {
+        const auto& face = F_List[f];
+        int n = static_cast<int>(face.size());
+
+        if (n < 3) {
+            return false;
+        }
+
+        for (int i = 0; i < n; i++) {
+            int a = face[i];
+            int b = face[(i + 1) % n];
+
+            if (a == b) {
+                return false;
+            }
+
+            EdgeKey key = undirectedKey(a, b);
+            edgeUses[key].push_back(FaceEdgeUse{
+                f,
+                i,
+                edgeDirRelativeToKey(a, b)
+            });
+        }
+    }
+
+    // 2. Reject nonmanifold edges for this mesh structure.
+    for (const auto& kv : edgeUses) {
+        if (kv.second.size() > 2) {
+            return false;
+        }
+    }
+
+    // 3. Build face adjacency with "same direction?" relation.
+    std::vector<std::vector<std::pair<int, bool>>> faceAdj(F_List.size());
+
+    for (const auto& kv : edgeUses) {
+        const auto& uses = kv.second;
+
+        if (uses.size() != 2) {
+            continue; // boundary edge
+        }
+
+        const FaceEdgeUse& a = uses[0];
+        const FaceEdgeUse& b = uses[1];
+
+        // If two faces use the shared undirected edge in the same direction,
+        // one of them must be flipped.
+        bool sameDir = (a.dir == b.dir);
+
+        faceAdj[a.face].push_back({b.face, sameDir});
+        faceAdj[b.face].push_back({a.face, sameDir});
+    }
+
+    // 4. BFS assign flip parity per connected component.
+    // flip[f] == 0 means keep original orientation.
+    // flip[f] == 1 means reverse this face.
+    std::vector<int> flip(F_List.size(), -1);
+
+    for (int root = 0; root < static_cast<int>(F_List.size()); root++) {
+        if (flip[root] != -1) {
+            continue;
+        }
+
+        flip[root] = 0;
+        std::queue<int> q;
+        q.push(root);
+
+        while (!q.empty()) {
+            int f = q.front();
+            q.pop();
+
+            for (auto [g, sameDir] : faceAdj[f]) {
+                // If sameDir is true, neighbor must have opposite flip parity.
+                // If sameDir is false, neighbor must have same flip parity.
+                int requiredFlip = flip[f] ^ static_cast<int>(sameDir);
+
+                if (flip[g] == -1) {
+                    flip[g] = requiredFlip;
+                    q.push(g);
+                } else if (flip[g] != requiredFlip) {
+                    // Contradiction: non-orientable or inconsistent connectivity.
+                    return false;
+                }
+            }
+        }
+    }
+
+    // 5. Apply flips.
+    for (int f = 0; f < static_cast<int>(F_List.size()); f++) {
+        if (flip[f]) {
+            std::reverse(F_List[f].begin(), F_List[f].end());
+        }
+    }
+
+    return true;
 }
 
 // GEOMETRY HELPERS

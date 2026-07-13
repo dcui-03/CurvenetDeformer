@@ -9,12 +9,13 @@
 
 namespace DCurvenet {
     // Takes the original curvenet and discretizes it
-    dcurvenet::dcurvenet(Curvenet::curvenet* CN, double meanE): CN(CN), meanE(meanE) {
+    dcurvenet::dcurvenet(Curvenet::curvenet* CN): CN(CN) {
         const std::vector<Curvenet::Control>& cnCtrl = CN->controls();
         int num_curves = CN->numCurves();
         // Defensive reset
         V.clear();
         HE.clear();
+        E.clear();
         C.clear();
         // 1. First copy in the control points
         int num_controls = cnCtrl.size();
@@ -101,6 +102,10 @@ namespace DCurvenet {
         // Compute the deformation gradients
         computeDefGradAll();
         return;
+    }
+
+    dcurvenet::dcurvenet() {
+
     }
 
     // Add a new vertex that matches an existing control
@@ -286,7 +291,7 @@ namespace DCurvenet {
         if (V[v].cn_idx < 0 || V[v].cn_type < 1) {
             return -1;
         }
-        double eps = 1e-6;
+        double eps = 1e-12;
         const std::vector<int> adjHE = V[v].adjHE;
         std::vector<Eigen::Vector3d> adjNormals(adjHE.size());
         // Explictly handle anchors and closed curves
@@ -338,7 +343,7 @@ namespace DCurvenet {
             int c1 = E[HE[he1].edge].curve;
             Eigen::Vector3d cornerNormal;
             // First check if we are parallel. If so skip for now
-            double dotProdTest = HE[he0].defData.newFrame.tangent.dot(HE[he1].defData.newFrame.tangent);
+            double dotProdTest = (HE[he0].defData.newFrame.tangent.normalized()).dot(HE[he1].defData.newFrame.tangent.normalized());
             if (dotProdTest <= -1.0+eps) {
                 skipList[he] = true;
                 continue;
@@ -356,6 +361,10 @@ namespace DCurvenet {
             } else {
                 // Compute corner normal as usual
                 cornerNormal = HE[he0].defData.newFrame.tangent.cross(HE[he1].defData.newFrame.tangent);
+            }
+            // Flip normals if the signed angle was obtuse (ex., simplified check against the vertex normal)
+            if (cornerNormal.normalized().dot(V[v].n) < 0.0) {
+                cornerNormal *= -1.0;
             }
 
             // Assign corner normals to curves
@@ -400,7 +409,6 @@ namespace DCurvenet {
                     }
                 }
             }
-            cornerNormal.normalize();
 
             // Assign corner normals to curves
             if (isPositiveHalfedge(he0)) {
@@ -418,18 +426,23 @@ namespace DCurvenet {
         // Compute widths
         // Use the computed normal norm list to calculate widths
         for (int he = 0; he < adjHE.size(); he++) {
-            int he0 = adjHE[he];
-            int he1 = adjHE[(he+1)%adjHE.size()];
-            int he_m1 = adjHE[(he-1+adjHE.size())%adjHE.size()];
+            // Loop's halfedge indices
+            int he0_local = he;
+            int he1_local = (he + 1) % adjHE.size();
+            int he_m1_local = (he - 1 + adjHE.size()) % adjHE.size();
+            // Get the global halfedge index
+            int he0 = adjHE[he0_local];
+            int he1 = adjHE[he1_local];
+            int he_m1 = adjHE[he_m1_local];
+            // Get the curve and the corresponding lengths
             int c0 = E[HE[he0].edge].curve;
-            double cornerNormalNorm0;
             double he0_len = HE[he0].defData.newFrame.l;
             double he_m1_len = HE[he_m1].defData.newFrame.l;
             double he1_len = HE[he1].defData.newFrame.l;
 
             // Compute corner widths
-            double cornerWidth0 = he0_len + adjNormals[he].norm()*(he1_len - he0_len);
-            double cornerWidth1 = he0_len + adjNormals[he_m1].norm()*(he_m1_len - he0_len);
+            double cornerWidth0 = he0_len + adjNormals[he0_local].norm() * (he1_len - he0_len);
+            double cornerWidth1 = he0_len + adjNormals[he_m1_local].norm() * (he_m1_len - he0_len);
 
             // Assign corner normals to curves
             // First figure out if this is the start halfedge of the curve
@@ -476,17 +489,17 @@ namespace DCurvenet {
             Eigen::Vector3d end_n = cData.N_pos.second;
             double start_w = cData.W_pos.first;
             double end_w = cData.W_pos.second;
-            // 1. For the pos side, first trace until the end vertex, accumulating rotations and alpha values
+            // 1. For the pos side, first trace until the end vertex, accumulating rotations alpha values
             double total_len = accumulateRotations(C[c].he_start, end, rots, lens);
             // 2. Compute the torsion angle theta
             double torsion = computeTorsion(start_n, end_n, rots[rots.size()-1], -1*HE[C[c].he_end].defData.newFrame.tangent);
             // 3. Propagate rotations and widths to halfedges
             int he_curr = he_start;
             for (int he = 0; he < rots.size(); he++) {
-                double alpha = lens[he]/total_len;
-                Eigen::Matrix3d he_torsion = Utils::computeRotation(HE[he_curr].defData.newFrame.tangent, alpha*torsion);
+                double beta = lens[he]/total_len;
+                Eigen::Matrix3d he_torsion = Utils::computeRotation(HE[he_curr].defData.newFrame.tangent, beta*torsion);
                 HE[he_curr].defData.newFrame.normal = he_torsion * rots[he] * start_n;
-                HE[he_curr].defData.newFrame.w = (1-alpha)*start_w + (alpha)*end_w;
+                HE[he_curr].defData.newFrame.w = (1-beta)*start_w + (beta)*end_w;
                 he_curr = HE[he_curr].next;
             }
 
@@ -500,10 +513,10 @@ namespace DCurvenet {
             torsion = computeTorsion(start_n, end_n, rots[rots.size()-1], -1*HE[C[c].he_start].defData.newFrame.tangent);
             he_curr = he_end;
             for (int he = 0; he < rots.size(); he++) {
-                double alpha = lens[he]/total_len;
-                Eigen::Matrix3d he_torsion = Utils::computeRotation(HE[he_curr].defData.newFrame.tangent, alpha*torsion);
+                double beta = lens[he]/total_len;
+                Eigen::Matrix3d he_torsion = Utils::computeRotation(HE[he_curr].defData.newFrame.tangent, beta*torsion);
                 HE[he_curr].defData.newFrame.normal = he_torsion * rots[he] * start_n;
-                HE[he_curr].defData.newFrame.w = (1-alpha)*start_w + (alpha)*end_w;
+                HE[he_curr].defData.newFrame.w = (1-beta)*start_w + (beta)*end_w;
                 he_curr = HE[he_curr].next;
             }
             return 1;
@@ -598,7 +611,7 @@ namespace DCurvenet {
                                                    HE[he_curr].defData.newFrame.tangent).normalized();
             // Positive side
             HE[he_curr].defData.newFrame.binormal = (HE[he_curr].defData.newFrame.tangent.cross(HE[he_curr].defData.newFrame.normal)).normalized();
-            HE[he_curr].defData.newFrame.h = std::sqrt(HE[he_curr].defData.newFrame.l * HE[he_curr].defData.newFrame.w);
+            HE[he_curr].defData.newFrame.h = std::sqrt(std::abs(HE[he_curr].defData.newFrame.l * HE[he_curr].defData.newFrame.w));
             // Negative side
             int he_neg = HE[he_curr].twin;
             // Re-orthogonalize normals for safety
@@ -606,7 +619,7 @@ namespace DCurvenet {
                                                   HE[he_neg].defData.newFrame.normal.dot(HE[he_neg].defData.newFrame.tangent) *
                                                   HE[he_neg].defData.newFrame.tangent).normalized();
             HE[he_neg].defData.newFrame.binormal = (HE[he_neg].defData.newFrame.tangent.cross(HE[he_neg].defData.newFrame.normal)).normalized();
-            HE[he_neg].defData.newFrame.h = std::sqrt(HE[he_neg].defData.newFrame.l * HE[he_neg].defData.newFrame.w);
+            HE[he_neg].defData.newFrame.h = std::sqrt(std::abs(HE[he_neg].defData.newFrame.l * HE[he_neg].defData.newFrame.w));
         } while (he_curr != -1 && HE[he_curr].dest != end);
         return 1;
     }
@@ -629,6 +642,7 @@ namespace DCurvenet {
                 throw std::runtime_error("validateFrames(): non-finite scaled frame scale");
             }
         }
+        return 1;
     }
     // Copy scaled frame data to new local variables
     int dcurvenet::copyFrameToRest(int he) {

@@ -4,6 +4,7 @@
 #include "mesh/mesh.hpp"
 #include "mesh/mesh_types.hpp"
 #include <Eigen/Core>
+#include <Eigen/Sparse>
 #include <Eigen/StdVector>
 #include <vector>
 #include <map>

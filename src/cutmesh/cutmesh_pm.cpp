@@ -229,7 +229,7 @@ Eigen::MatrixXd cutmesh::estimateFaceDeformations(const std::map<int, int>& CMhe
 
         for (int v = 0; v < adjV.size(); v++) {
             int he = adjHE_idxs[v];
-            deformedFaces.row(CMheTohe[he]) = defFace.row(v);
+            deformedFaces.row(CMheTohe.at(he)) = defFace.row(v);
         }
     }
     return deformedFaces;

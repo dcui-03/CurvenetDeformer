@@ -6,7 +6,11 @@
 #include <Eigen/Sparse>
 #include <vector>
 #include <limits>
+#include <queue>
+#include <map>
+#include <algorithm>
 #include <utility>
+#include <iostream>
 
 // Mesh class functions for initialization
 
@@ -18,10 +22,16 @@ mesh::mesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::ve
         throw std::runtime_error("Failed to initialize halfedge mesh.");
     }
     computeFNormalsAreas();
+    computeENormals();
     computeVNormalsAreas();
     computeMeanE();
     computeBBoxDiag();
+    
     return;
+}
+
+mesh::mesh() {
+
 }
 
 // Initializes the half edge mesh (Verts, Edges, Faces, Halfedges) from a vertex and face list
@@ -29,6 +39,7 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
     clearMesh();
     // Guard against empty meshes
     if (V_List.empty()) {
+        std::cout << "EMPTY INPUT!" << std::endl;
         return false;
     }
 
@@ -39,16 +50,24 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
     }
     active_v = V.size();
 
+    std::vector<std::vector<int>> orientedF = F_List;
+
+    if (!Utils::orientFacesConsistently(orientedF)) {
+        std::cout << "Unable to orient faces." << std::endl;
+        return false;
+    }
+
     // 2. Initialize faces, edges, and interior halfedges
-    F.resize(F_List.size());
+    F.resize(orientedF.size());
     // The number of face corners is a maximum on the number of edges needed
     int numFaceCorners = 0;
-    for (const std::vector<int>& faceVerts : F_List) {
+    for (const std::vector<int>& faceVerts : orientedF) {
         if (faceVerts.size() < 3) { // Not a valid face
             return false;
         }
         for (int vi : faceVerts) {
             if (vi < 0 || vi >= V_List.size()) {
+                std::cout << "Invalid vertex index" << std::endl;
                 return false;
             }
         }
@@ -58,8 +77,8 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
     HE.reserve(2 * numFaceCorners);
     E.reserve(numFaceCorners);
 
-    for (int f = 0; f < F_List.size(); f++) {
-        const std::vector<int>& fVerts = F_List[f];
+    for (int f = 0; f < orientedF.size(); f++) {
+        const std::vector<int>& fVerts = orientedF[f];
         const int fSize = static_cast<int>(fVerts.size());
 
         // Temporary list of face HE's
@@ -73,6 +92,7 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
             std::pair<int, int> oppKey = std::make_pair(vj, vi);
             // Check that we don't already have this edge. If so, then there's a duplicate
             if (vertPairToHE.find(dirKey) != vertPairToHE.end()) {
+                std::cout << "Duplicate edge found" << std::endl;
                 return false;
             }
             // Insert the new halfedge into the list and set its attributes
@@ -155,6 +175,7 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
         std::pair<int, int> bKey = std::make_pair(v, u);
         // If the boundary halfedge already exists somehow, then something is wrong
         if (vertPairToHE.find(bKey) != vertPairToHE.end()) {
+            std::cout << "boundary halfedge already exists" << std::endl;
             return false;
         }
         vertPairToHE[bKey] = bhe;
@@ -169,6 +190,7 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
         int origin = HE[HE[bhe].twin].dest;
         // If a vertex has more than one outgoing boundary halfedge, then it must be nonmanifold
         if (boundaryOutgoingFromVertex.find(origin) != boundaryOutgoingFromVertex.end()) {
+            std::cout << "Nonmanifold edge found" << std::endl;
             return false;
         }
         boundaryOutgoingFromVertex[origin] = bhe;
@@ -223,6 +245,17 @@ Eigen::Vector3d mesh::getNormal(vertProjData projData) const {
         return getENormal(projData.elIdx);
     } else if (projData.elType == 2) {
         return getFNormal(projData.elIdx);
+    } else {
+        return Eigen::Vector3d::Zero();
+    }
+}
+Eigen::Vector3d mesh::getNormal(int elType, int elIdx) const {
+    if (elType == 0) {
+        return getVNormal(elIdx);
+    } else if (elType == 1) {
+        return getENormal(elIdx);
+    } else if (elType == 2) {
+        return getFNormal(elIdx);
     } else {
         return Eigen::Vector3d::Zero();
     }
@@ -320,14 +353,14 @@ void mesh::computeFNormalsAreas() {
 // Compute edge normals
 int mesh::computeENormal(int e, Eigen::Vector3d& eN, bool weight_fN) {
     std::vector<int> eFaces = edgeAdjFaces(e);
-    Eigen::Vector3d n = Eigen::Vector3d::Zero();
+    eN = Eigen::Vector3d::Zero();
     if (eFaces[0] != -1) {
-        n += F[eFaces[0]].n;
+        eN += F[eFaces[0]].n;
     }
     if (eFaces[1] != -1) {
-        n += F[eFaces[1]].n;
+        eN += F[eFaces[1]].n;
     }
-    n.normalize();  // TODO: needs safe normalization
+    eN.normalize();  // TODO: needs safe normalization
     return 1;
 }
 void mesh::computeENormals(bool weight_fN) {
@@ -336,7 +369,7 @@ void mesh::computeENormals(bool weight_fN) {
             continue;
         }
         Eigen::Vector3d eN = Eigen::Vector3d::Zero();
-        double vArea = computeENormal(e, eN, weight_fN);
+        computeENormal(e, eN, weight_fN);
         E[e].n = eN;
     }
     return;

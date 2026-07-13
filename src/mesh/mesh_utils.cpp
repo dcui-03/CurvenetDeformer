@@ -16,6 +16,11 @@ namespace Mesh {
 // Project a vertex onto the mesh. If multiple, just picks the one with smaller index.
 // Also returns the element type that was landed on.
 // For non-planar faces, I am just going to fit a Newell plane using the barycenter and vector area + a barycentric height interpolation
+int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap, bool fast) const {
+    vertProjData projData = computeVProjection(v, proj, snap, fast);
+    elIdx = projData.elIdx;
+    return projData.elType;
+}
 vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, bool snap, bool fast) const {
     double tol = 1e-6 * bboxDiag;
     double min_dist = std::numeric_limits<double>::infinity();
@@ -28,8 +33,8 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
     // NOTE: For triangles, this can be done much more simply using
     // barycentric coordinates w/ a linear solve. For arbitrary non-planar polygons,
     // this isn't possible, since polygons may not be convex
+    projData.elType = 2;
     for (int f = 0; f < F.size(); f++) {
-        vertProjData localProjData({2, -1});
         Eigen::Vector3d v_proj;
         // Skip inactive faces
         if (!F[f].active) {
@@ -281,7 +286,7 @@ int mesh::traceGeodesic(const Vert& start,
         Vert nextVert = createVertex(V[next].pos, V[next].n, 2, -1, 0, next);
         // Recurse
         tracedVerts.push_back(nextVert);
-        traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, true, fast);
+        return traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, true, fast);
     }
 
     // If we reached this point, we are definitely walking on a face
@@ -297,7 +302,7 @@ int mesh::traceGeodesic(const Vert& start,
     Vert nextVert = createVertex(hit, getNormal(hit_Data), 2, -1, hit_Data);
 
     tracedVerts.push_back(nextVert);
-    traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, true, fast);
+    return traceGeodesic(nextVert, end, nextDirec, next_ElType, next_ElIdx, tracedVerts, true, fast);
 }
 
 // Test whether the start and end are visible from each other on a particular face

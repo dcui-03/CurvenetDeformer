@@ -97,6 +97,8 @@ class curvenet {
         int assignCtrlType(int c);
         // Trace out curves
         int traceCurves();
+        // Helper to find next traced spline
+        int nextHEFromControl(int curr_he, int curr_end);
 
         // Store attributes as lists
         std::vector<Control> C;

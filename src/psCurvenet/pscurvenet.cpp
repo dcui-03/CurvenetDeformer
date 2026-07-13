@@ -363,6 +363,22 @@ void pscurvenet::tansAsCurveNetwork(Eigen::MatrixXd& verts, std::vector<std::arr
     return;
 }
 
+void pscurvenet::cnAsStdVector(std::vector<Eigen::Vector3d>& controls, std::vector<Eigen::Vector3d>& tangents, std::vector<std::array<int, 4>>& splines) {
+    controls.resize(C.size());
+    tangents.resize(2 * S.size());
+    splines.resize(S.size());
+
+    for (int c = 0; c < C.size(); c++) {
+        controls[c] = C[c].pos;
+    }
+
+    for (int s = 0; s < S.size(); s++) {
+        tangents[2*s] = S[s].t0;
+        tangents[2*s+1] = S[s].t1;
+        splines[s] = std::array<int, 4>({S[s].start, 2*s, 2*s+1, S[s].end});
+    }
+    return;
+}
 
 // --------- SAMPLING -----------
 // Sample a bezier curve at time t

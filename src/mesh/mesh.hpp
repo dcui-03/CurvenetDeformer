@@ -26,11 +26,15 @@ class mesh {
 
         // Project a vertex onto the mesh
         // mesh_utils.cpp
+        // A version which returns the mesh type and el idx separately
+        int computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap = true, bool fast = true) const;
+        // A version which returns a vertProjData object
         vertProjData computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, bool snap = true, bool fast = true) const;
         
         // Getters
         Eigen::Vector3d getVPos(int v) const;
         Eigen::Vector3d getNormal(vertProjData projData) const;
+        Eigen::Vector3d getNormal(int elType, int elIdx) const;
         Eigen::Vector3d getVNormal(int v) const;
         Eigen::Vector3d getENormal(int e) const;
         Eigen::Vector3d getFNormal(int f) const;

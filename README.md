@@ -19,9 +19,11 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/11**
+**Update 7/12**
 
-Doing a full code debug pass to identify logical errors and bugs. Currently finished the curvenet and dcurvenet classes, as well as the normal part of the mesh class. Next is the the projection part of the mesh class, then the cutmesh class, including the geodesic part, which should both take much longer to debug. When I get the chance, should also do a visual debug on dcurvenet class by adding conversion functions for polyscope.
+Worked on visual debug for the dcurvenet class. Seems to work now (fingers crossed)! There's one last UI bug to fix which makes it so that polyscope crashes after you reset the curvenet and try to recompute profilemover. Also, would recommend making the mesh grey, so that we can see the colors of the curvenet/scaled frames more clearly.
+
+Next thing on the docket (after cleaning up the UI and all the edited files again) is a code-level projection part of the mesh class, and then the cutmesh class, including the geodesic part, which should both take much longer to debug. Lastly, make a visual debug conversion for the cutmesh class so that we can see the embedding and cutting components.
 
 TODO later: in dCN class, change adjHE to a single stored halfedge, and then add an iterator to get all adjacent halfedges; add a safe normalization function to check certain that inputs will not normalize to a NaN or 0.
 
