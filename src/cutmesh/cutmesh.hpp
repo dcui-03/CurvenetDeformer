@@ -52,6 +52,9 @@ class cutmesh : public mesh {
         // Estimate the deformed faces
         Eigen::MatrixXd estimateFaceDeformations(const std::map<int, int>& CMheTohe);
 
+        // POLYSCOPE reformatting
+        int polyscopeFormat(Eigen::MatrixXd& Verts, std::vector<std::vector<int>>& Faces);
+
         // Getters
         Eigen::Vector3d getVPos(int v) const;
         Eigen::Vector3d getNormal(int elType, int elIdx) const;

@@ -21,7 +21,7 @@ class pscurvenet {
         void resetCurvenet();
         // Update control position
         void updateControlPos(int c, Eigen::Vector3d new_pos, bool project = true);
-        void updateControlNormal(int c, Eigen::Vector3d new_normal, bool rotation = true, bool project = true);
+        void updateControlNormal(int c, const Eigen::Vector3d& new_normal, const Eigen::Vector3d& new_bn, bool rotation = true, bool project = true);
         // Rotate tangent using some rotation matrix
         bool rotateTangentPos(int psT_idx, Eigen::Matrix3d rotation);
         bool rotateTangentPos(int s, bool t0, Eigen::Matrix3d rotation);
@@ -52,6 +52,7 @@ class pscurvenet {
 
         // --------- GETTERS + POLYSCOPE CONVERSION -----------
         Eigen::Vector3d getNormal(int c);
+        Eigen::Vector3d getBinormal(int c);
         // Control positions but returned as an Eigen::MatrixXd
         void cPosAsMatrix(Eigen::MatrixXd& cPos);
         // Tangent positions but returned as an Eigen::MatrixXd
@@ -69,7 +70,7 @@ class pscurvenet {
         Eigen::Vector3d tSampleBezier(int s, double t);
         // NOTE: This is a naive, fast sampler that uniformly samples t's. Re-implement if desired
         // Returns n_samples points on the curve, including the endpoints
-        std::vector<Eigen::Vector3d> sampleBezierNaive(int s, int n_samples = 50);
+        std::vector<Eigen::Vector3d> sampleBezierNaive(int s, int n_samples = 30);
     protected:
         // No class inheritance
     private:

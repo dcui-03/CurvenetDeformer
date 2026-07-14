@@ -225,24 +225,28 @@ void updateProfileMover(bool recompute = true) {
                                                         negScaledBinormals,
                                                         negScaledNormals);
     psDCN = polyscope::registerCurveNetwork("Disc. Curvenet", psDCN_P, psDCN_E);
-    psDCN->setColor({0.8f, 0.8f, 0.1f}); // Yellow-ish
+    psDCN->setColor({0.1f, 0.1f, 0.1f}); // Dark
     psDCN->setMaterial("flat");
-    psDCN->setTransparency(0.8);
+    psDCN->setTransparency(1.0);
     psDCN->setRadius(0.003);
     psDCN->setEnabled(true);
     // Vector fields
     auto* posTan = psDCN->addEdgeVectorQuantity("Pos. Tangents", posScaledTangents);
-    posTan->setVectorColor(glm::vec3{1.0f, 0.05f, 0.02f});
+    posTan->setVectorColor(glm::vec3{1.0f, 0.00f, 0.00f});
     auto* posBin = psDCN->addEdgeVectorQuantity("Pos. Binormals", posScaledBinormals);
     posBin->setVectorColor(glm::vec3{1.0f, 0.45f, 0.0f});
+    posBin->setEnabled(true);
     auto* posNorm =psDCN->addEdgeVectorQuantity("Pos. Normals", posScaledNormals);
-    posNorm->setVectorColor(glm::vec3{1.0f, 0.95f, 0.05f});
+    posNorm->setVectorColor(glm::vec3{1.0f, 0.9f, 0.00f});
+    posNorm->setEnabled(true);
     auto* negTan = psDCN->addEdgeVectorQuantity("Neg. Tangents", negScaledTangents);
-    negTan->setVectorColor(glm::vec3{0.0f, 1.0f, 0.15f});
+    negTan->setVectorColor(glm::vec3{0.0f, 1.0f, 0.00f});
     auto* negBin = psDCN->addEdgeVectorQuantity("Neg. Binormals", negScaledBinormals);
-    negBin->setVectorColor(glm::vec3{0.0f, 0.45f, 1.0f});
+    negBin->setVectorColor(glm::vec3{0.0f, 0.4f, 1.0f});
+    negBin->setEnabled(true);
     auto* negNorm = psDCN->addEdgeVectorQuantity("Neg. Normals", negScaledNormals);
-    negNorm->setVectorColor(glm::vec3{0.65f, 0.1f, 1.0f});
+    negNorm->setVectorColor(glm::vec3{0.75f, 0.1f, 1.0f});
+    negNorm->setEnabled(true);
     return;
 }
 
@@ -258,7 +262,7 @@ void updateCurvenet(bool conn = false) {
         removeAllCurvenetPS();
         if (psCN_E.size() > 0) {
             psEditableCN = polyscope::registerCurveNetwork("Curvenet", psCN_P, psCN_E);
-            psEditableCN->setColor({0.0f, 0.0f, 0.0f});
+            psEditableCN->setColor({0.0f, 0.0f, 1.0f});
             psEditableCN->setMaterial("flat");
             psEditableCN->setTransparency(0.65);
             psEditableCN->setRadius(0.003);
@@ -270,7 +274,7 @@ void updateCurvenet(bool conn = false) {
             psTangentsCN->setColor({0.5f, 0.55f, 0.15f});
             psTangentsCN->setMaterial("flat");
             psTangentsCN->setTransparency(0.8);
-            psTangentsCN->setRadius(0.006);
+            psTangentsCN->setRadius(0.004);
             psTangentsCN->setEnabled(true);
         }
 
@@ -393,6 +397,11 @@ void myCallback() {
             PM = std::make_unique<ProfileMover::profilemover>(meshV, psMesh_F, controlsV, tangentsV, splines, samplingParam);
             PM_init = true;
             updateProfileMover(false);
+            // For easy of debugging, remove all the extra stuff
+            psEditableCN->setEnabled(false);
+            // psTangentsCN->setEnabled(false);
+            // psControlsPC->setEnabled(false);
+            // psTangentsPC->setEnabled(false);
         }
     }
 
@@ -500,6 +509,7 @@ void myCallback() {
     // May need to store a copy of the rest curvenet
     if (ImGui::Button("Reset Curvenet")) {
         std::cout << "Resetting Splines." << std::endl;
+        clearPM();
         resetCurvenet();
         clearModes();
     }
@@ -519,6 +529,7 @@ void myCallback() {
                 psCN->addControl(pos, normal);
                 clearPM();
                 updateCurvenet(true);
+                updateProfileMover(true);
                 std::cout << "New Vert created at (" << pos[0] << ", " << pos[1] << ", " << pos[2] << ")" << std::endl;
             } else {
                 std::cout << "No valid point picked." << std::endl;
@@ -547,6 +558,7 @@ void myCallback() {
                 std::cout << "New Spline Created.\n" << std::endl;
                 clearPM();
                 updateCurvenet(true);
+                updateProfileMover(true);
             }
         }
     }
@@ -560,6 +572,7 @@ void myCallback() {
         std::cout << "Control removed." << std::endl;
         clearPM();
         updateCurvenet(true);
+        updateProfileMover(true);
     }
     // Clicked on a tangent whose spline we should remove
     if (delSplineMode && mouseClicked && pick.isHit && pick.structure == psTangentsPC) {
@@ -582,11 +595,11 @@ void myCallback() {
             // Build a basis
             Eigen::Vector3d selectedPos = psControls_P.row(selectedIdx).transpose();
             Eigen::Vector3d selectedN = psCN->getNormal(selectedIdx);
-            Eigen::Vector3d t0, t1;
-            Utils::buildPlaneBasis(selectedN, t0, t1);
+            Eigen::Vector3d selectedBN = psCN->getBinormal(selectedIdx);
+            Eigen::Vector3d t = (selectedN.cross(selectedBN)).normalized();
             std::cout << "Editing Vert at (" << selectedPos[0] << ", " << selectedPos[1] << ", " << selectedPos[2] << ")" << std::endl;
             // add Gizmo at position
-            addGizmoAtLocation(selectedPos, selectedN, t0, t1);
+            addGizmoAtLocation(selectedPos, selectedN, selectedBN, t);
         } else if (editCtrlMode && mouseClicked && !activeGizmo && (!pick.isHit || (pick.isHit && pick.structure != psControlsPC))) {  // or clear
             clearModes();
             editCtrlMode = true;
@@ -616,9 +629,10 @@ void myCallback() {
         Eigen::Vector3d gizmoPosF = Utils::glmToEigen(vertexGizmo->getPosition());
         glm::mat4 T = vertexGizmo->getTransform();
         Eigen::Vector3d gizmoNormal = Utils::glmToEigen(glm::normalize(glm::vec3(T[0])));
+        Eigen::Vector3d gizmoBN = Utils::glmToEigen(glm::normalize(glm::vec3(T[1])));
 
         psCN->updateControlPos(selectedIdx, gizmoPosF, tanConstraint);
-        psCN->updateControlNormal(selectedIdx, gizmoNormal, true, tanConstraint);
+        psCN->updateControlNormal(selectedIdx, gizmoNormal, gizmoBN, true, tanConstraint);
         // Update the associate tangent point in the curvenet
         vertexGizmo->setPosition(Utils::eigenToGLM(gizmoPosF));
 
@@ -672,7 +686,7 @@ int main(int argc, char **argv) {
     // Register mesh with PS
     std::cout << "Registering Surface Mesh to Polyscope" << std::endl;
     psMesh = polyscope::registerSurfaceMesh("Surface Mesh", psMesh_V, psMesh_F);
-    psMesh->setSurfaceColor({0.3f, 0.2f, 1.0f});
+    psMesh->setSurfaceColor({0.6f, 0.6f, 0.6f});
 
     // Create polyscope's curvenet
     psCN = std::make_unique<psCurvenet::pscurvenet>();

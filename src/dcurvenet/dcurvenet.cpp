@@ -60,6 +60,8 @@ namespace DCurvenet {
             V[idxPair.second].new_pos = cnCtrl[idxPair.first].new_pos;
         }
         // 2. Iterate over curves and recompute
+        // TODO: Can we parallelize this?
+        #pragma omp parallel for
         for (const auto& idxPair : inputCrvToC) {
             std::vector<int> splines = cnCurve[idxPair.first].splines;
             int c = idxPair.second;
@@ -461,6 +463,8 @@ namespace DCurvenet {
     int dcurvenet::allCornerNormalsAndWidths(std::vector<curveDeformData>& curveData) {
         curveData.clear();
         curveData.resize(C.size());
+        // TODO: Parallelize? NOTE: This may not be safe, since we operate on curveData simultaneously
+        #pragma omp parallel for
         for (int v = 0; v < V.size(); v++) {
             vertCornerNormalsWidths(v, curveData);
         }
@@ -581,51 +585,27 @@ namespace DCurvenet {
     }
     // Transport normals for all curves
     int dcurvenet::transportNormalsAndWidths(const std::vector<curveDeformData>& curveData) {
+        // TODO: Parallelize?
+        #pragma omp parallel for
         for (int c = 0; c < C.size(); c++) {
             transportNWOnCurve(c, curveData[c]);
         }
         return 1;
     }
 
-    // Complete the scaled frames on a curve by computing the binormal and height
-    int dcurvenet::computeScaledFrameOnCurve(int c) {
-        if (!C[c].active) {
-            return -1;
-        }
-        int start = C[c].start;
-        int end = C[c].end;
-        int he_start = C[c].he_start;
-        int he_end = C[c].he_end;
-        
-        int he_curr = -1;
-        // Iterate over every halfedge in the curve
-        do {
-            if (he_curr == -1) {
-                he_curr = he_start;
-            } else {
-                he_curr = HE[he_curr].next;
-            }
-            // Re-orthogonalize normals for safety
-            HE[he_curr].defData.newFrame.normal = (HE[he_curr].defData.newFrame.normal - 
-                                                   HE[he_curr].defData.newFrame.normal.dot(HE[he_curr].defData.newFrame.tangent) * 
-                                                   HE[he_curr].defData.newFrame.tangent).normalized();
-            // Positive side
-            HE[he_curr].defData.newFrame.binormal = (HE[he_curr].defData.newFrame.tangent.cross(HE[he_curr].defData.newFrame.normal)).normalized();
-            HE[he_curr].defData.newFrame.h = std::sqrt(std::abs(HE[he_curr].defData.newFrame.l * HE[he_curr].defData.newFrame.w));
-            // Negative side
-            int he_neg = HE[he_curr].twin;
-            // Re-orthogonalize normals for safety
-            HE[he_neg].defData.newFrame.normal = (HE[he_neg].defData.newFrame.normal - 
-                                                  HE[he_neg].defData.newFrame.normal.dot(HE[he_neg].defData.newFrame.tangent) *
-                                                  HE[he_neg].defData.newFrame.tangent).normalized();
-            HE[he_neg].defData.newFrame.binormal = (HE[he_neg].defData.newFrame.tangent.cross(HE[he_neg].defData.newFrame.normal)).normalized();
-            HE[he_neg].defData.newFrame.h = std::sqrt(std::abs(HE[he_neg].defData.newFrame.l * HE[he_neg].defData.newFrame.w));
-        } while (he_curr != -1 && HE[he_curr].dest != end);
-        return 1;
-    }
     int dcurvenet::computeScaledFrames() {
-        for (int c = 0; c < C.size(); c++) {
-            computeScaledFrameOnCurve(c);
+        // TODO: Parallelize?
+        #pragma omp parallel for
+        for (int he = 0; he < HE.size(); he++) {
+            if (HE[he].active) {
+                // Re-orthogonalize normals for safety
+                HE[he].defData.newFrame.normal = (HE[he].defData.newFrame.normal - 
+                                                    HE[he].defData.newFrame.normal.dot(HE[he].defData.newFrame.tangent) * 
+                                                    HE[he].defData.newFrame.tangent).normalized();
+                // Positive side
+                HE[he].defData.newFrame.binormal = (HE[he].defData.newFrame.tangent.cross(HE[he].defData.newFrame.normal)).normalized();
+                HE[he].defData.newFrame.h = std::sqrt(std::abs(HE[he].defData.newFrame.l * HE[he].defData.newFrame.w));
+            }
         }
         return 1;
     }

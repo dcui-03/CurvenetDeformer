@@ -11,6 +11,7 @@ namespace psCurvenet {
     struct Control {
         Eigen::Vector3d pos;
         Eigen::Vector3d n = Eigen::Vector3d::Zero();
+        Eigen::Vector3d bn = Eigen::Vector3d::Zero();    // A "Canonical" basis for the control to enable in-plane tangent rotations
         bool active = true;     // For safety, say if the component is active (ignore for now)
     };
 
