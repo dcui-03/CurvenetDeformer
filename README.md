@@ -19,11 +19,11 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/13**
+**Update 7/14**
 
 One more thing about the UI: Right now when we rotate controls during editing, I only compute rotations using the new normal, meaning that no in-plane rotations can happen. Should include this, so that we can rotate multiple tangents at the same time.
 
-Next thing on the docket (after cleaning up the UI and all the edited files again) is a code-level projection part of the mesh class, and then the cutmesh class, including the geodesic part, which should both take much longer to debug.
+Working on geodesics debugging; vertex projection fixed such that we do snapping on the original face rather than on the Newell projection.
 
 TODO later: in dCN class, change adjHE to a single stored halfedge, and then add an iterator to get all adjacent halfedges; add a safe normalization function to check certain that inputs will not normalize to a NaN or 0.
 

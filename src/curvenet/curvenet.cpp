@@ -123,7 +123,7 @@ namespace Curvenet {
             }
             int elType, elIdx;
             Eigen::Vector3d proj;
-            elType = m.computeVProjection(C[c].pos, proj, elIdx);
+            elType = m.computeVProjection(C[c].pos, proj, elIdx, false);
             if (elType == -1) {
                 throw std::runtime_error("curvenet::ctrlNormalsFromMesh(): invalid normals");
             }

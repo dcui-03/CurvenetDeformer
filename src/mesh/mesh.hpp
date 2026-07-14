@@ -149,13 +149,14 @@ class mesh {
         // ------------- UTILITIES (mesh_utils.cpp) -----------------
         // Optional default input parameters for traced intersection vertices
         int traceGeodesic(const Vert& start, 
-                      const Vert& end, 
-                      Eigen::Vector3d direc, 
-                      int walk_ElType,
-                      int walk_ElIdx,
-                      std::vector<Vert>& tracedVerts,
-                      bool recompute = false,
-                      bool fast = true);
+                        const Vert& end, 
+                        Eigen::Vector3d prevDirec,
+                        vertProjData prevData, 
+                        std::vector<Vert>& tracedVerts,
+                        int depth = 0,
+                        int max_depth = 5,
+                        bool recompute = false,
+                        bool fast = true);
         // Slow Termination check for traceGeodesic: Check if the end is visible from the start
         // on a shared face
         bool testVisibility(int f, Eigen::Vector3d start, Eigen::Vector3d end, double eps = 1e-4);
@@ -170,9 +171,9 @@ class mesh {
         int nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& prev_direc, 
                     Eigen::Vector3d& next_direc, int& next_elIdx, bool bdy_snap = true);
         // Compute the next walk element given that we intersected with a vertex
-        int nextEl_Vert(int v, int origin_ElType, int origin_ElIdx, 
+        int nextEl_Vert(int v, const vertProjData& originData, 
                     const Eigen::Vector3d& prev_direc, Eigen::Vector3d& next_direc, 
-                    int& next_elIdx, bool bdy_snap = true, double eps = 1e-4);
+                    int& elIdx, bool bdy_snap = true, double eps = 1e-4);
 };
 
 }   // namespace Mesh

@@ -103,13 +103,24 @@ namespace Mesh {
             // Classify based on properties
             std::vector<Vert> traceVerts;
             traceVerts.push_back(V[v0]);
+            int depth = 0;
             Eigen::Vector3d direc = (V[v1].pos - V[v0].pos).normalized();
             int success = M->traceGeodesic(V[v0], V[v1], direc, 
-                                           V[v0].projData.elType, V[v0].projData.elIdx, 
-                                           traceVerts);
+                                           V[v0].projData,
+                                           traceVerts, depth);
             // This is a likely spot for failure, so flag it
             if (success == -1) {
-                return -1;
+                // Check the opposite direction to catch initial directional error
+                // TODO: How necessary is this?
+                depth = 0;
+                traceVerts.clear();
+                traceVerts.push_back(V[v0]);
+                int success_opposite = M->traceGeodesic(V[v0], V[v1], -1 * direc, 
+                                           V[v0].projData,
+                                           traceVerts, depth);
+                if (success_opposite == -1) {
+                    return -1;
+                }
             }
             traceVerts.push_back(V[v1]);
 
