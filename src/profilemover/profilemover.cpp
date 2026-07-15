@@ -17,9 +17,13 @@ namespace ProfileMover {
         applyMesh(meshV, meshF);
         applyCurvenet(Controls, Tangents, Splines, alpha);
         computeDiscreteCurvenet();
-        // computeCutMesh();
+        computeCutMesh();
         
         // precomputation();
+    }
+    // Only apply mesh
+    profilemover::profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF) {
+        applyMesh(meshV, meshF);
     }
     // Blank init
     profilemover::profilemover() {
@@ -38,9 +42,10 @@ namespace ProfileMover {
     void profilemover::applyCurvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, int alpha) {
         if (!M_init) {
             throw std::runtime_error("profilemover::applyCurvenet(): mesh must be initialized first");
-        }
-        if (CN_init) {
+            return;
+        } else if (CN_init) {
             throw std::runtime_error("profilemover::applyCurvenet(): curvenet already initialized");
+            return;
         }
         CN = Curvenet::curvenet(Controls, Tangents, Splines, M, alpha);
         CN_init = true;
@@ -49,9 +54,12 @@ namespace ProfileMover {
 
     void profilemover::computeDiscreteCurvenet() {
         if (!M_init || !CN_init) {
-            // Throw an error
+            throw std::runtime_error("profilemover::computeDiscreteCurvenet(): curvenet or mesh not initialized");
             return;
-        } else if (!dCN_init) {
+        } else if (dCN_init) {
+            throw std::runtime_error("profilemover::computeDiscreteCurvenet(): discrete curvenet already computed");
+            return;
+        } else {
             // Initialize discrete curvenet
             dCN = DCurvenet::dcurvenet(&CN);
             dCN_init = true;
@@ -61,9 +69,12 @@ namespace ProfileMover {
 
     void profilemover::computeCutMesh() {
         if (!M_init || !CN_init || !dCN_init) {
-            // Throw an error
+            throw std::runtime_error("profilemover::computeCutMesh(): curvenet, mesh, or discrete curvenet not initialized");
             return;
-        } else if (!CM_init) {
+        } else if (CM_init) {
+            throw std::runtime_error("profilemover::computeCutMesh(): cutmesh already computed");
+            return;
+        } else {
             // Compute Cut-mesh
             CM = Mesh::cutmesh(&M, &dCN);
             CM_init = true;
@@ -99,6 +110,13 @@ namespace ProfileMover {
         return M;
     }
 
+    const Mesh::cutmesh& profilemover::cutmesh() const {
+        if (!CM_init) {
+            throw std::runtime_error("profilemover::cutmesh(): cutmesh not initialized");
+        }
+        return CM;
+    }
+
     const Curvenet::curvenet& profilemover::curvenet() const {
         if (!CN_init) {
             throw std::runtime_error("profilemover::curvenet(): curvenet not initialized");
@@ -116,17 +134,15 @@ namespace ProfileMover {
     // Runtime solvers
     // Runtime deformation
     std::vector<Eigen::Vector3d> profilemover::deform(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents) {
-        /*if (!M_init || !CN_init || !dCN_init || !CM_init) {
-            // TODO: throw error
-        }*/
-        if (!M_init || !CN_init || !dCN_init) {
-            // TODO: throw error
+        std::vector<Eigen::Vector3d> temp;
+        if (!M_init || !CN_init || !dCN_init || !CM_init) {
+            throw std::runtime_error("profilemover::deform(): mesh, curvenet, discrete curvenet, or cutmesh not computed");
+            return temp;
         }
         // 1. Compute new curvenet
         CN.updateCurveNet(Controls, Tangents);
         // 2. Compute new discrete curvenet and frames
         dCN.updateDiscCurveNet();
-        std::vector<Eigen::Vector3d> temp;
         return temp;
         /*
         // FIRST SOLVE: Deformation gradients

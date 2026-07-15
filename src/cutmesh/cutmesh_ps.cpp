@@ -12,7 +12,7 @@
 namespace Mesh {
 
 int cutmesh::polyscopeFormat(Eigen::MatrixXd& Verts, 
-                            std::vector<std::vector<int>>& Faces) {
+                            std::vector<std::vector<int>>& Faces) const {
     if (active_v < 3) {
         return -1;
     }

@@ -7,6 +7,7 @@
 #include <Eigen/Core>
 #include <vector>
 #include <utility>
+#include <iostream>
 
 // File for mesh cutting operations
 
@@ -44,28 +45,38 @@ namespace Mesh {
             int elIdx = proj_V[v].projData.elIdx;
             // If it landed on a vertex, then modify the existing vertex
             if (elType == 0) {
-                V[elIdx] = proj_V[v];
+                // If we landed on an existing vertex, then things are bad!
+                if (V[elIdx].projData.elIdx != -1) {
+                    return -1;
+                }
+                V[elIdx].label = 1;
+                V[elIdx].projData = proj_V[v].projData;
+                V[elIdx].defData.projVector = proj_V[v].defData.projVector;
                 dCNVtoV[v] = elIdx;
             } else if (elType == 1) {
                 // If it landed on an edge, we need to figure out where exacty to split the edge
                 int new_v = insertVertex(proj_V[v]);
-                // edgeMap[elIdx].push_back(new_v);
                 dCNVtoV[v] = new_v;
                 // Check where to split
                 int insert_index = 0;
                 int e_insert = elIdx;
-                Eigen::Vector3d v0 = M->V[HE[E[elIdx].he].dest].pos;
-                Eigen::Vector3d v1 = M->V[HE[HE[E[elIdx].he].twin].dest].pos;
-                double t = (V[new_v].pos - v0).norm()/(v1 - v0).norm();
+                int he = M->E[elIdx].he;
+                int a = M->HE[M->HE[he].twin].dest;
+                int b = M->HE[he].dest;
+
+                Eigen::Vector3d p0 = M->V[a].pos;
+                Eigen::Vector3d p1 = M->V[b].pos;
+                double t = (V[new_v].pos - p0).norm() / (p1 - p0).norm();
                 if (edgeMap.find(elIdx) != edgeMap.end()) { // Exists in map, we need to compute t vals etc.
                     std::vector<std::pair<double, int>> localSplits = edgeMap[elIdx];
                     // Find where to insert the new vertex
                     for (int j = 0; j < localSplits.size(); j++) {
-                        if (localSplits[j].first <= t) {
+                        if (std::abs(localSplits[j].first - t) <= 1e-12) {    // Landed on the same point as a different vertex
+                            return -1;
+                        } else if (localSplits[j].first < t) {
                             insert_index++;
                         }
                     }
-                    int e_insert = 0;
                     // Insert into mesh via edge split
                     if (insert_index != 0) {
                         e_insert = localSplits[insert_index - 1].second;
@@ -104,12 +115,14 @@ namespace Mesh {
             std::vector<Vert> traceVerts;
             traceVerts.push_back(V[v0]);
             int depth = 0;
-            Eigen::Vector3d direc = (V[v1].pos - V[v0].pos).normalized();
+            //Eigen::Vector3d direc = (V[v1].pos - V[v0].pos).normalized();
+            Eigen::Vector3d direc = (dCN_V[dCN_v1].pos - dCN_V[dCN_v0].pos).normalized();
             int success = M->traceGeodesic(V[v0], V[v1], direc, 
                                            V[v0].projData,
                                            traceVerts, depth);
             // This is a likely spot for failure, so flag it
-            if (success == -1) {
+            if (success != 1) {
+                std::cout << "Trace failed. Trying opposite direction." << std::endl;
                 // Check the opposite direction to catch initial directional error
                 // TODO: How necessary is this?
                 depth = 0;
@@ -118,12 +131,13 @@ namespace Mesh {
                 int success_opposite = M->traceGeodesic(V[v0], V[v1], -1 * direc, 
                                            V[v0].projData,
                                            traceVerts, depth);
-                if (success_opposite == -1) {
+                if (success_opposite != 1) {
+                    std::cout << "Trace failed again. Quitting." << std::endl;
                     return -1;
                 }
             }
             traceVerts.push_back(V[v1]);
-
+            
             // Insert each vert into the cutmesh
             std::vector<int> traceList;
             traceList.push_back(v0);
@@ -135,26 +149,38 @@ namespace Mesh {
                 traceVerts[v_idx].defData.projVector = ((dCN_V[dCN_v1].pos + dCN_V[dCN_v0].pos) / 2) - traceVerts[v_idx].pos;
                 // First, compute an estimated curvenet position so we can take the difference
                 if (traceVerts[v_idx].projData.elType == 0) {  // Check if we are on a vertex
-                    V[traceVerts[v_idx].projData.elIdx] = traceVerts[v_idx];
+                    if (V[traceVerts[v_idx].projData.elIdx].projData.elIdx != -1) { // If we hit a vertex that is already assigned, then quit
+                        return -1;
+                    }
+                    V[traceVerts[v_idx].projData.elIdx].label = 2;
+                    V[traceVerts[v_idx].projData.elIdx].projData = traceVerts[v_idx].projData;
+                    V[traceVerts[v_idx].projData.elIdx].defData = traceVerts[v_idx].defData;
                     traceList.push_back(traceVerts[v_idx].projData.elIdx);
-                } else { // We must be on an edge
+                } else if (traceVerts[v_idx].projData.elType == 1) { // We must be on an edge
                     int new_v = insertVertex(traceVerts[v_idx]);
                     // Check if the edge was already split. If so, find where to split it.
+                    int orig_e = V[new_v].projData.elIdx;   // source mesh edge index
+                    int e_insert = orig_e;                  // cutmesh edge to split
+                    // Compute t ONLY from the original/source edge
+                    int orig_he = M->E[orig_e].he;
+                    int a = M->HE[M->HE[orig_he].twin].dest;
+                    int b = M->HE[orig_he].dest;
+
+                    Eigen::Vector3d p0 = M->V[a].pos;
+                    Eigen::Vector3d p1 = M->V[b].pos;
+                    double t = (V[new_v].pos - p0).norm() / (p1 - p0).norm();
+
                     int insert_index = 0;
-                    int orig_e = V[new_v].projData.elIdx;   // Edge from the original mesh
-                    int e_insert = orig_e;      // Edge in cut-mesh to insert at
-                    Eigen::Vector3d v0 = M->V[HE[E[e_insert].he].dest].pos;
-                    Eigen::Vector3d v1 = M->V[HE[HE[E[e_insert].he].twin].dest].pos;
-                    double t = (V[new_v].pos - v0).norm()/(v1 - v0).norm();
                     if (edgeMap.find(orig_e) != edgeMap.end()) { // Exists in map, we need to compute t vals etc.
                         std::vector<std::pair<double, int>> localSplits = edgeMap[orig_e];
                         // Find where to insert the new vertex
                         for (int j = 0; j < localSplits.size(); j++) {
-                            if (localSplits[j].first <= t) {
+                            if (std::abs(localSplits[j].first - t) <= 1e-12) {
+                                return -1;
+                            } else if (localSplits[j].first < t) {
                                 insert_index++;
                             }
                         }
-                        int e_insert = 0;
                         // Insert into mesh via edge split
                         if (insert_index != 0) {
                             e_insert = localSplits[insert_index - 1].second;
@@ -163,29 +189,38 @@ namespace Mesh {
                     int new_e = splitEdge(e_insert, new_v);
                     edgeMap[orig_e].insert(edgeMap[orig_e].begin() + insert_index, std::make_pair(t, new_e));
                     traceList.push_back(new_v);
+                } else {    // Something weird happened
+                    return -1;
                 }
             }
             traceList.push_back(v1);
-
             // Connect the inserted vertices
             for (int v_idx = 1; v_idx < traceVerts.size(); v_idx++) {
-                int e = insertEdge(traceList[v_idx - 1], traceList[v_idx], dCN_he0, dCN_he1);
+                int v_start = traceList[v_idx - 1];
+                int v_next = traceList[v_idx];
+                int e = insertEdge(v_start, v_next, dCN_he0, dCN_he1);
                 if (e == -1) {  // Edge already exists
-                    int he0 = vertPairToHE[{v0, v1}];
-                    int he1 = vertPairToHE[{v1, v0}];
+                    int he0 = vertPairToHE[{v_start, v_next}];
+                    int he1 = vertPairToHE[{v_next, v_start}];
                     HE[he0].dCN_idx = dCN_he0;
                     HE[he1].dCN_idx = dCN_he1;
                 }
             }
         }
-
+        std::cout << "Inserted all new vertices and edges" << std::endl;
         // Compute faces
-        sortHalfEdges();
-        resetFaces();
-
+        if (sortHalfEdges() != 1) {
+            return -1;
+        }
+        std::cout << "Halfedges sorted." << std::endl;
+        if (resetFaces() != 1) {
+            return -1;
+        }
+        std::cout << "Faces reset." << std::endl;
         // "Remove" obsolete curves by deactivating them
         deactivateIsolatedCuts();
-
+        std::cout << "Isolated cuts deactivated." << std::endl;
+        
         return 1;
     }
 
@@ -197,7 +232,7 @@ namespace Mesh {
             if (!HE[he].active) {
                 continue;
             }
-            outHE[HE[HE[he].dest].twin].push_back(he);
+            outHE[HE[HE[he].twin].dest].push_back(he);
         }
 
         // Iterate over vertices and sort their halfedges based on projection to the tangent plane
@@ -227,8 +262,9 @@ namespace Mesh {
                 int he = sortedHE[i];
                 int he_p1 = sortedHE[(i+1)%sortedHE.size()];
                 
-                HE[he].prev = HE[he_p1].twin;
-                HE[he_p1].next = he;
+                int incoming = HE[he_p1].twin;
+                HE[he].prev = incoming;
+                HE[incoming].next = he;
             }
         }
         return 1;
@@ -238,6 +274,7 @@ namespace Mesh {
     int cutmesh::resetFaces() {
         // Throw away all old faces
         F.clear();
+        active_f = 0;
         // Iterate over halfedges and find every loop
         std::vector<bool> seenHE(HE.size());
         for (int he = 0; he < HE.size(); he++) {
@@ -248,17 +285,31 @@ namespace Mesh {
             }
             int curr_he = he;
             int counter = 1;
+            
             std::vector<int> heLoop;
             // Loop until we get the face
             // Push back the face
             int f = F.size();
             do {
                 heLoop.push_back(curr_he);
-                seenHE[he] = true;
+                seenHE[curr_he] = true;
+                HE[curr_he].face = f;
+
+                curr_he = HE[curr_he].next;
+                counter++;
+
+                if (curr_he == he) {
+                    break;
+                }
+                heLoop.push_back(curr_he);
+                seenHE[curr_he] = true;
                 HE[curr_he].face = f;
                 curr_he = HE[curr_he].next;
                 counter++;
-            } while (curr_he != he || counter >= HE.size());
+            } while (curr_he != he && counter < HE.size());
+            if (curr_he != he || heLoop.size() < 3) {
+                return -1;
+            }
             F.emplace_back();
             active_f++;
             F[f].he = he;
@@ -300,19 +351,14 @@ namespace Mesh {
         // Iterate over halfedges and identify which are without a face and not boundary
         for (int he = 0; he < HE.size(); he++) {
             // NOTE: face index of -1 indicates boundary, meaning that an additional boundary flag set to false is a contradiction
-            if (HE[he].face == -1 && !HE[he].boundary) {
+            int twin = HE[he].twin;
+            if (HE[he].face == -1 && !HE[he].boundary &&
+                HE[twin].face == -1 && !HE[twin].boundary) {
                 // Deactivate the associated vertices and edge
                 V[HE[he].dest].active = false;
                 E[HE[he].edge].active = false;
                 HE[he].active = false;
                 HE[HE[he].twin].active = false;
-            }
-        }
-
-        // Loose verts (for sanity)
-        for (int v = 0; v < V.size(); v++) {
-            if (V[v].active && (vertAdjHEs(v).size() == 0)) {
-                V[v].active = false;
             }
         }
 
@@ -342,31 +388,37 @@ namespace Mesh {
                         local_dCNIdxs.push_back(he);
                     }
                 }
+                if (local_dCNIdxs.empty()) {
+                    continue;
+                }
                 // Find corner index for each
                 std::vector<int> cornerIdxs(HE_SplitIdxs.size());   // Global HE indexing
                 for (int i = 0; i < HE_SplitIdxs.size(); i++) {
-                    int local_idx = HE_SplitIdxs[i];
+                    int splitLocal = HE_SplitIdxs[i];
                     // Find the corresponding halfedge
-                    int next_dCN = 0;
-                    for (int c = local_dCNIdxs.size() - 1; c >= 0; c--)  {
-                        // Take advantage that local_dCNIdxs is sorted
-                        // As soon as we surpass the next one
-                        if (local_idx <= local_dCNIdxs[c]) {
+                    int next_dCN = local_dCNIdxs[0];
+                    for (int idx = 0; idx < local_dCNIdxs.size(); idx++) {
+                        int local_i = local_dCNIdxs[idx];
+                        if (local_i >= splitLocal) {
+                            next_dCN = local_i;
                             break;
                         }
-                        next_dCN = c;
                     }
-                    cornerIdxs[i] = HE[adjHE[next_dCN]].twin;
+                    cornerIdxs[i] = HE[adjHE[local_dCNIdxs[next_dCN]]].twin;
                 }
 
                 // For each dCN corner, split the vertex and rewire the halfedge destination vertices accordingly
-                std::vector<std::pair<int, int>> newStartBoundaries(HE_SplitIdxs.size());
-                std::vector<std::pair<int, int>> newEndBoundaries(HE_SplitIdxs.size());
+                std::vector<std::pair<int, int>> newStartBoundaries;
+                std::vector<std::pair<int, int>> newEndBoundaries;
+                int num_corners = 0;
                 for (int i = 0; i < HE_SplitIdxs.size(); i++) {
                     int startHE = adjHE[HE_SplitIdxs[i]];
                     int nextHE = adjHE[HE_SplitIdxs[(i+1)%HE_SplitIdxs.size()]];
+                    if (HE[startHE].boundary) { // Skip adding any corners that are boundaries
+                        continue;
+                    }
                     int v_current;
-                    if (i == 0) {
+                    if (num_corners == 0) {
                         v_current = v;
                     } else {
                         v_current = insertVertex(V[v].pos, V[v].n, V[v].label, -1, V[v].projData.elType, V[v].projData.elIdx, V[v].defData.projVector);
@@ -395,10 +447,11 @@ namespace Mesh {
                         HE[new_he].dest = HE[HE[startHE].twin].dest;
                         HE[new_he].boundary = true;
                         HE[new_he].edge = new_e;
+                        HE[startHE].edge = new_e;
                         startBdy.first = new_he;
                         startBdy.second = -1;
                     }
-                    newStartBoundaries[i] = startBdy;
+                    newStartBoundaries.push_back(startBdy);
                     int he_current = startHE;
                     int counter = 0;    // safety
                     // Rewire the halfedges to point to the new vert
@@ -409,13 +462,20 @@ namespace Mesh {
 
                         int he_in = HE[he_current].prev;
                         int adj_v1 = HE[he_in].dest;
+                        // Sanity
                         HE[he_in].dest = v_current;
+                        if (HE[he_in].dest != v_current) {
+                            return -1;
+                        }
                         vertPairToHE.erase({adj_v1, v});
                         vertPairToHE[{adj_v1, v_current}] = he_in;
                         
                         he_current = HE[he_in].twin;
                         counter++;
-                    } while((he_current != nextHE && !HE[he_current].boundary) || (counter >= adjHE.size()));
+                    } while((he_current != nextHE && !HE[he_current].boundary) && (counter < adjHE.size()));
+                    if (he_current != nextHE) {
+                        return -1;
+                    }
 
                     // Check if we need to insert the end boundary
                     std::pair<int, int> endBdy; // 
@@ -436,12 +496,13 @@ namespace Mesh {
                         endBdy.second = -1;
                     }
                     newEndBoundaries.push_back(endBdy);
+                    num_corners++;
                 }
 
                 // Now that all splits are made, rewire by properly rewiring the boundaries
                 for (int i = 0; i < newStartBoundaries.size(); i++) {
                     const std::pair<int, int>& currStart = newStartBoundaries[i];
-                    const std::pair<int, int>& currEnd = newStartBoundaries[i];
+                    const std::pair<int, int>& currEnd = newEndBoundaries[i];
 
                     HE[currStart.first].next = currEnd.first;
                     HE[currEnd.first].prev = currStart.first;
@@ -450,17 +511,22 @@ namespace Mesh {
                     HE[HE[currEnd.first].twin].twin = currEnd.first;
 
                     // Reconnect the newly formed boundaries
+                    // Do both reciprocally for safety
                     if (currStart.second == -1) {
                         const std::pair<int, int>& prevEnd = newEndBoundaries[(i+newEndBoundaries.size()-1)%newEndBoundaries.size()];
-                        HE[currStart.first].prev = prevEnd.second;
+                        HE[currStart.first].prev = prevEnd.first;
+                        HE[prevEnd.first].next = currStart.first;
                     } else {
                         HE[currStart.first].prev = currStart.second;
+                        HE[currStart.second].next = currStart.first;
                     }
                     if (currEnd.second == -1) {
                         const std::pair<int, int>& nextStart = newStartBoundaries[(i+1)%newStartBoundaries.size()];
-                        HE[currEnd.first].next = nextStart.second;
+                        HE[currEnd.first].next = nextStart.first;
+                        HE[nextStart.first].prev = currEnd.first;
                     } else {
                         HE[currEnd.first].next = currEnd.second;
+                        HE[currEnd.second].prev = currEnd.first;
                     }
                 }
             }

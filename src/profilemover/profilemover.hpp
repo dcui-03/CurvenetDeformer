@@ -23,10 +23,13 @@ class profilemover {
         profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF, 
                                const std::vector<Eigen::Vector3d> Controls, const std::vector<Eigen::Vector3d> Tangents, 
                                const std::vector<std::array<int, 4>> Splines, int alpha = 5);
+        // Only apply mesh
+        profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF);
         profilemover();
 
         // Getters in case we need it
         const Mesh::mesh& mesh() const;
+        const Mesh::cutmesh& cutmesh() const;
         const Curvenet::curvenet& curvenet() const;
         const DCurvenet::dcurvenet& discreteCurvenet() const;
         

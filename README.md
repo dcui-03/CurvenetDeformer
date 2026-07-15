@@ -19,9 +19,9 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/14**
+**Update 7/15**
 
-Finished checking mesh projection and geodesics code. Moving on to cutmesh.
+Working through cutmesh visual debugging. Had a major bug when copying over data from the parent mesh (found it, phew!), but things generally seem to be heading in the right direction now. Testing embedding curves and it's definitely finnicky. There is definitely a problem with the geodesic tracing. On certain occasions, the trace fails, even though a maximum trace depth of 5 should be plenty sufficient... need to comb through this again in more detail. There is also clearly a problem with the mesh cutting...
 
 An oddity to think about: Currently I forcibly align the corner normals in dCN frame computation with the normal at the intersection via dot product test (i.e., when the signed angle at the corner is larger than 180, it can cause the frame normal to "flip" w.r.t., the intersection normal, so we fix it via a sign change). This leads to pretty frames where pos. and neg. normals generally face the same way, but because this flip is binary, it can cause the frame to flip discontinuously as splines move. BUT if we don't do this, then the splines are no longer oriented w.r.t. the local normal, and therefore some frames don't intuitively describe local "stretch" on the surface anymore, which may also cause problems. Not sure what to do here, maybe change after doing testing.
 

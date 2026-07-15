@@ -82,7 +82,7 @@ int cutmesh::splitEdge(int e, int new_v) {
     V[new_v].he = he0_new;
 
     HE[HE[he0_idx].next].prev = he0_new;
-    HE[HE[he1_idx].next].prev = he1_new;
+    HE[HE[he1_idx].prev].next = he1_new;
     HE[he0_idx].next = he0_new;
     HE[he0_new].prev = he0_idx;
     HE[he1_new].next = he1_idx;

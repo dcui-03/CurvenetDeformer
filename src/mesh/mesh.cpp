@@ -47,6 +47,8 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
     V.resize(V_List.size());
     for (int v = 0; v < V_List.size(); v++) {
         V[v].pos = V_List[v];
+        V[v].projData.elType = 0;
+        V[v].projData.elIdx = v;
     }
     active_v = V.size();
 

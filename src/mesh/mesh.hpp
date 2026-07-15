@@ -85,7 +85,7 @@ class mesh {
                                     int next = -1, 
                                     int prev = -1, 
                                     int dCN_idx = -1);
-        Edge mesh::createEdge(int he = -1, Eigen::Vector3d n = Eigen::Vector3d::Zero());
+        Edge createEdge(int he = -1, Eigen::Vector3d n = Eigen::Vector3d::Zero());
         bool copyVertex(int v, Vert& new_vert);
         bool copyHalfEdge(int he, HalfEdge& new_he);
         bool copyEdge(int e, Edge& new_e);

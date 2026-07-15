@@ -21,6 +21,9 @@ void cutmesh::computeHEMap(std::vector<int>& heToCMhe, std::map<int, int>& CMheT
     CMheTohe.clear();
     int num_he = 0;
     for (int f = 0; f < F.size(); f++) {
+        if (!F[f].active) {
+            continue;
+        }
         std::vector<int> adjHE = faceAdjHalfEdges(f);
         for (int he = 0; he < adjHE.size(); he++) {
             if (HE[adjHE[he]].active && !HE[adjHE[he]].boundary) {
@@ -62,7 +65,7 @@ Eigen::SparseMatrix<double> cutmesh::computeVMatrix(std::vector<int>& vToCM, std
     for (int he = 0; he < heToCMhe.size(); he++) {
         int dest = HE[HE[heToCMhe[he]].twin].dest;
         if (V[dest].label == 0) {   // Get V only
-            tripletList.push_back(T(heToCMhe[he], CMtoV[dest], 1.0));
+            tripletList.push_back(T(he, CMtoV[dest], 1.0));
         }
     }
 
@@ -74,6 +77,7 @@ Eigen::SparseMatrix<double> cutmesh::computeCMatrix(std::vector<int>& cToCM, std
     // Def. triplets for filling sparse matrices
     typedef Eigen::Triplet<double> T;
     cToCM.clear();
+    mToC.clear();
     std::map<int, int> CMtoC;
     int num_c = 0;
     // First just get number of vertices
@@ -98,7 +102,7 @@ Eigen::SparseMatrix<double> cutmesh::computeCMatrix(std::vector<int>& cToCM, std
     for (int he = 0; he < heToCMhe.size(); he++) {
         int dest = HE[HE[heToCMhe[he]].twin].dest;
         if (V[dest].label != 0) {
-            tripletList.push_back(T(heToCMhe[he], CMtoC[dest], 1.0));
+            tripletList.push_back(T(he, CMtoC[dest], 1.0));
         }
     }
 
@@ -109,9 +113,10 @@ Eigen::SparseMatrix<double> cutmesh::computeCMatrix(std::vector<int>& cToCM, std
 // Compute the halfedge-based laplacian 
 Eigen::SparseMatrix<double> cutmesh::computeHELaplacian(std::map<int, int>& CMheTohe) {
     typedef Eigen::Triplet<double> T;
-    Eigen::SparseMatrix<double> L;
+    int num_he = CMheTohe.size();
+    Eigen::SparseMatrix<double> L(num_he, num_he);
     std::vector<T> tripletList;
-    tripletList.reserve(CMheTohe.size());
+    tripletList.reserve(num_he);
     // Compute face Laplacian
     for (int f = 0; f < F.size(); f++) {
         if (!F[f].active) {
@@ -126,9 +131,9 @@ Eigen::SparseMatrix<double> cutmesh::computeHELaplacian(std::map<int, int>& CMhe
 
         // Redistribute the Laplacian to its associated indices
         for (int i = 0; i < faceL.rows(); i++) {
-            int f_row = CMheTohe[adjHE_idxs[i]];
+            int f_row = CMheTohe.at(adjHE_idxs[i]);
             for (int j = 0; j < faceL.cols(); j++) {
-                int f_col = CMheTohe[adjHE_idxs[j]];
+                int f_col = CMheTohe.at(adjHE_idxs[j]);
                 tripletList.push_back(T(f_row, f_col, faceL(i, j)));
             }
         }

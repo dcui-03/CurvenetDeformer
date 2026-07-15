@@ -8,6 +8,7 @@
 #include <limits>
 #include <utility>
 #include <algorithm>
+#include <iostream>
 
 // Utility functions for mesh (projection, insertion, etc.)
 
@@ -235,35 +236,38 @@ int mesh::traceGeodesic(const Vert& start,
                   bool recompute,
                   bool fast) {
     double eps = 1e-6;
-    depth++;
     // First, do some simple tests for termination
     // It's good to have these to catch tiny directional drift
     if (prevData.elType == end.projData.elType && prevData.elIdx == end.projData.elIdx) {   // The next mesh element is exactly the goal
-        return true;
+        return 1;
     } else if (start.projData.elType == 0 && end.projData.elType == 0) {    // Both are vertices
         if (vertPairToHE.find(std::make_pair(start.projData.elIdx, end.projData.elIdx)) != vertPairToHE.end()) {
-            return true;
+            return 1;
         }
     } else if (start.projData.elType == 0 && end.projData.elType == 1) {    // Start is vertex, end is edge
         // Check if either end of the edge is the vertex
         if (HE[E[end.projData.elIdx].he].dest == start.projData.elIdx || HE[HE[E[end.projData.elIdx].he].twin].dest == start.projData.elIdx) {
-            return true;
+            return 1;
         }
     } else if (start.projData.elType == 1 && end.projData.elType == 0) {    // Start is edge, end is vertex
         // Check if either end of the edge is the vertex
         if (HE[E[start.projData.elIdx].he].dest == end.projData.elIdx || HE[HE[E[start.projData.elIdx].he].twin].dest == end.projData.elIdx) {
-            return true;
+            return 1;
         }
     } else if (start.projData.elType == 1 && end.projData.elType == 1) {    // Both are on edges
         // Check if they share an edge
         if (start.projData.elIdx == end.projData.elIdx) {
-            return true;
+            return 1;
         }
     }
 
+    // At this point, we should only be starting from a face
+    if (depth == 0 && start.projData.elType != 2) {
+        return -1;
+    }
     // If we still haven't found the vert after searching the max depth, assume that we are going in the wrong direc
-    if (depth > max_depth) {
-        return false;
+    if (++depth > max_depth) {
+        return -1;
     }
 
     // Otherwise need to do a face-wise check
@@ -287,11 +291,11 @@ int mesh::traceGeodesic(const Vert& start,
     // Check if there are any shared faces (termination condition)
     if (sharedAdjF.size() >= 1) {   // Share at least one face
         if (fast) { // Fast version is a simple face check
-            return true;
+            return 1;
         } else {    // Slow version does a visibility check
             for (int f_idx : sharedAdjF) {
                 if (testVisibility(f_idx, start.pos, end.pos)) {
-                    return true;
+                    return 1;
                 }
             }
         }
@@ -352,8 +356,7 @@ int mesh::traceGeodesic(const Vert& start,
     // Project walk direction onto specified direction
     Eigen::Vector3d hit;
     vertProjData hit_Data;
-    int valid = rayCastOnFace(nextData.elIdx, start.pos, nextDirec, hit, hit_Data);
-    if (valid == -1) {
+    if (rayCastOnFace(nextData.elIdx, start.pos, nextDirec, hit, hit_Data) == -1) {
         return -1;
     }
     // Create a new vertex at intersection and append to list

@@ -21,9 +21,15 @@ cutmesh::cutmesh(mesh* MRef, DCurvenet::dcurvenet* dCN): M(MRef), dCN(dCN) {
         throw std::runtime_error("Failed to initialize copy from mesh.");
     }
     // Embed the dCN curves into this mesh
-    embedCurves();
+    if (embedCurves() != 1) {
+        throw std::runtime_error("Failed to embed curves.");
+    }
     // Actually apply cuts to the mesh
-    cutMesh();
+    /*
+    if (cutMesh() != 1) {
+        throw std::runtime_error("Failed to cut mesh.");
+    }
+    */
     return;
 }
 
@@ -84,32 +90,27 @@ bool cutmesh::copyFromMesh() {
         return false;
     }
     // Because the source mesh must have fixed topology + no inactive attributes, we can copy directly without worrying about indexing issues
-    // Iterate over vertices and copy in their data
-    for (int v = 0; v < M->V.size(); v++) {
-        int new_v = V.size();
-        V.emplace_back();
-        if (!copyVertex(v, V[new_v])) {
-            return false;
-        }
+    V = M->V;
+    HE = M->HE;
+    E = M->E;
+
+    // You can either copy faces or clear them.
+    // Since you later rebuild faces, clearing is fine.
+    F.clear();
+
+    // If you want to intentionally invalidate old face IDs:
+    for (int he = 0; he < HE.size(); he++) {
+        HE[he].face = -1;
     }
 
-    // Iterate over halfedges and copy in their data
-    for (int he = 0; he < M->HE.size(); he++) {
-        int new_he = HE.size();
-        HE.emplace_back();
-        if (!copyHalfEdge(he, HE[new_he])) {
-            return false;
-        }
-    }
+    vertPairToHE = M->vertPairToHE;
 
-    // Iterate over edges and copy in their data
-    for (int e = 0; e < M->E.size(); e++) {
-        int new_e = E.size();
-        E.emplace_back();
-        if (!copyEdge(e, E[new_e])) {
-            return false;
-        }
-    }
+    meanE = M->meanE;
+    bboxDiag = M->bboxDiag;
+
+    active_v = M->active_v;
+    active_e = M->active_e;
+    active_f = 0;
 
     // We will need to re-init faces later anyways, so we can just ignore for now
     return true;

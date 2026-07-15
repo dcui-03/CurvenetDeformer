@@ -68,11 +68,9 @@ std::vector<glm::vec3> negScaledBinormals;
 std::vector<glm::vec3> negScaledNormals;
 
 // Cutmesh
-/*
 Eigen::MatrixXd psCutMesh_V; // Vertex list
 std::vector<std::vector<int>> psCutMesh_F; // Face list: Note the inner list has arbitrary size for non-triangle faces
 polyscope::SurfaceMesh* psCutMesh = nullptr;
-*/
 
 
 // VARIABLES FOR PARSING AND WRITING FILES
@@ -215,7 +213,12 @@ void updateProfileMover(bool recompute = true) {
         psDCN->remove();
         psDCN = nullptr;
     }
+    if (psCutMesh) {
+        psCutMesh->remove();
+        psCutMesh = nullptr;
+    }
 
+    // Discrete Curvenet
     // We have to re-get the scaled frames anyways, so no point in flagging for a simple update
     // Recompute all attributes
     (PM->discreteCurvenet()).polyscopeFormat(psDCN_P, psDCN_E, posScaledTangents, 
@@ -247,6 +250,12 @@ void updateProfileMover(bool recompute = true) {
     auto* negNorm = psDCN->addEdgeVectorQuantity("Neg. Normals", negScaledNormals);
     negNorm->setVectorColor(glm::vec3{0.75f, 0.1f, 1.0f});
     negNorm->setEnabled(true);
+
+    // Cut-mesh
+    if ((PM->cutmesh()).polyscopeFormat(psCutMesh_V, psCutMesh_F) == 1) {
+        psCutMesh = polyscope::registerSurfaceMesh("Cut Mesh", psCutMesh_V, psCutMesh_F);
+        psCutMesh->setSurfaceColor({0.0f, 1.0f, 0.8f});
+    }
     return;
 }
 
@@ -320,10 +329,14 @@ void clearPM() {
     CM_init = false;
     psDCN_P.resize(0, 0); // Aggregate list of controls and tangents
     psDCN_E.clear(); // Edge List between controls and tangents
+    psCutMesh_V.resize(0, 0);
+    psCutMesh_F.clear();
     PM = nullptr;
     if (psDCN) {
         psDCN->remove();
         psDCN = nullptr;
+        // psCutMesh->remove();
+        psCutMesh = nullptr;
     }
     // Local frames
     posScaledTangents.clear();
@@ -399,6 +412,7 @@ void myCallback() {
             updateProfileMover(false);
             // For easy of debugging, remove all the extra stuff
             psEditableCN->setEnabled(false);
+            psMesh->setEnabled(false);
             // psTangentsCN->setEnabled(false);
             // psControlsPC->setEnabled(false);
             // psTangentsPC->setEnabled(false);
@@ -507,10 +521,10 @@ void myCallback() {
         updateProfileMover(true);
     }
     // May need to store a copy of the rest curvenet
-    if (ImGui::Button("Reset Curvenet")) {
-        std::cout << "Resetting Splines." << std::endl;
+    if (ImGui::Button("Clear Profile Mover")) {
+        std::cout << "Clearing profile mover." << std::endl;
         clearPM();
-        resetCurvenet();
+        updateProfileMover(true);
         clearModes();
     }
 
