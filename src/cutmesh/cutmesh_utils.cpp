@@ -17,15 +17,15 @@ namespace Mesh {
 // Inserts a vertex at a location and face
 // Returns the index of the new vertex
 // NOTE: The new vertex has no normal information or associated halfedge.
-int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, int ref_Type, int ref_Idx, Eigen::Vector3d proj) {
-    Vert newV = createVertex(pos, n, label, cornerIdx, ref_Type, ref_Idx, proj);
+int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, int ref_Type, int ref_Idx, Eigen::Vector3d proj, Eigen::Matrix3d defGrad) {
+    Vert newV = createVertex(pos, n, label, cornerIdx, ref_Type, ref_Idx, proj, defGrad);
     int v = V.size();
     V.push_back(newV);
     return v;
 }
 
-int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, vertProjData projData, Eigen::Vector3d proj) {
-    Vert newV = createVertex(pos, n, label, cornerIdx, projData, proj);
+int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, vertProjData projData, vertDeformData defData) {
+    Vert newV = createVertex(pos, n, label, cornerIdx, projData, defData);
     int v = V.size();
     V.push_back(newV);
     return v;
@@ -76,13 +76,17 @@ int cutmesh::splitEdge(int e, int new_v) {
     HE[he1_new].edge = new_e;
     HE[he0_idx].dest = new_v;
     HE[he1_new].dest = new_v;
-    HE[he0_new].dest = u;
+    HE[he0_new].dest = v;
     HE[he0_new].boundary = HE[he0_idx].boundary;
     HE[he1_new].boundary = HE[he1_idx].boundary;
     V[new_v].he = he0_new;
 
     HE[HE[he0_idx].next].prev = he0_new;
     HE[HE[he1_idx].next].prev = he1_new;
+    HE[he0_idx].next = he0_new;
+    HE[he0_new].prev = he0_idx;
+    HE[he1_new].next = he1_idx;
+    HE[he1_idx].prev = he1_new;
 
     // Modify vertPairToHE
     // Erase old, and insert replacements

@@ -10,7 +10,7 @@
 #include <limits>
 #include <utility>
 
-// Mesh class functions for initialization
+// Cutmesh class functions for initialization
 
 namespace Mesh {
 
@@ -28,7 +28,7 @@ cutmesh::cutmesh(mesh* MRef, DCurvenet::dcurvenet* dCN): M(MRef), dCN(dCN) {
 }
 
 cutmesh::cutmesh() {
-    
+
 }
 
 // Add a discrete Curvenetwork Pointer
@@ -45,6 +45,9 @@ bool cutmesh::applyMeshRef(mesh* MRef) {
 
 // Assign a discrete curvenet index to a halfedge
 bool cutmesh::assignDCNtoHE(int he, const int dCN_idx) {
+    if (he < 0 || he >= HE.size()) {
+        return false;
+    }
     HE[he].dCN_idx = dCN_idx;
     return true;
 }
@@ -77,20 +80,35 @@ void cutmesh::countNumActive() {
 // Initializes by copying the vertex, edge, and halfedge data from the reference mesh
 bool cutmesh::copyFromMesh() {
     clearMesh();
+    if (M->F.size() < 1 || M->V.size() < 3 || M->E.size() < 3) {
+        return false;
+    }
+    // Because the source mesh must have fixed topology + no inactive attributes, we can copy directly without worrying about indexing issues
     // Iterate over vertices and copy in their data
     for (int v = 0; v < M->V.size(); v++) {
+        int new_v = V.size();
         V.emplace_back();
-        // TODO
+        if (!copyVertex(v, V[new_v])) {
+            return false;
+        }
     }
 
     // Iterate over halfedges and copy in their data
     for (int he = 0; he < M->HE.size(); he++) {
-        // TODO
+        int new_he = HE.size();
+        HE.emplace_back();
+        if (!copyHalfEdge(he, HE[new_he])) {
+            return false;
+        }
     }
 
     // Iterate over edges and copy in their data
     for (int e = 0; e < M->E.size(); e++) {
-        // TODO
+        int new_e = E.size();
+        E.emplace_back();
+        if (!copyEdge(e, E[new_e])) {
+            return false;
+        }
     }
 
     // We will need to re-init faces later anyways, so we can just ignore for now

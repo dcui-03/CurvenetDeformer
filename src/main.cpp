@@ -595,11 +595,11 @@ void myCallback() {
             // Build a basis
             Eigen::Vector3d selectedPos = psControls_P.row(selectedIdx).transpose();
             Eigen::Vector3d selectedN = psCN->getNormal(selectedIdx);
-            Eigen::Vector3d selectedBN = psCN->getBinormal(selectedIdx);
-            Eigen::Vector3d t = (selectedN.cross(selectedBN)).normalized();
+            Eigen::Vector3d t0, t1;
+            Utils::buildPlaneBasis(selectedN, t0, t1);
             std::cout << "Editing Vert at (" << selectedPos[0] << ", " << selectedPos[1] << ", " << selectedPos[2] << ")" << std::endl;
             // add Gizmo at position
-            addGizmoAtLocation(selectedPos, selectedN, selectedBN, t);
+            addGizmoAtLocation(selectedPos, selectedN, t0, t1);
         } else if (editCtrlMode && mouseClicked && !activeGizmo && (!pick.isHit || (pick.isHit && pick.structure != psControlsPC))) {  // or clear
             clearModes();
             editCtrlMode = true;
@@ -631,8 +631,8 @@ void myCallback() {
         Eigen::Vector3d gizmoNormal = Utils::glmToEigen(glm::normalize(glm::vec3(T[0])));
         Eigen::Vector3d gizmoBN = Utils::glmToEigen(glm::normalize(glm::vec3(T[1])));
 
-        psCN->updateControlPos(selectedIdx, gizmoPosF, tanConstraint);
-        psCN->updateControlNormal(selectedIdx, gizmoNormal, gizmoBN, true, tanConstraint);
+        psCN->updateControlPos(selectedIdx, gizmoPosF, false);
+        psCN->updateControlNormal(selectedIdx, gizmoNormal, true, false);
         // Update the associate tangent point in the curvenet
         vertexGizmo->setPosition(Utils::eigenToGLM(gizmoPosF));
 

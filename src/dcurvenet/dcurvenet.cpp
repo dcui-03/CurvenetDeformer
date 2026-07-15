@@ -364,7 +364,7 @@ namespace DCurvenet {
                 // Compute corner normal as usual
                 cornerNormal = HE[he0].defData.newFrame.tangent.cross(HE[he1].defData.newFrame.tangent);
             }
-            // Flip normals if the signed angle was obtuse (ex., simplified check against the vertex normal)
+            // Flip normals if the signed angle was > 180 (ex., simplified check against the vertex normal)
             if (cornerNormal.normalized().dot(V[v].n) < 0.0) {
                 cornerNormal *= -1.0;
             }

@@ -33,7 +33,7 @@ namespace Mesh {
             } else {    // Face
                 n = M->F[projData.elIdx].n;
             }
-            proj_V[v] = createVertex(proj, n, 1, -1, projData, pos-proj);
+            proj_V[v] = createVertex(proj, n, 1, -1, projData.elType, projData.elIdx, pos-proj);
         }
         
         // Now, add all vertices into the cutmesh (SEQUENTIAL)

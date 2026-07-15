@@ -454,7 +454,7 @@ void mesh::computeBBoxDiag() {
 
 
 // Create a new vertex but do NOT insert it
-Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, int ref_Type, int ref_Idx, Eigen::Vector3d proj) {
+Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, int ref_Type, int ref_Idx, Eigen::Vector3d proj, Eigen::Matrix3d defGrad) {
     Vert v;
     v.pos = pos;
     v.n = n;
@@ -462,17 +462,64 @@ Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int c
     v.corner_idx = cornerIdx;
     v.projData.elType = ref_Type;
     v.projData.elIdx = ref_Idx;
+    v.defData.projVector = proj;
+    v.defData.defGrad = defGrad;
     return v;
 }
-
-Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, vertProjData projData, Eigen::Vector3d proj) {
+Vert mesh::createVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, vertProjData projData, vertDeformData defData) {
     Vert v;
     v.pos = pos;
     v.n = n;
     v.label = label;
     v.corner_idx = cornerIdx;
     v.projData = projData;
+    v.defData = defData;
     return v;
+}
+
+HalfEdge mesh::createHalfEdge(bool boundary, int twin, int dest, int edge, int face, int next, int prev, int dCN_idx) {
+    HalfEdge he;
+    he.boundary = boundary;
+    he.twin = twin;
+    he.dest = dest;
+    he.edge = edge;
+    he.face = face;
+    he.next = next;
+    he.prev = prev;
+    he.dCN_idx = dCN_idx;
+    return he;
+}
+
+Edge mesh::createEdge(int he, Eigen::Vector3d n) {
+    Edge e;
+    e.he = he;
+    e.n = n;
+    return e;
+}
+
+bool mesh::copyVertex(int v, Vert& new_vert) {
+    if (v < 0 || v > V.size()) {
+        return false;
+    }
+    const Vert& vert = V[v];
+    new_vert = createVertex(vert.pos, vert.n, vert.label, vert.corner_idx, vert.projData, vert.defData);
+    return true;
+}
+bool mesh::copyHalfEdge(int he, HalfEdge& new_he) {
+    if (he < 0 || he > HE.size()) {
+        return false;
+    }
+    const HalfEdge& halfedge = HE[he];
+    new_he = createHalfEdge(halfedge.boundary, halfedge.twin, halfedge.dest, halfedge.edge, halfedge.face, halfedge.next, halfedge.prev, halfedge.dCN_idx);
+    return true;
+}
+bool mesh::copyEdge(int e, Edge& new_e) {
+    if (e < 0 || e > E.size()) {
+        return false;
+    }
+    const Edge& edge = E[e];
+    new_e = createEdge(edge.he, edge.n);
+    return true;
 }
 
 }   // namespace Mesh

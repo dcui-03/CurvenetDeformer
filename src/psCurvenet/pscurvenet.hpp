@@ -21,7 +21,7 @@ class pscurvenet {
         void resetCurvenet();
         // Update control position
         void updateControlPos(int c, Eigen::Vector3d new_pos, bool project = true);
-        void updateControlNormal(int c, const Eigen::Vector3d& new_normal, const Eigen::Vector3d& new_bn, bool rotation = true, bool project = true);
+        void updateControlNormal(int c, const Eigen::Vector3d& new_normal, bool rotation = true, bool project = true);
         // Rotate tangent using some rotation matrix
         bool rotateTangentPos(int psT_idx, Eigen::Matrix3d rotation);
         bool rotateTangentPos(int s, bool t0, Eigen::Matrix3d rotation);
@@ -52,7 +52,6 @@ class pscurvenet {
 
         // --------- GETTERS + POLYSCOPE CONVERSION -----------
         Eigen::Vector3d getNormal(int c);
-        Eigen::Vector3d getBinormal(int c);
         // Control positions but returned as an Eigen::MatrixXd
         void cPosAsMatrix(Eigen::MatrixXd& cPos);
         // Tangent positions but returned as an Eigen::MatrixXd

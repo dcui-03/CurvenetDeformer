@@ -69,13 +69,26 @@ class mesh {
                           int cornerIdx = -1, 
                           int ref_Type = -1, 
                           int ref_Idx = -1, 
-                          Eigen::Vector3d proj = Eigen::Vector3d::Zero());
+                          Eigen::Vector3d proj = Eigen::Vector3d::Zero(),
+                          Eigen::Matrix3d defGrad = Eigen::Matrix3d::Identity());
         Vert createVertex(Eigen::Vector3d pos,
                           Eigen::Vector3d n, 
                           int label = 0, 
                           int cornerIdx = -1, 
                           vertProjData projData = vertProjData({-1, -1}),
-                          Eigen::Vector3d proj = Eigen::Vector3d::Zero());
+                          vertDeformData defData = vertDeformData({Eigen::Vector3d::Zero(), Eigen::Matrix3d::Identity()}));
+        HalfEdge createHalfEdge(bool boundary = false, 
+                                    int twin = -1, 
+                                    int dest = -1, 
+                                    int edge = -1, 
+                                    int face = -1, 
+                                    int next = -1, 
+                                    int prev = -1, 
+                                    int dCN_idx = -1);
+        Edge mesh::createEdge(int he = -1, Eigen::Vector3d n = Eigen::Vector3d::Zero());
+        bool copyVertex(int v, Vert& new_vert);
+        bool copyHalfEdge(int he, HalfEdge& new_he);
+        bool copyEdge(int e, Edge& new_e);
 
 
         // ------------- ITERATORS + QUERYING (mesh_iter.cpp) -----------------

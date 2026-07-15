@@ -43,17 +43,14 @@ void pscurvenet::updateControlPos(int c, Eigen::Vector3d new_pos, bool project) 
     return;
 }
 
-void pscurvenet::updateControlNormal(int c, const Eigen::Vector3d& new_normal, const Eigen::Vector3d& new_bn, bool rotation, bool project) {
+void pscurvenet::updateControlNormal(int c, const Eigen::Vector3d& new_normal, bool rotation, bool project) {
     if (c >= C.size()) {
         return;
     }
     const Eigen::Vector3d& old_normal = C[c].n;
-    const Eigen::Vector3d& old_bn = C[c].bn;
-    C[c].n = new_normal.normalized();
-    C[c].bn = new_bn.normalized();
     // Chain rotations
-    Eigen::Matrix3d rot = Utils::computeRotation(old_normal.normalized(), new_normal.normalized());
-    // Eigen::Matrix3d rotBN = Utils::computeRotation(old_bn.normalized(), new_bn.normalized());
+    Eigen::Matrix3d rot = Utils::computeRotation(C[c].n, new_normal);
+    C[c].n = new_normal.normalized();
     // Recompute tangent directions
     for (int s = 0; s < S.size(); s++) {
         if (S[s].start == c) {
@@ -147,11 +144,6 @@ int pscurvenet::addControl(Eigen::Vector3d pos, Eigen::Vector3d normal) {
     C.emplace_back();
     C[c].pos = pos;
     C[c].n = normal;
-    // Compute a valid plane vector
-    if (std::abs(normal(0)) < 0.9) {
-        C[c].bn = normal.cross(Eigen::Vector3d::UnitX()).normalized();
-    } else
-        C[c].bn = normal.cross(Eigen::Vector3d::UnitY()).normalized();
     return c;
 }
 
@@ -291,9 +283,6 @@ int pscurvenet::cleanupControls() {
 // Get the normal at a control
 Eigen::Vector3d pscurvenet::getNormal(int c) {
     return C[c].n;
-}
-Eigen::Vector3d pscurvenet::getBinormal(int c) {
-    return C[c].bn;
 }
 // Control positions but returned as an Eigen::MatrixXd
 void pscurvenet::cPosAsMatrix(Eigen::MatrixXd& cPos) {

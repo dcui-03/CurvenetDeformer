@@ -25,7 +25,6 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
     double tol = 1e-6 * bboxDiag;
     double min_dist = std::numeric_limits<double>::infinity();
     vertProjData projData({-1, -1});
-    int closest_f = -1;
     if (active_f == 0) {
         return projData;
     }
@@ -48,30 +47,28 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
         // If the face is a triangle, just compute triangle closest point
         if (fVerts.size() == 3) {
             v_proj = Utils::triangleClosestPoint(fVertsPos, v);
-            if (snap) {
-                // Snap to a vertex if we get too close
-                for (int fv = 0; fv < fSize; fv++) {
-                    if ((v_proj - fVertsPos[fv]).norm() <= tol) {
-                        v_proj = fVertsPos[fv];
-                        candidateProj.elType = 0;
-                        candidateProj.elIdx = fVerts[fv];
-                        break;
-                    }
+            double snap_tol = snap ? tol : 1e-14 * meanE;
+            // Snap to a vertex if we get too close
+            for (int fv = 0; fv < fSize; fv++) {
+                if ((v_proj - fVertsPos[fv]).norm() <= snap_tol) {
+                    v_proj = fVertsPos[fv];
+                    candidateProj.elType = 0;
+                    candidateProj.elIdx = fVerts[fv];
+                    break;
                 }
+            }
+            // Edge snap, only if we did not already snap to a vertex
+            if (candidateProj.elType == 2) {
+                for (int fv = 0; fv < fSize; fv++) {
+                    int fv1 = (fv + 1) % fSize;
+                    Eigen::Vector3d v_projE = Utils::closestPointOnSegment3D(v_proj, fVertsPos[fv], fVertsPos[fv1]);
 
-                // Edge snap, only if we did not already snap to a vertex
-                if (candidateProj.elType == 2) {
-                    for (int fv = 0; fv < fSize; fv++) {
-                        int fv1 = (fv + 1) % fSize;
-                        Eigen::Vector3d v_projE = Utils::closestPointOnSegment3D(v_proj, fVertsPos[fv], fVertsPos[fv1]);
-
-                        if ((v_proj - v_projE).norm() <= tol) {
-                            v_proj = v_projE;
-                            int he_idx = vertPairToHE.at({fVerts[fv], fVerts[fv1]});
-                            candidateProj.elType = 1;
-                            candidateProj.elIdx = HE[he_idx].edge;
-                            break;
-                        }
+                    if ((v_proj - v_projE).norm() <= snap_tol) {
+                        v_proj = v_projE;
+                        int he_idx = vertPairToHE.at({fVerts[fv], fVerts[fv1]});
+                        candidateProj.elType = 1;
+                        candidateProj.elIdx = HE[he_idx].edge;
+                        break;
                     }
                 }
             }
@@ -95,41 +92,43 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
             }
             
             Eigen::Vector2d v_cp;
-            int closest_edge = -1;
-            double closest_t = 0.0;
+            bool in_polygon2D = Utils::pointInPolygon2D(v_proj2d, fVert2D);
             // Check if 2D point is in Newell polygon
             // If so, take that one
-            if (Utils::pointInPolygon2D(v_proj2d, fVert2D)) {
+            if (in_polygon2D) {
                 v_cp = v_proj2d;
+                v_proj = Utils::revertTo3D(v_cp, barycenter, t1, t2);
             } else {
-                // Project onto all edges to find closest point in 2D
-                double min_eDist = std::numeric_limits<double>::infinity();
-                for (int i = 0; i < fVert2D.size(); i++) {
-                    int j = (i + 1) % fVert2D.size();
+                // Project onto all edges to find closest point in 3D
+                double min_dist = std::numeric_limits<double>::infinity();
+                double endpointTol = snap ? tol : 1e-14 * bboxDiag;
+                for (int i = 0; i < fVertsPos.size(); i++) {
+                    int j = (i + 1) % fVertsPos.size();
+                    Eigen::Vector3d candidate_proj = Utils::closestPointOnSegment3D(v, fVertsPos[i], fVertsPos[j]);
+                    double dist = (v - candidate_proj).norm();
 
-                    Eigen::Vector2d e = fVert2D[j] - fVert2D[i];
-                    double denom = e.squaredNorm();
-                    double t = 0.0;
-                    if (denom > 1e-20) {
-                        t = (v_proj2d - fVert2D[i]).dot(e) / denom;
-                        t = std::max(0.0, std::min(1.0, t));
-                    }
-
-                    Eigen::Vector2d cp = fVert2D[i] + t * e;
-                    double eDist = (cp - v_proj2d).squaredNorm();
-
-                    if (eDist < min_eDist) {
-                        min_eDist = eDist;
-                        v_cp = cp;
-                        closest_edge = i;
-                        closest_t = t;
+                    if (dist < min_dist) {
+                        min_dist = dist;
+                        if ((candidate_proj - fVertsPos[i]).norm() <= endpointTol) {
+                            v_proj = fVertsPos[i];
+                            candidateProj.elType = 0;
+                            candidateProj.elIdx = fVerts[i];
+                        } else if ((candidate_proj - fVertsPos[j]).norm() <= endpointTol) {
+                            v_proj = fVertsPos[j];
+                            candidateProj.elType = 0;
+                            candidateProj.elIdx = fVerts[j];
+                        } else {
+                            v_proj = candidate_proj;
+                            candidateProj.elType = 1;
+                            int he_idx = vertPairToHE.at({fVerts[i], fVerts[j]});
+                            candidateProj.elIdx = HE[he_idx].edge;
+                        }
                     }
                 }
             }
-            v_proj = Utils::revertTo3D(v_cp, barycenter, t1, t2);
             // Newell-plane snapping/classification.
-            if (snap) {
-                // Snap to a vertex in 2D
+            if (in_polygon2D && snap) {
+                // Snap to a vertex if available
                 for (int fv = 0; fv < fSize; fv++) {
                     if ((v_cp - fVert2D[fv]).norm() <= tol) {
                         v_proj = fVertsPos[fv];
@@ -139,20 +138,28 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
                     }
                 }
 
-                // Snap to edge in 2D, using the stored t value to lift to the true 3D edge.
-                if (candidateProj.elType == 2 && closest_edge >= 0) {
-                    int i = closest_edge;
-                    int j = (i + 1) % fSize;
-
-                    Eigen::Vector2d e2 = fVert2D[j] - fVert2D[i];
-                    Eigen::Vector2d cp2 = fVert2D[i] + closest_t * e2;
-
-                    if ((v_cp - cp2).norm() <= tol) {
-                        v_proj = fVertsPos[i] + closest_t * (fVertsPos[j] - fVertsPos[i]);
-
-                        int he_idx = vertPairToHE.at({fVerts[i], fVerts[j]});
-                        candidateProj.elType = 1;
-                        candidateProj.elIdx = HE[he_idx].edge;
+                // Snap to edge in 2D if available, using the stored t value to lift to the true 3D edge.
+                // Note this will only get triggered if we already landed within a face and did not snap to a vertex
+                if (candidateProj.elType == 2) {
+                    // Find nearest edge
+                    for (int i = 0; i < fSize; i++) {
+                        int j = (i + 1) % fSize;
+                        Eigen::Vector2d e = fVert2D[j] - fVert2D[i];
+                        double denom = e.squaredNorm();
+                        double t = 0.0;
+                        if (denom > 1e-20) {
+                            t = (v_cp - fVert2D[i]).dot(e) / denom;
+                            t = std::max(0.0, std::min(1.0, t));
+                        }
+                        Eigen::Vector2d cp = fVert2D[i] + t * e;
+                        double d = (v_cp - cp).norm();
+                        // Track the closest edge
+                        if (d <= tol) {
+                            v_proj = fVertsPos[i] + t * (fVertsPos[j] - fVertsPos[i]);
+                            candidateProj.elType = 1;
+                            candidateProj.elIdx = HE[vertPairToHE.at({fVerts[i], fVerts[j]})].edge;
+                            break;
+                        }
                     }
                 }
             }
@@ -166,17 +173,21 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
         }
     }
 
-    // Definitive closest face's data
+    if (projData.elIdx < 0) {
+        return projData;
+    }
+
+    // If fast or snapped to edge/vert, then simply return
+    if (fast || projData.elType != 2) {
+        return projData;
+    }
+
+    // Else, do lifting the slow way via MVC heights
     std::vector<int> fVerts = faceAdjVertIdxs(projData.elIdx);
     int fSize = fVerts.size();
     std::vector<Eigen::Vector3d> fVertsPos = adjVerts(fVerts);
     Eigen::Vector3d fN = F[projData.elIdx].n;
 
-    // If fast or we snapped, just return this data
-    if (fast || projData.elType != 2) {
-        return projData;
-    }
-    // Else do the slow way: lift proj using height
     // Check if we are on a non-planar face. If so, pin-point the location using MVC
     Eigen::VectorXd fHeight = computeFaceHeight(projData.elIdx);
     bool planar = true;
@@ -301,15 +312,17 @@ int mesh::traceGeodesic(const Vert& start,
             nextDirec *= -1;
         }
     } else {
-        if (start.projData.elType == 0) {
+        if (start.projData.elType == 0) {   // We are on a vert
             nextData.elType = nextEl_Vert(start.projData.elIdx, prevData, prevDirec, nextDirec, nextData.elIdx, true);
-        } else if (start.projData.elType == 1) {
+        } else if (start.projData.elType == 1) {    // We are on an edge
             nextData.elType = nextEl_Edge(start.projData.elIdx, prevData.elIdx, prevDirec, nextDirec, nextData.elIdx, true);
-        } else {
-            nextData.elType = prevData.elType;
-            nextData.elIdx = prevData.elIdx;
+        } else {        // We are on a face
+            nextData = prevData;
             Utils::projectVectorOntoTangentPlane(F[nextData.elIdx].n, prevDirec, nextDirec);
         }
+    }
+    if (nextData.elType < 0) {  // No valid next direction
+        return -1;
     }
     // Screen out any immediately problematic vectors
     if (nextDirec.norm() <= eps) {
@@ -317,10 +330,10 @@ int mesh::traceGeodesic(const Vert& start,
     }
 
     // Case 1: Check if walk direction is on an edge, simply grab the other end vertex of the edge
-    if (prevData.elType == 1) {
+    if (nextData.elType == 1) {
         // Opt to actually compute the matching direction instead of assuming the start is at a vertex
         // This way we can handle degenerate cases where the initial walk direction is on an edge
-        int he = E[prevData.elIdx].he;
+        int he = E[nextData.elIdx].he;
         Eigen::Vector3d heVec = (V[HE[he].dest].pos - V[HE[HE[he].twin].dest].pos).normalized();
         // Orient ourselves correctly
         int next;
@@ -339,7 +352,6 @@ int mesh::traceGeodesic(const Vert& start,
     // Project walk direction onto specified direction
     Eigen::Vector3d hit;
     vertProjData hit_Data;
-    int hit_ElIdx;
     int valid = rayCastOnFace(nextData.elIdx, start.pos, nextDirec, hit, hit_Data);
     if (valid == -1) {
         return -1;
@@ -475,6 +487,9 @@ int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eig
 int mesh::nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& prev_direc, 
                     Eigen::Vector3d& next_direc, int& elIdx, bool bdy_snap) {
     // Get adjacent faces
+    if (f_origin < 0 || f_origin >= F.size()) {
+        return -1;
+    }
     std::vector<int> adjF = edgeAdjFaces(e);
     elIdx = adjF[0];
     if (f_origin == adjF[0]) {
@@ -570,13 +585,15 @@ int mesh::nextEl_Vert(int v, const vertProjData& originData,
     // Iterate over faces to get the target angle
     for (int f = 0; f < adjHE.size(); f++) {
         int f_curr = (localIdx + f) % adjHE.size();
-        int f_next = (f_curr + 1) % adjHE.size();
         if (targetAngle <= angleBuckets[f_curr]) {  // Found the face
             stopHE = f_curr;
             break;
         } else {    // Keep going
             targetAngle -= angleBuckets[f_curr];
         }
+    }
+    if (stopHE < 0) {   // Just in case
+        return -1;
     }
     // Use the computed face and remnant angle to determine the vector
     Eigen::Vector3d heVec = (V[HE[adjHE[stopHE]].dest].pos - V[v].pos).normalized();
@@ -593,7 +610,7 @@ int mesh::nextEl_Vert(int v, const vertProjData& originData,
     if (elIdx == -1) {
         if (bdy_snap) {
             // Compute best adjacent edge to snap to
-            if (next_direc.dot(heVec) <= next_direc.dot(heVec1)) {
+            if (next_direc.dot(heVec) >= next_direc.dot(heVec1)) {
                 next_direc = heVec;
                 elIdx = HE[adjHE[stopHE]].edge;
             } else {
