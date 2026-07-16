@@ -21,7 +21,7 @@ cd ..
 # Updates and Notes
 **Update 7/15**
 
-Working through cutmesh visual debugging. Had a major bug when copying over data from the parent mesh (found it, phew!), but things generally seem to be heading in the right direction now. Testing embedding curves and it's definitely finnicky. There is definitely a problem with the geodesic tracing. On certain occasions, the trace fails, even though a maximum trace depth of 5 should be plenty sufficient... need to comb through this again in more detail. There is also clearly a problem with the mesh cutting...
+After much debugging... I think geodesics code is (mostly) safe at last! The next thing to debug is the actually cutting.
 
 An oddity to think about: Currently I forcibly align the corner normals in dCN frame computation with the normal at the intersection via dot product test (i.e., when the signed angle at the corner is larger than 180, it can cause the frame normal to "flip" w.r.t., the intersection normal, so we fix it via a sign change). This leads to pretty frames where pos. and neg. normals generally face the same way, but because this flip is binary, it can cause the frame to flip discontinuously as splines move. BUT if we don't do this, then the splines are no longer oriented w.r.t. the local normal, and therefore some frames don't intuitively describe local "stretch" on the surface anymore, which may also cause problems. Not sure what to do here, maybe change after doing testing.
 
@@ -48,7 +48,7 @@ Important note about Eigen. For Eigen fixed-size containers that are a multiple 
 - *Projection Posing*: As mentioned in paper, compute cut-mesh from rest pose, then move all dcurvenet vertices and cut-mesh to the new configuration. Seems like curvenet is unusable like this??? Maybe only if you have pre-defined poses for the curvenet, you can transfer them? Maybe there's a scheme for editing the dcurvenet directly that I can look into?
 
 **Small Steps**:
-- Check embedding and cutting
+- Check cutting
 - Check that the sampling rate for curvenet curves is correct.
 - Visualize cutmesh in polyscope
 - See Appendix for DEC halfedge laplacian shortcut

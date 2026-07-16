@@ -71,6 +71,9 @@ std::vector<glm::vec3> negScaledNormals;
 Eigen::MatrixXd psCutMesh_V; // Vertex list
 std::vector<std::vector<int>> psCutMesh_F; // Face list: Note the inner list has arbitrary size for non-triangle faces
 polyscope::SurfaceMesh* psCutMesh = nullptr;
+// Local normals
+std::vector<glm::vec3> psCutMesh_VNormals;
+std::vector<glm::vec3> psCutMesh_FNormals;
 
 
 // VARIABLES FOR PARSING AND WRITING FILES
@@ -252,9 +255,13 @@ void updateProfileMover(bool recompute = true) {
     negNorm->setEnabled(true);
 
     // Cut-mesh
-    if ((PM->cutmesh()).polyscopeFormat(psCutMesh_V, psCutMesh_F) == 1) {
+    if ((PM->cutmesh()).polyscopeFormat(psCutMesh_V, psCutMesh_F, psCutMesh_VNormals, psCutMesh_FNormals) == 1) {
         psCutMesh = polyscope::registerSurfaceMesh("Cut Mesh", psCutMesh_V, psCutMesh_F);
         psCutMesh->setSurfaceColor({0.0f, 1.0f, 0.8f});
+        auto* vertNorms = psCutMesh->addVertexVectorQuantity("Vert Normals", psCutMesh_VNormals);
+        vertNorms->setEnabled(true);
+        auto* faceNorms = psCutMesh->addFaceVectorQuantity("Face Normals", psCutMesh_FNormals);
+        faceNorms->setEnabled(true);
     }
     return;
 }
@@ -329,13 +336,15 @@ void clearPM() {
     CM_init = false;
     psDCN_P.resize(0, 0); // Aggregate list of controls and tangents
     psDCN_E.clear(); // Edge List between controls and tangents
-    psCutMesh_V.resize(0, 0);
-    psCutMesh_F.clear();
+    //psCutMesh_V.resize(0, 0);
+    //psCutMesh_F.clear();
     PM = nullptr;
     if (psDCN) {
         psDCN->remove();
         psDCN = nullptr;
-        // psCutMesh->remove();
+    }
+    if (psCutMesh) {
+        psCutMesh->remove();
         psCutMesh = nullptr;
     }
     // Local frames
@@ -345,6 +354,9 @@ void clearPM() {
     negScaledTangents.clear();
     negScaledBinormals.clear();
     negScaledNormals.clear();
+
+    psCutMesh_VNormals.clear();
+    psCutMesh_FNormals.clear();
     return;
 }
 
@@ -413,9 +425,9 @@ void myCallback() {
             // For easy of debugging, remove all the extra stuff
             psEditableCN->setEnabled(false);
             psMesh->setEnabled(false);
-            // psTangentsCN->setEnabled(false);
-            // psControlsPC->setEnabled(false);
-            // psTangentsPC->setEnabled(false);
+            psTangentsCN->setEnabled(false);
+            psControlsPC->setEnabled(false);
+            psTangentsPC->setEnabled(false);
         }
     }
 

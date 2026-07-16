@@ -45,8 +45,8 @@ namespace Mesh {
             int elIdx = proj_V[v].projData.elIdx;
             // If it landed on a vertex, then modify the existing vertex
             if (elType == 0) {
-                // If we landed on an existing vertex, then things are bad!
-                if (V[elIdx].projData.elIdx != -1) {
+                // If we landed on an existing cut-vertex, then things are bad!
+                if (V[elIdx].label != 0) {
                     return -1;
                 }
                 V[elIdx].label = 1;
@@ -68,7 +68,7 @@ namespace Mesh {
                 Eigen::Vector3d p1 = M->V[b].pos;
                 double t = (V[new_v].pos - p0).norm() / (p1 - p0).norm();
                 if (edgeMap.find(elIdx) != edgeMap.end()) { // Exists in map, we need to compute t vals etc.
-                    std::vector<std::pair<double, int>> localSplits = edgeMap[elIdx];
+                    const std::vector<std::pair<double, int>>& localSplits = edgeMap[elIdx];
                     // Find where to insert the new vertex
                     for (int j = 0; j < localSplits.size(); j++) {
                         if (std::abs(localSplits[j].first - t) <= 1e-12) {    // Landed on the same point as a different vertex
@@ -115,8 +115,12 @@ namespace Mesh {
             std::vector<Vert> traceVerts;
             traceVerts.push_back(V[v0]);
             int depth = 0;
-            //Eigen::Vector3d direc = (V[v1].pos - V[v0].pos).normalized();
-            Eigen::Vector3d direc = (dCN_V[dCN_v1].pos - dCN_V[dCN_v0].pos).normalized();
+            Eigen::Vector3d direc = (V[v1].pos - V[v0].pos).normalized();
+            //Eigen::Vector3d direc = (dCN_V[dCN_v1].pos - dCN_V[dCN_v0].pos).normalized();
+            std::cout << "Starting trace from vert " << v0 << " (proj type: " << V[v0].projData.elType << ") to " << v1 << " (proj type: " << V[v1].projData.elType << ")" << std::endl;
+            std::cout << "Initial direction: " << direc[0] << ", "
+                                        << direc[1] << ", "
+                                        << direc[2] << std::endl;
             int success = M->traceGeodesic(V[v0], V[v1], direc, 
                                            V[v0].projData,
                                            traceVerts, depth);
@@ -149,7 +153,7 @@ namespace Mesh {
                 traceVerts[v_idx].defData.projVector = ((dCN_V[dCN_v1].pos + dCN_V[dCN_v0].pos) / 2) - traceVerts[v_idx].pos;
                 // First, compute an estimated curvenet position so we can take the difference
                 if (traceVerts[v_idx].projData.elType == 0) {  // Check if we are on a vertex
-                    if (V[traceVerts[v_idx].projData.elIdx].projData.elIdx != -1) { // If we hit a vertex that is already assigned, then quit
+                    if (V[traceVerts[v_idx].projData.elIdx].label != 0) { // If we hit a vertex that is already assigned, then quit
                         return -1;
                     }
                     V[traceVerts[v_idx].projData.elIdx].label = 2;
@@ -172,7 +176,7 @@ namespace Mesh {
 
                     int insert_index = 0;
                     if (edgeMap.find(orig_e) != edgeMap.end()) { // Exists in map, we need to compute t vals etc.
-                        std::vector<std::pair<double, int>> localSplits = edgeMap[orig_e];
+                        const std::vector<std::pair<double, int>>& localSplits = edgeMap[orig_e];
                         // Find where to insert the new vertex
                         for (int j = 0; j < localSplits.size(); j++) {
                             if (std::abs(localSplits[j].first - t) <= 1e-12) {
@@ -218,8 +222,8 @@ namespace Mesh {
         }
         std::cout << "Faces reset." << std::endl;
         // "Remove" obsolete curves by deactivating them
-        deactivateIsolatedCuts();
-        std::cout << "Isolated cuts deactivated." << std::endl;
+        //deactivateIsolatedCuts();
+        //std::cout << "Isolated cuts deactivated." << std::endl;
         
         return 1;
     }
@@ -294,16 +298,6 @@ namespace Mesh {
                 heLoop.push_back(curr_he);
                 seenHE[curr_he] = true;
                 HE[curr_he].face = f;
-
-                curr_he = HE[curr_he].next;
-                counter++;
-
-                if (curr_he == he) {
-                    break;
-                }
-                heLoop.push_back(curr_he);
-                seenHE[curr_he] = true;
-                HE[curr_he].face = f;
                 curr_he = HE[curr_he].next;
                 counter++;
             } while (curr_he != he && counter < HE.size());
@@ -361,7 +355,6 @@ namespace Mesh {
                 HE[HE[he].twin].active = false;
             }
         }
-
         countNumActive();
 
         return 1;
@@ -404,7 +397,7 @@ namespace Mesh {
                             break;
                         }
                     }
-                    cornerIdxs[i] = HE[adjHE[local_dCNIdxs[next_dCN]]].twin;
+                    cornerIdxs[i] = HE[adjHE[next_dCN]].twin;
                 }
 
                 // For each dCN corner, split the vertex and rewire the halfedge destination vertices accordingly

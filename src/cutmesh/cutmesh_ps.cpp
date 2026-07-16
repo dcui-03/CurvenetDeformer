@@ -12,12 +12,16 @@
 namespace Mesh {
 
 int cutmesh::polyscopeFormat(Eigen::MatrixXd& Verts, 
-                            std::vector<std::vector<int>>& Faces) const {
+                            std::vector<std::vector<int>>& Faces, 
+                            std::vector<glm::vec3>& VertN, 
+                            std::vector<glm::vec3>& FaceN) const {
     if (active_v < 3) {
         return -1;
     }
     Verts.resize(active_v, 3);
     Faces.resize(active_f);
+    VertN.resize(active_v);
+    FaceN.resize(active_f);
     std::map<int, int> vToPSV;
     int curr_v = 0;
     for (int v = 0; v < V.size(); v++) {
@@ -28,6 +32,7 @@ int cutmesh::polyscopeFormat(Eigen::MatrixXd& Verts,
             }
             Verts.row(curr_v) = V[v].pos;
             vToPSV[v] = curr_v;
+            VertN[curr_v] = Utils::eigenToGLM(V[v].n);
             curr_v++;
         }
     }
@@ -40,9 +45,16 @@ int cutmesh::polyscopeFormat(Eigen::MatrixXd& Verts,
             }
             std::vector<int> adjV = faceAdjVertIdxs(f);
             for (int v = 0; v < adjV.size(); v++) {
-                adjV[v] = vToPSV[adjV[v]];
+                auto it = vToPSV.find(adjV[v]);
+                if (it == vToPSV.end()) {
+                    std::cout << "polyscopeFormat(): face references inactive/missing vertex "
+                            << adjV[v] << " in face " << f << std::endl;
+                    return -1;
+                }
+                adjV[v] = it->second;
             }
             Faces[curr_f] = adjV;
+            FaceN[curr_f] = Utils::eigenToGLM(F[f].n);
             curr_f++;
         }
     }

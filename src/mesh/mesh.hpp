@@ -179,14 +179,20 @@ class mesh {
                         Eigen::Vector3d direc, 
                         Eigen::Vector3d& hit, 
                         vertProjData& hitData,
-                        double eps = 1e-4);
+                        double eps = 1e-12);
         // Compute the next walk element given that we intersected with an edge
-        int nextEl_Edge(int e, int f_origin, const Eigen::Vector3d& prev_direc, 
-                    Eigen::Vector3d& next_direc, int& next_elIdx, bool bdy_snap = true);
+        int nextEl_Edge(int e, const vertProjData& originData, const Eigen::Vector3d& prev_direc, 
+                    Eigen::Vector3d& next_direc, vertProjData& nextData, bool bdy_snap = true);
+        // Figures out which next attribute to walk on given the very start is on an edge
+        int nextEl_EdgeStart(int e, const vertProjData& originData, const Eigen::Vector3d& start_direc,
+                           Eigen::Vector3d& next_direc, vertProjData& nextData, bool bdy_snap, double eps = 1e-6);
+        // Helper for next edge start
+        int snapWalkToEdge(int e, const Eigen::Vector3d& direc, Eigen::Vector3d& next_direc,
+                         vertProjData& nextData, double eps = 1e-6) const;
         // Compute the next walk element given that we intersected with a vertex
         int nextEl_Vert(int v, const vertProjData& originData, 
                     const Eigen::Vector3d& prev_direc, Eigen::Vector3d& next_direc, 
-                    int& elIdx, bool bdy_snap = true, double eps = 1e-4);
+                    vertProjData& nextData, bool bdy_snap = true, double eps = 1e-6);
 };
 
 }   // namespace Mesh

@@ -22,3 +22,6 @@ out/
 # polyscope
 ./.polyscope.ini
 ./imgui.ini
+
+# Other
+/pics/

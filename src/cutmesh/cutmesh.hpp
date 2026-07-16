@@ -8,6 +8,8 @@
 #include <Eigen/StdVector>
 #include <vector>
 #include <map>
+#include <glm/glm.hpp>
+#include <glm/vec3.hpp>
 
 namespace DCurvenet {
     class dcurvenet;
@@ -53,7 +55,7 @@ class cutmesh : public mesh {
         Eigen::MatrixXd estimateFaceDeformations(const std::map<int, int>& CMheTohe);
 
         // POLYSCOPE reformatting
-        int polyscopeFormat(Eigen::MatrixXd& Verts, std::vector<std::vector<int>>& Faces) const;
+        int polyscopeFormat(Eigen::MatrixXd& Verts, std::vector<std::vector<int>>& Faces, std::vector<glm::vec3>& VertN, std::vector<glm::vec3>& FaceN) const;
 
         // Getters
         Eigen::Vector3d getVPos(int v) const;

@@ -401,16 +401,50 @@ double mesh::computeVNormalArea(int v, Eigen::Vector3d& vN, bool weight_fN) {
     vN.normalize(); // TODO: Needs safe normalization
     return vArea;
 }
-
+// Function which computes ALL vertex normals and areas
 void mesh::computeVNormalsAreas(bool weight_fN) {
+    // Reset vertex normals and areas
+    for (int v = 0; v < V.size(); v++) {
+        V[v].n = Eigen::Vector3d::Zero();
+        V[v].vArea = 0.0;
+    }
+
+    // Accumulate face normals onto their adjacent vertices
+    for (int f = 0; f < F.size(); f++) {
+        if (!F[f].active) {
+            continue;
+        }
+
+        std::vector<int> fVerts = faceAdjVertIdxs(f);
+        const int n = fVerts.size();
+        if (n < 3) {
+            continue;
+        }
+
+        const double baryArea = F[f].fArea / static_cast<double>(n);
+
+        for (int vi : fVerts) {
+            if (vi < 0 || vi >= V.size() || !V[vi].active) {
+                continue;
+            }
+
+            if (weight_fN) {
+                V[vi].n += baryArea * F[f].n;
+            } else {
+                V[vi].n += F[f].n;
+            }
+
+            V[vi].vArea += baryArea;
+        }
+    }
+
+    // Normalize accumulated normals
     for (int v = 0; v < V.size(); v++) {
         if (!V[v].active) {
             continue;
         }
-        Eigen::Vector3d vN = Eigen::Vector3d::Zero();
-        double vArea = computeVNormalArea(v, vN, weight_fN);
-        V[v].n = vN;
-        V[v].vArea = vArea;
+        const double len = V[v].n.norm();
+        V[v].n /= len;
     }
     return;
 }

@@ -59,7 +59,7 @@ std::vector<int> mesh::vertAdjFaces(int v) const {
         return {};
     }
     std::vector<int> adjHE = vertAdjHEs(v);
-    std::vector<int> adjFaces(adjHE.size());
+    std::vector<int> adjFaces;
     for (int he = 0; he < adjHE.size(); he++) {
         int f = HE[adjHE[he]].face;
         bool faceExists = false;
@@ -203,7 +203,7 @@ int mesh::vertIsBoundary(int v) const {
     // Safety in case the soft boundary halfedge rule is accidentally violated
     std::vector<int> adjHE = vertAdjHEs(v);
     for (int he = 0; he < adjHE.size(); he++) {
-        if (HE[he].boundary) {
+        if (HE[adjHE[he]].boundary) {
             return 1;
         }
     }
