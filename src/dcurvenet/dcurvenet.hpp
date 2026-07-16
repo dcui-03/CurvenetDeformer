@@ -49,7 +49,7 @@ class dcurvenet {
                             std::vector<glm::vec3>& negEdgeBinormals,
                             std::vector<glm::vec3>& negEdgeNormals) const;
 
-
+        
         // --------- RUNTIME COMPUTATION -----------
         // Update with new curvenet positions and local frames
         void updateDiscCurveNet();

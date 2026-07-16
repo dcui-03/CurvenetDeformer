@@ -19,15 +19,13 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/15**
+**Update 7/16**
 
-After much debugging... I think geodesics code is (mostly) safe at last! The next thing to debug is the actually cutting.
+Omg.... omg I think it's working... I would hazard to guess that there's a bunch of teeny tiny bugs, but otherwise, I think things are fairly stable! It also runs in realtime for the small inputs I've been trying, which is awesome! Next, I need to test meshes with boundaries, and also stress test polygonal mesh inputs and non-manifold inputs. ALSO I forgot to debug and clean up the utils.cpp file. There's lots to unused functions there that should just be discarded.
 
-An oddity to think about: Currently I forcibly align the corner normals in dCN frame computation with the normal at the intersection via dot product test (i.e., when the signed angle at the corner is larger than 180, it can cause the frame normal to "flip" w.r.t., the intersection normal, so we fix it via a sign change). This leads to pretty frames where pos. and neg. normals generally face the same way, but because this flip is binary, it can cause the frame to flip discontinuously as splines move. BUT if we don't do this, then the splines are no longer oriented w.r.t. the local normal, and therefore some frames don't intuitively describe local "stretch" on the surface anymore, which may also cause problems. Not sure what to do here, maybe change after doing testing.
+A few things to think about: What happens if we don't enforce the corner normal alignment? Does the code just break?
 
-TODO later: in dCN class, change adjHE to a single stored halfedge, and then add an iterator to get all adjacent halfedges; add a safe normalization function to check certain that inputs will not normalize to a NaN or 0.
-
-One big thought: We technically don't need to store the mesh or the cutmesh after computation... once we have operators, it's entirely possible to just convert everything to operators and solve as a bunch of matrix multiplications, although assembling the matrices could be a challenge... The only step that seems non-matricizable is folding the flattened def grads into 3x3 def grads. There likely is a pair of operators that could do this though.....
+Small TODOs: Change dCN verts to store only a single outgoing halfedge, and then use adjHE to get the rest. Add a safe normalization helper function to the utils so that we can safely normalize or catch errors.
 
 Lastly, another thought on parallelization: We can potentially parallelize the projection function itself by parallelizing projection over faces. NOTE that this is mostly only good when we need to do single point projection queries, as we always want to run the batch of points to project in parallel and we do NOT want nested parallelism for safety reasons. We can potentially do this by enforcing nested parallelism depth of 1, thus making each projection single-threaded when doing a batch, and multi-threaded otherwise.
 
@@ -37,18 +35,12 @@ Important note about Eigen. For Eigen fixed-size containers that are a multiple 
 
 **Big TODOs**:
 
-- *Code Restructuring*: Templating mesh class for easy interfacing and reducing wasted storage? Look into parallelization options (are they even worth it?)
-
 - *Code Cleanup*: Change checks into asserts and add error flags. Delete unused variables, uniformify naming.
 
-- *Front End*: Figure out how to attach to Blender w/ all options that I want (Blender Bezier's may be a problem). Try Maya later. These both need separate API calls, and conversions from their internal types to a readable input type of profile mover (and vice versa).
+- *Robustness*: A couple of extra things to try once its tested and stable: (1) use a better arclength curve sampling strategy than the naive one we currently have; (2) Preliminary validity checks and unique error signatures (1) Test manifoldness + planarity of faces, 2. Test that no projected vertices collide, 3. Bound the sampling rate by the snapping criteria, 4. Test failure modes of the geodesics step (do we catch most/all errors?), 5. Test validity of input splines at init AND at runtime i.e., no degenerate splines such as when start and endpoint have the same location and tangent vectors, 6. Test mesh orientability code. 7. Test validity of input meshes and curve networks. Prevent curvenets and meshes with loose verts/edges or clean them up before using
 
-- *Loose Ends*: A couple of extra things to try once its tested and stable: (1) use a better arclength curve sampling strategy than the naive one we currently have; (2) Maybe figure out how to do bounding boxes for faster projections? Not sure how this works... -> hierarchically find the nearest bounding box, but how do we deal with being inside one? (3) Preliminary validity checks and unique error signatures (1. Test manifoldness + planarity of faces, 2. Test that no projected vertices collide, 3. Bound the sampling rate by the snapping criteria, 4. Test failure modes of the geodesics step (do we catch most/all errors?), 5. Test validity of input splines at init AND at runtime i.e., no degenerate splines such as when start and endpoint have the same location and tangent vectors, 6. Maybe test if input mesh is made up of orientable components, and if so, orient the closed shapes s.t. normals are facing out --> but does the exact normal direc. really matter?). 7. Test validity of input meshes and curve networks. Prevent curvenets and meshes with loose verts/edges
+- *Mid-level Speedups*: (1) Bounding boxes for projections: Create a hierarchical bounding box structure for subsets of faces (binary is probably fine). Then test closest face for any box we are inside or is nearest to us. (2) Assemble the halfedge Laplacian operator without building the other operators, if possible. (3) Identify places where we can parallelize and use OpenMP OR even CUDA... (ex. curvenet creation requires a bunch of projection. Could use this here)
 
-- *Projection Posing*: As mentioned in paper, compute cut-mesh from rest pose, then move all dcurvenet vertices and cut-mesh to the new configuration. Seems like curvenet is unusable like this??? Maybe only if you have pre-defined poses for the curvenet, you can transfer them? Maybe there's a scheme for editing the dcurvenet directly that I can look into?
+- *Stretch Goals/Major Speedups*: (1) Parallelization with CUDA (2) After computing the cutmesh operators (and more), store those operators and values in profilemover, then discard both the mesh and cutmesh class. (Almost) everything then becomes matrix operations! Discarding the cutmesh class is a little bit scary for debugging though... maybe make a branch to test this out? It's probably better for the Blender/Maya ports anyways. I wrote the matrices out more explicitly in Goodnotes. (3) ARAP. This would definitely not be realtime, but it would be extremely cool! (4) Augment the cutmesh class to accept colors/scalars instead of deformation gradients. This lets us do discontinuous color interpolation, although figuring out how to interface this is hard... (5) Template the mesh class so that we can have various other attributes for free. This one seems tough though... (6) Projection posing mentioned in the paper.
 
-**Small Steps**:
-- Check cutting
-- Check that the sampling rate for curvenet curves is correct.
-- Visualize cutmesh in polyscope
-- See Appendix for DEC halfedge laplacian shortcut
+- *Port to Blender + Maya*: This will require some python front-end and figuring out how to compile and interface.

@@ -14,7 +14,9 @@ namespace Mesh {
 int cutmesh::polyscopeFormat(Eigen::MatrixXd& Verts, 
                             std::vector<std::vector<int>>& Faces, 
                             std::vector<glm::vec3>& VertN, 
-                            std::vector<glm::vec3>& FaceN) const {
+                            std::vector<glm::vec3>& FaceN,
+                            std::vector<glm::vec3>& cornerIdx,
+                            std::vector<glm::vec3>& projVecs) const {
     if (active_v < 3) {
         return -1;
     }
@@ -22,6 +24,8 @@ int cutmesh::polyscopeFormat(Eigen::MatrixXd& Verts,
     Faces.resize(active_f);
     VertN.resize(active_v);
     FaceN.resize(active_f);
+    cornerIdx.resize(active_v);
+    projVecs.resize(active_v);
     std::map<int, int> vToPSV;
     int curr_v = 0;
     for (int v = 0; v < V.size(); v++) {
@@ -33,6 +37,19 @@ int cutmesh::polyscopeFormat(Eigen::MatrixXd& Verts,
             Verts.row(curr_v) = V[v].pos;
             vToPSV[v] = curr_v;
             VertN[curr_v] = Utils::eigenToGLM(V[v].n);
+            if (V[v].label == 1 || V[v].label == 2) {
+                int c_idx = V[v].corner_idx;
+                if (c_idx < 0) {
+                    std::cout << "Cut vertex has a non-existent corner index" << std::endl;
+                }
+                Eigen::Vector3d edgeMidpoint = 0.5 * (V[HE[c_idx].dest].pos + V[HE[HE[c_idx].twin].dest].pos);
+                cornerIdx[curr_v] = Utils::eigenToGLM(edgeMidpoint - V[v].pos);
+                projVecs[curr_v] = Utils::eigenToGLM(V[v].defData.projVector);
+            } else {
+                cornerIdx[curr_v] = Utils::eigenToGLM(Eigen::Vector3d::Zero());
+                projVecs[curr_v] = Utils::eigenToGLM(Eigen::Vector3d::Zero());
+            }
+
             curr_v++;
         }
     }

@@ -24,7 +24,7 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     return projData.elType;
 }
 vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, bool snap, bool fast) const {
-    double tol = 1e-6 * bboxDiag;
+    double tol = 1e-5 * bboxDiag;
     double min_dist = std::numeric_limits<double>::infinity();
     vertProjData projData({-1, -1});
     if (active_f == 0) {
@@ -49,7 +49,7 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
         // If the face is a triangle, just compute triangle closest point
         if (fVerts.size() == 3) {
             v_proj = Utils::triangleClosestPoint(fVertsPos, v);
-            double snap_tol = snap ? tol : 1e-14 * meanE;
+            double snap_tol = snap ? tol : 1e-6 * meanE;
             // Snap to a vertex if we get too close
             for (int fv = 0; fv < fSize; fv++) {
                 if ((v_proj - fVertsPos[fv]).norm() <= snap_tol) {
@@ -103,7 +103,7 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
             } else {
                 // Project onto all edges to find closest point in 3D
                 double min_dist = std::numeric_limits<double>::infinity();
-                double endpointTol = snap ? tol : 1e-14 * bboxDiag;
+                double endpointTol = snap ? tol : 1e-6 * bboxDiag;
                 for (int i = 0; i < fVertsPos.size(); i++) {
                     int j = (i + 1) % fVertsPos.size();
                     Eigen::Vector3d candidate_proj = Utils::closestPointOnSegment3D(v, fVertsPos[i], fVertsPos[j]);
@@ -450,7 +450,7 @@ bool mesh::testVisibility(int f, Eigen::Vector3d start, Eigen::Vector3d end, dou
 
 // Find the next intersection point while walking on a particular face
 int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eigen::Vector3d& hit, vertProjData& hitData, double eps) {
-    double tol = 1e-6 * bboxDiag;
+    double tol = 1e-5 * bboxDiag;
     Eigen::Vector3d projDirec;
     Utils::projectVectorOntoTangentPlane(F[f].n, direc, projDirec);
     std::vector<int> fVertIdxs = faceAdjVertIdxs(f);

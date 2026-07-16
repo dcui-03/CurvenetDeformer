@@ -9,7 +9,6 @@
 namespace DECUtils {
     typedef Eigen::Triplet<double> T;
     // For input vertex lists, assume that they are correctly order CCW and closed
-    // TODO: add mesh
     // Polygonal Mesh Laplacian operator, which assemble's face-based Laplacians
     Eigen::SparseMatrix<double> LaplacianOp(const std::vector<Eigen::Vector3d>& V,
                                             const std::vector<std::vector<int>>& F,

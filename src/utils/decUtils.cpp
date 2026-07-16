@@ -18,7 +18,7 @@ namespace DECUtils {
         // Get number of entries
         int num_entries = 0;
         for (int f_idx = 0; f_idx < num_faces; f_idx++) {
-            num_entries += F[f_idx].size();
+            num_entries += F[f_idx].size()*F[f_idx].size();
         }
         std::vector<T> tripletList;
         tripletList.reserve(num_entries);
@@ -54,7 +54,6 @@ namespace DECUtils {
     }
 
     // Face Divergence operator (d0*)
-    // TODO: Check this
     Eigen::MatrixXd divOp(const std::vector<Eigen::Vector3d>& f, double lambda) {
         Eigen::SparseMatrix<double> D = diffOp(f.size());
         Eigen::MatrixXd M = metricOp(f, lambda);
@@ -93,11 +92,23 @@ namespace DECUtils {
         double area = vectorArea(f, fNormal);
         Eigen::MatrixXd B = midpntOp(f);
         Eigen::Vector3d barycenter = computeBarycenter(f);
-        return (1/area) * vectorCrossProd(fNormal) * (B.transpose() - barycenter * curlOp(n).transpose());
+        double hodge_star;
+        if (area <= 1e-8) { // Safety
+            hodge_star = 0.0;
+        } else {
+            hodge_star = 1/area;
+        }
+        return hodge_star * vectorCrossProd(fNormal) * (B.transpose() - barycenter * curlOp(n).transpose());
     }
     Eigen::MatrixXd sharpOp(double area, Eigen::Vector3d& fNormal, Eigen::MatrixXd& B, Eigen::Vector3d& barycenter) {
         int n = B.rows();
-        return (1/area) * vectorCrossProd(fNormal) * (B.transpose() - barycenter * curlOp(n).transpose());
+        double hodge_star;
+        if (area <= 1e-8) { // Safety
+            hodge_star = 0.0;
+        } else {
+            hodge_star = 1/area;
+        }
+        return hodge_star * vectorCrossProd(fNormal) * (B.transpose() - barycenter * curlOp(n).transpose());
     }
 
     // Face Flat operator

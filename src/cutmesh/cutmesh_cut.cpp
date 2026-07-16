@@ -208,6 +208,8 @@ namespace Mesh {
                     int he1 = vertPairToHE[{v_next, v_start}];
                     HE[he0].dCN_idx = dCN_he0;
                     HE[he1].dCN_idx = dCN_he1;
+                    V[v_start].he = he0;
+                    V[v_next].he = he1;
                 }
             }
         }
@@ -222,8 +224,8 @@ namespace Mesh {
         }
         std::cout << "Faces reset." << std::endl;
         // "Remove" obsolete curves by deactivating them
-        //deactivateIsolatedCuts();
-        //std::cout << "Isolated cuts deactivated." << std::endl;
+        deactivateIsolatedCuts();
+        std::cout << "Isolated cuts deactivated." << std::endl;
         
         return 1;
     }
@@ -245,6 +247,7 @@ namespace Mesh {
                 continue;
             }
             std::vector<int> sortedHE = outHE[v];
+            V[v].he = sortedHE[0];
             if (sortedHE.size() == 1) { // Handle endpoints
                 HE[sortedHE[0]].prev = HE[sortedHE[0]].twin;
                 HE[HE[sortedHE[0]].twin].next = sortedHE[0];
@@ -268,6 +271,10 @@ namespace Mesh {
                 
                 int incoming = HE[he_p1].twin;
                 HE[he].prev = incoming;
+                if (HE[HE[he].twin].dest != v) {
+                    std::cout << "Mesh halfedges violate twin rule." << std::endl;
+                    return -1;
+                }
                 HE[incoming].next = he;
             }
         }
@@ -362,165 +369,221 @@ namespace Mesh {
 
     // Cuts mesh by "unzipping" along curve vertices
     int cutmesh::cutMesh() {
+        int max_v = V.size();
         // Iterate over each dCNVert
-        for (int v = 0; v < V.size(); v++) {
-            if (V[v].label != 0 && V[v].active) {  // Only process dCN vertices
-                // Gather all adjacent halfedges
-                std::vector<int> adjHE = vertAdjHEs(v);
-                std::vector<int> HE_SplitIdxs;  // Local HE indexing
-                std::vector<int> local_dCNIdxs; // Local HE indexing
-                // Find which halfedges to "split" at
-                // These include dCN halfedges and boundary edges
-                for (int he = 0; he < adjHE.size(); he++) {
-                    // Track all partitions that include the boundary
-                    if (HE[adjHE[he]].active && ((HE[adjHE[he]].dCN_idx >= 0) || HE[HE[adjHE[he]].twin].boundary)) {
-                        HE_SplitIdxs.push_back(he);
-                    }
-                    // Also track all dCN halfedge Idxs in CCW order
-                    if (HE[adjHE[he]].active && HE[adjHE[he]].dCN_idx >= 0) {
-                        local_dCNIdxs.push_back(he);
+        for (int v = 0; v < max_v; v++) {
+            if (V[v].label == 0 || !V[v].active) { // Only process dCN vertices
+                continue;
+            }
+            // Gather all adjacent halfedges
+            std::vector<int> adjHE = vertAdjHEs(v);
+            std::vector<int> adjV = vertAdjVerts(v);
+            std::vector<int> incomingHE(adjHE.size());
+            std::vector<int> HE_SplitIdxs;  // Local HE indexing
+            std::vector<int> local_dCNIdxs; // Local HE indexing
+            for (int he = 0; he < adjHE.size(); he++) { // Fill in the incoming halfedges
+                incomingHE[he] = HE[adjHE[he]].twin;
+            }
+            // Find which halfedges to "split" at
+            // These include dCN halfedges and boundary edges
+            for (int he = 0; he < adjHE.size(); he++) {
+                // Track all partitions that are embedded and NOT boundary, or the starts of boundaries
+                if (HE[adjHE[he]].active && (((HE[adjHE[he]].dCN_idx >= 0) && !HE[adjHE[he]].boundary) || 
+                    HE[HE[adjHE[he]].twin].boundary)) {
+                    HE_SplitIdxs.push_back(he);
+                }
+                // Also track all dCN halfedge Idxs in CCW order
+                if (HE[incomingHE[he]].active && HE[incomingHE[he]].dCN_idx >= 0) {
+                    local_dCNIdxs.push_back(he);
+                }
+            }
+            if (local_dCNIdxs.empty()) {
+                continue;
+            }
+            // Find corner index for each
+            std::vector<int> cornerIdxs(HE_SplitIdxs.size());   // Global HE indexing
+            for (int i = 0; i < HE_SplitIdxs.size(); i++) {     // Iterate over each new corner
+                int splitLocal = HE_SplitIdxs[i];
+                // Find the corresponding halfedge
+                int next_dCN = local_dCNIdxs[0];
+                for (int idx = 0; idx < local_dCNIdxs.size(); idx++) {  // Find this corner's corner_idx
+                    int local_i = local_dCNIdxs[idx];
+                    if (local_i >= splitLocal) {
+                        next_dCN = local_i;
+                        break;
                     }
                 }
-                if (local_dCNIdxs.empty()) {
-                    continue;
+                cornerIdxs[i] = incomingHE[next_dCN];
+            }
+
+            // For each dCN corner, split the vertex and rewire the halfedge destination vertices accordingly
+            std::vector<std::pair<int, int>> newStartBoundaries;
+            std::vector<std::pair<int, int>> newEndBoundaries;
+            for (int i = 0; i < HE_SplitIdxs.size(); i++) {
+                int startHE = adjHE[HE_SplitIdxs[i]];
+                int nextHE = adjHE[HE_SplitIdxs[(i+1)%HE_SplitIdxs.size()]];
+                int startLocal = HE_SplitIdxs[i];
+                int endLocal = HE_SplitIdxs[(i + 1) % HE_SplitIdxs.size()];
+
+                int num_outgoing = endLocal - startLocal;
+                if (num_outgoing <= 0) {
+                    num_outgoing += adjHE.size();
                 }
-                // Find corner index for each
-                std::vector<int> cornerIdxs(HE_SplitIdxs.size());   // Global HE indexing
-                for (int i = 0; i < HE_SplitIdxs.size(); i++) {
-                    int splitLocal = HE_SplitIdxs[i];
-                    // Find the corresponding halfedge
-                    int next_dCN = local_dCNIdxs[0];
-                    for (int idx = 0; idx < local_dCNIdxs.size(); idx++) {
-                        int local_i = local_dCNIdxs[idx];
-                        if (local_i >= splitLocal) {
-                            next_dCN = local_i;
-                            break;
-                        }
-                    }
-                    cornerIdxs[i] = HE[adjHE[next_dCN]].twin;
+                int v_current;
+                if (i == 0) {
+                    v_current = v;
+                } else {
+                    v_current = insertVertex(V[v].pos, V[v].n, V[v].label, -1, V[v].projData.elType, V[v].projData.elIdx, V[v].defData.projVector);
                 }
+                // Rewire corner index
+                V[v_current].corner_idx = cornerIdxs[i];
+                V[v_current].he = startHE;
 
-                // For each dCN corner, split the vertex and rewire the halfedge destination vertices accordingly
-                std::vector<std::pair<int, int>> newStartBoundaries;
-                std::vector<std::pair<int, int>> newEndBoundaries;
-                int num_corners = 0;
-                for (int i = 0; i < HE_SplitIdxs.size(); i++) {
-                    int startHE = adjHE[HE_SplitIdxs[i]];
-                    int nextHE = adjHE[HE_SplitIdxs[(i+1)%HE_SplitIdxs.size()]];
-                    if (HE[startHE].boundary) { // Skip adding any corners that are boundaries
-                        continue;
-                    }
-                    int v_current;
-                    if (num_corners == 0) {
-                        v_current = v;
-                    } else {
-                        v_current = insertVertex(V[v].pos, V[v].n, V[v].label, -1, V[v].projData.elType, V[v].projData.elIdx, V[v].defData.projVector);
-                    }
-                    // Rewire corner index
-                    V[v_current].corner_idx = cornerIdxs[i];
-                    V[v_current].he = startHE;
+                // Check if we need to first insert the start boundary
+                std::pair<int, int> startBdy = {-1, -1};
+                if (HE[HE[startHE].twin].boundary) {
+                    int adj_v = HE[startHE].dest;
+                    HE[HE[startHE].twin].dest = v_current;
+                    vertPairToHE.erase({adj_v, v});
+                    vertPairToHE[{adj_v, v_current}] = HE[startHE].twin;
+                    startBdy.first = HE[startHE].twin;
+                    startBdy.second = HE[startBdy.first].prev;
+                } else {    // Currently no existing halfedge. Create a new one
+                    // Each split that doesn't start at a boundary keeps its last edge and gets a copy for its start edge
+                    int adj_v = HE[startHE].dest;
+                    int new_e = E.size();
+                    E.emplace_back();
+                    E[new_e].he = startHE;
+                    int new_he = HE.size();
+                    HE.emplace_back();
+                    HE[new_he].twin = startHE;
+                    HE[new_he].dest = v_current;
+                    HE[new_he].boundary = true;
+                    HE[new_he].edge = new_e;
+                    HE[startHE].edge = new_e;
+                    vertPairToHE.erase({adj_v, v});
+                    vertPairToHE[{adj_v, v_current}] = new_he;
+                    startBdy.first = new_he;
+                    startBdy.second = -1;
+                }
+                newStartBoundaries.push_back(startBdy);
+                int counter = 0;    // safety
+                int local_final_HE = endLocal;
+                // Rewire the halfedges to point to the new vert
+                for (int j = 0; j < num_outgoing; j++) {
+                    int local = (startLocal + j) % adjHE.size();
+                    int nextLocal = (local + 1) % adjHE.size();
 
-                    // Check if we need to first insert the start boundary
-                    std::pair<int, int> startBdy;
-                    if (HE[HE[startHE].twin].boundary) {
-                        int adj_v = HE[startHE].dest;
-                        HE[HE[startHE].twin].dest = v_current;
-                        vertPairToHE.erase({adj_v, v});
-                        vertPairToHE[{adj_v, v_current}] = HE[startHE].twin;
-                        startBdy.first = HE[startHE].twin;
-                        startBdy.second = HE[startBdy.first].prev;
-                    } else {    // Currently no existing halfedge. Create a new one
-                        // Each split that doesn't start at a boundary keeps its last edge and gets a copy for its start edge
-                        int new_e = E.size();
-                        E.emplace_back();
-                        E[new_e].he = startHE;
-                        int new_he = HE.size();
-                        HE.emplace_back();
-                        HE[new_he].twin = startHE;
-                        HE[new_he].dest = HE[HE[startHE].twin].dest;
-                        HE[new_he].boundary = true;
-                        HE[new_he].edge = new_e;
-                        HE[startHE].edge = new_e;
-                        startBdy.first = new_he;
-                        startBdy.second = -1;
-                    }
-                    newStartBoundaries.push_back(startBdy);
-                    int he_current = startHE;
-                    int counter = 0;    // safety
-                    // Rewire the halfedges to point to the new vert
-                    do {
-                        int adj_v0 = HE[he_current].dest;
-                        vertPairToHE.erase({v, adj_v0});
-                        vertPairToHE[{v_current, adj_v0}] = he_current;
+                    int he_current = adjHE[local];
+                    int adj_v0 = HE[he_current].dest;
 
-                        int he_in = HE[he_current].prev;
-                        int adj_v1 = HE[he_in].dest;
-                        // Sanity
-                        HE[he_in].dest = v_current;
-                        if (HE[he_in].dest != v_current) {
-                            return -1;
-                        }
-                        vertPairToHE.erase({adj_v1, v});
-                        vertPairToHE[{adj_v1, v_current}] = he_in;
-                        
-                        he_current = HE[he_in].twin;
-                        counter++;
-                    } while((he_current != nextHE && !HE[he_current].boundary) && (counter < adjHE.size()));
-                    if (he_current != nextHE) {
+                    // he_current was v -> adj_v0.
+                    // It should become v_current -> adj_v0.
+                    vertPairToHE.erase({v, adj_v0});
+                    vertPairToHE[{v_current, adj_v0}] = he_current;
+
+                    // If this outgoing halfedge is itself a boundary, this sector ends here.
+                    // Do not try to use the next incoming twin.
+                    if (HE[he_current].boundary) {
+                        local_final_HE = local;
+                        break;
+                    }
+
+                    // In the sorted ring convention, the incoming halfedge closing this wedge
+                    // is the twin of the next outgoing halfedge.
+                    int he_prev = HE[adjHE[nextLocal]].twin;
+
+                    // he_prev should originally be adj_v1 -> v.
+                    int adj_v1 = HE[adjHE[nextLocal]].dest;
+
+                    if (HE[he_prev].dest != v) {
+                        std::cout << "Reached corner " << i + 1 << " of " << HE_SplitIdxs.size()
+                                << "; Expected incoming halfedge to end at split vertex." << std::endl;
+
+                        std::cout << "  v = " << v
+                                << ", v_current = " << v_current << std::endl;
+                        std::cout << "  local = " << local
+                                << ", nextLocal = " << nextLocal
+                                << ", startLocal = " << startLocal
+                                << ", endLocal = " << endLocal
+                                << ", num_outgoing = " << num_outgoing << std::endl;
+                        std::cout << "  he_current = " << he_current
+                                << ", he_prev = " << he_prev
+                                << ", adjHE[nextLocal] = " << adjHE[nextLocal] << std::endl;
+                        std::cout << "  HE[he_prev].dest = " << HE[he_prev].dest
+                                << ", expected = " << v << std::endl;
+
                         return -1;
                     }
 
-                    // Check if we need to insert the end boundary
-                    std::pair<int, int> endBdy; // 
-                    if (HE[he_current].boundary) {
-                        int adj_v = HE[he_current].dest;
-                        vertPairToHE.erase({v, adj_v});
-                        vertPairToHE[{v_current, adj_v}] = he_current;
-                        endBdy.first = he_current;
-                        endBdy.second = HE[he_current].next;
-                    } else {    // Need to create a new halfedge
-                        int new_he = HE.size();
-                        HE.emplace_back();
-                        HE[new_he].edge = HE[he_current].edge;
-                        HE[new_he].boundary = true;
-                        HE[new_he].twin = HE[he_current].twin;
-                        HE[new_he].dest = HE[he_current].dest;
-                        endBdy.first = new_he;
-                        endBdy.second = -1;
-                    }
-                    newEndBoundaries.push_back(endBdy);
-                    num_corners++;
+                    // he_prev was adj_v1 -> v.
+                    // It should become adj_v1 -> v_current.
+                    HE[he_prev].dest = v_current;
+
+                    vertPairToHE.erase({adj_v1, v});
+                    vertPairToHE[{adj_v1, v_current}] = he_prev;
                 }
 
-                // Now that all splits are made, rewire by properly rewiring the boundaries
-                for (int i = 0; i < newStartBoundaries.size(); i++) {
-                    const std::pair<int, int>& currStart = newStartBoundaries[i];
-                    const std::pair<int, int>& currEnd = newEndBoundaries[i];
+                // Check if we need to insert the end boundary
+                int final_outgoing = adjHE[local_final_HE];
+                std::pair<int, int> endBdy; // 
+                if (HE[final_outgoing].boundary) {
+                    int adj_v = adjV[local_final_HE];
+                    vertPairToHE.erase({v, adj_v});
+                    vertPairToHE[{v_current, adj_v}] = final_outgoing;
+                    endBdy.first = final_outgoing;
+                    endBdy.second = HE[final_outgoing].next;
+                } else {    // Need to create a new halfedge
+                    int adj_v = adjV[local_final_HE];
+                    int new_he = HE.size();
+                    HE.emplace_back();
+                    HE[new_he].edge = HE[final_outgoing].edge;
+                    HE[new_he].boundary = true;
+                    HE[new_he].twin = HE[final_outgoing].twin;
+                    HE[new_he].dest = adj_v;
+                    vertPairToHE.erase({adj_v, v});
 
-                    HE[currStart.first].next = currEnd.first;
-                    HE[currEnd.first].prev = currStart.first;
+                    vertPairToHE[{v_current, adj_v}] = new_he;
+                    endBdy.first = new_he;
+                    endBdy.second = -1;
+                }
+                newEndBoundaries.push_back(endBdy);
+            }
 
-                    HE[HE[currStart.first].twin].twin = currStart.first;
-                    HE[HE[currEnd.first].twin].twin = currEnd.first;
+            // Now that all splits are made, rewire by properly rewiring the boundaries
+            for (int i = 0; i < newStartBoundaries.size(); i++) {
+                const std::pair<int, int>& currStart = newStartBoundaries[i];
+                const std::pair<int, int>& currEnd = newEndBoundaries[i];
+                const std::pair<int, int>& nextStart = newStartBoundaries[(i+1)%newStartBoundaries.size()];
+                const std::pair<int, int>& prevEnd = newEndBoundaries[(i+newEndBoundaries.size()-1)%newEndBoundaries.size()];
+                // Connect the start boundary to the end boundary
+                HE[currStart.first].next = currEnd.first;
+                HE[currEnd.first].prev = currStart.first;
+                // Make sure twins are set correctly
+                HE[HE[currStart.first].twin].twin = currStart.first;
+                HE[HE[currEnd.first].twin].twin = currEnd.first;
 
-                    // Reconnect the newly formed boundaries
-                    // Do both reciprocally for safety
-                    if (currStart.second == -1) {
-                        const std::pair<int, int>& prevEnd = newEndBoundaries[(i+newEndBoundaries.size()-1)%newEndBoundaries.size()];
-                        HE[currStart.first].prev = prevEnd.first;
-                        HE[prevEnd.first].next = currStart.first;
-                    } else {
-                        HE[currStart.first].prev = currStart.second;
-                        HE[currStart.second].next = currStart.first;
-                    }
-                    if (currEnd.second == -1) {
-                        const std::pair<int, int>& nextStart = newStartBoundaries[(i+1)%newStartBoundaries.size()];
-                        HE[currEnd.first].next = nextStart.first;
-                        HE[nextStart.first].prev = currEnd.first;
-                    } else {
-                        HE[currEnd.first].next = currEnd.second;
-                        HE[currEnd.second].prev = currEnd.first;
-                    }
+                // Reconnect the newly formed boundaries
+                // Do both reciprocally for safety
+                if (currStart.second == -1 && prevEnd.second == -1) {   // created a new boundary
+                    HE[currStart.first].prev = prevEnd.first;
+                    HE[prevEnd.first].next = currStart.first;
+                } else if (currStart.second >= 0 && prevEnd.second >= 0) {  // Joining up existing boundary halfedges
+                    HE[currStart.first].prev = currStart.second;
+                    HE[currStart.second].next = currStart.first;
+                } else {        // Mismatch!
+                    std::cout << "Mismatched adjacent start/prev boundaries" << std::endl;
+                    return -1;
+                }
+                if (currEnd.second == -1 && nextStart.second == -1) { // Using an existing boundary
+                    HE[currEnd.first].next = nextStart.first;
+                    HE[nextStart.first].prev = currEnd.first;
+                } else if (currEnd.second >= 0 && nextStart.second >= 0) {  // Joining up existing boundary vertices
+                    HE[currEnd.first].next = currEnd.second;
+                    HE[currEnd.second].prev = currEnd.first;
+                } else {    // Mismatch!
+                    std::cout << "Mismatched adjacent end/next boundaries" << std::endl;
+                    return -1;
                 }
             }
         }

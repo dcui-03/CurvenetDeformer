@@ -9,6 +9,7 @@
 #include <map>
 #include <limits>
 #include <utility>
+#include <iostream>
 
 // Mesh class functions for various stages of the profile mover algorithm
 
@@ -33,12 +34,13 @@ void cutmesh::computeHEMap(std::vector<int>& heToCMhe, std::map<int, int>& CMheT
             }
         }
     }
+    //std::cout << "Total used halfedges: " << num_he << " of " << HE.size() << std::endl;
     return;
 }
 
 // Compute a matrix V and also a mapping from V indices to the cutmesh cutvert indices
 // Also fills in the mapping from mesh vert to V.
-Eigen::SparseMatrix<double> cutmesh::computeVMatrix(std::vector<int>& vToCM, std::map<int, int>& mToV, const std::vector<int>& heToCMhe) {
+int cutmesh::computeVMatrix(Eigen::SparseMatrix<double>& V_mat, std::vector<int>& vToCM, std::map<int, int>& mToV, const std::vector<int>& heToCMhe) {
     // Def. triplets for filling sparse matrices
     typedef Eigen::Triplet<double> T;
     vToCM.clear();
@@ -56,24 +58,26 @@ Eigen::SparseMatrix<double> cutmesh::computeVMatrix(std::vector<int>& vToCM, std
     }
     // Get number of halfedges
     int num_he = heToCMhe.size();
-    Eigen::SparseMatrix<double> V_mat(num_he, num_v);
+    V_mat.resize(num_he, num_v);
+    V_mat.setZero();
     std::vector<T> tripletList;
     tripletList.reserve(num_he);
     
     // Fill the matrix
     // Our convention is that each halfedge uses its origin vertex
     for (int he = 0; he < heToCMhe.size(); he++) {
-        int dest = HE[HE[heToCMhe[he]].twin].dest;
-        if (V[dest].label == 0) {   // Get V only
-            tripletList.push_back(T(he, CMtoV[dest], 1.0));
+        int origin = HE[HE[heToCMhe[he]].twin].dest;
+        if (V[origin].label == 0) {   // Get V only
+            tripletList.push_back(T(he, CMtoV[origin], 1.0));
         }
     }
 
+    // std::cout << "V_mat has " << tripletList.size() << " non-zero entries" << std::endl;
     V_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-    return V_mat;
+    return 1;
 }
 
-Eigen::SparseMatrix<double> cutmesh::computeCMatrix(std::vector<int>& cToCM, std::map<int, std::vector<int>>& mToC, const std::vector<int>& heToCMhe) {
+int cutmesh::computeCMatrix(Eigen::SparseMatrix<double>& C_mat, std::vector<int>& cToCM, std::map<int, std::vector<int>>& mToC, const std::vector<int>& heToCMhe) {
     // Def. triplets for filling sparse matrices
     typedef Eigen::Triplet<double> T;
     cToCM.clear();
@@ -93,30 +97,43 @@ Eigen::SparseMatrix<double> cutmesh::computeCMatrix(std::vector<int>& cToCM, std
     }
     // Get number of halfedges
     int num_he = heToCMhe.size();
-    Eigen::SparseMatrix<double> C_mat(num_he, num_c);
+    C_mat.resize(num_he, num_c);
+    C_mat.setZero();
     std::vector<T> tripletList;
     tripletList.reserve(num_he);
     
     // Fill the matrix
     // Our convention is that each halfedge uses its origin vertex
     for (int he = 0; he < heToCMhe.size(); he++) {
-        int dest = HE[HE[heToCMhe[he]].twin].dest;
-        if (V[dest].label != 0) {
-            tripletList.push_back(T(he, CMtoC[dest], 1.0));
+        int origin = HE[HE[heToCMhe[he]].twin].dest;
+        if (V[origin].label != 0) {
+            tripletList.push_back(T(he, CMtoC[origin], 1.0));
         }
     }
 
+    // std::cout << "C_mat has " << tripletList.size() << " non-zero entries" << std::endl;
     C_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-    return C_mat;
+    return 1;
 }
 
 // Compute the halfedge-based laplacian 
-Eigen::SparseMatrix<double> cutmesh::computeHELaplacian(std::map<int, int>& CMheTohe) {
+int cutmesh::computeHELaplacian(Eigen::SparseMatrix<double>& L, std::map<int, int>& CMheTohe) {
     typedef Eigen::Triplet<double> T;
     int num_he = CMheTohe.size();
-    Eigen::SparseMatrix<double> L(num_he, num_he);
+    L.resize(num_he, num_he);
+    L.setZero();
+    int num_entries = 0;
+    // Get an estimate of how many entries we will need
+    for (int f = 0; f < F.size(); f++) {
+        if (!F[f].active) {
+            continue;
+        }
+        // Get the adjacent vertices and halfedges
+        int n = faceAdjHalfEdges(f).size();
+        num_entries += n*n;
+    }
     std::vector<T> tripletList;
-    tripletList.reserve(num_he);
+    tripletList.reserve(num_entries);
     // Compute face Laplacian
     for (int f = 0; f < F.size(); f++) {
         if (!F[f].active) {
@@ -131,26 +148,41 @@ Eigen::SparseMatrix<double> cutmesh::computeHELaplacian(std::map<int, int>& CMhe
 
         // Redistribute the Laplacian to its associated indices
         for (int i = 0; i < faceL.rows(); i++) {
+            if (CMheTohe.find(adjHE_idxs[i]) == CMheTohe.end()) {
+                std::cout << "Missing halfedge in CMheTohe during halfedge Laplacian assembly." << std::endl;
+                return -1;
+            }
             int f_row = CMheTohe.at(adjHE_idxs[i]);
             for (int j = 0; j < faceL.cols(); j++) {
+                if (CMheTohe.find(adjHE_idxs[j]) == CMheTohe.end()) {
+                    std::cout << "Missing halfedge in CMheTohe during halfedge Laplacian assembly." << std::endl;
+                    return -1;
+                }
                 int f_col = CMheTohe.at(adjHE_idxs[j]);
                 tripletList.push_back(T(f_row, f_col, faceL(i, j)));
             }
         }
     }
+    // std::cout << "L has " << num_entries << " non-zero entries" << std::endl;
     L.setFromTriplets(tripletList.begin(), tripletList.end());
-    return L;
+    return 1;
 }
 
 // Compute deformation gradients on cut-vertices
 // TODO: Since each operates on a separate row of defGrads, is the parallelism safe?
-Eigen::MatrixXd cutmesh::computeDefGrads(const std::vector<int>& cToCM) {
-    Eigen::MatrixXd defGrads(cToCM.size(), 9);
+int cutmesh::computeDefGrads(Eigen::MatrixXd& defGrads, const std::vector<int>& cToCM) {
+    // TODO: Assert so we don't have to resize
+    defGrads.resize(cToCM.size(), 9);
+    defGrads.setZero();
     // Grab deformation gradients from the corresponding cutmesh
     #pragma omp parallel for
     for (int c = 0; c < cToCM.size(); c++) {
         int v = cToCM[c];
-        int dCN_prev = V[v].corner_idx;
+        int dCN_prev = HE[V[v].corner_idx].dCN_idx;
+        if (dCN_prev < 0) {
+            std::cout << "Incorrect corner index assignment found in cutmesh::computeDefGrads" << std::endl;
+            return -1;
+        }
         Eigen::Matrix3d defGrad;
         // Compute the vertex deformation gradient based on the corresponding dCN def grad
         if (V[v].label == 1) {
@@ -162,22 +194,26 @@ Eigen::MatrixXd cutmesh::computeDefGrads(const std::vector<int>& cToCM) {
         V[v].defData.defGrad = defGrad;
         defGrads.row(c) = Utils::flattenMatrix3d(defGrad).transpose();
     }
-    return defGrads;
+    // std::cout << "Constraint def grads has size " << cToCM.size() << std::endl;
+    return 1;
 }
 
 // Apply solved deformation gradients to the cutmesh
-void cutmesh::applyDefGrads(Eigen::MatrixXd defGrads, const std::vector<int>& vToCM) {
+void cutmesh::applyDefGrads(const Eigen::MatrixXd& defGrads, const std::vector<int>& vToCM) {
+    // std::cout << "Num def grads to distribute: " << defGrads.rows() << std::endl;
     #pragma omp parallel for
     for (int v = 0; v < vToCM.size(); v++) {
         Eigen::Matrix3d defGrad = Utils::compressVector9d(defGrads.row(v).transpose());
         V[vToCM[v]].defData.defGrad = defGrad;
     }
+    // std::cout << "Distributed " << vToCM.size() << " def grads." << std::endl;
     return;
 }
 
 // Estimate projected curvenet positions
-Eigen::MatrixXd cutmesh::estimateCNPositions(const std::vector<int>& cToCM) {
-    Eigen::MatrixXd cnPos(cToCM.size(), 3);
+int cutmesh::estimateCNPositions(Eigen::MatrixXd& cnPos, const std::vector<int>& cToCM) {
+    cnPos.resize(cToCM.size(), 3);
+    cnPos.setZero();
     std::vector<Eigen::Vector3d> cnPos_vector(cToCM.size());
 
     #pragma omp parallel for
@@ -186,14 +222,18 @@ Eigen::MatrixXd cutmesh::estimateCNPositions(const std::vector<int>& cToCM) {
         int v = cToCM[c];
         Eigen::Vector3d proj = V[v].defData.projVector;
         Eigen::Vector3d new_pos = -1 * V[v].defData.defGrad * V[v].defData.projVector;
-        int dCN_corner = V[v].corner_idx;
+        int dCN_corner = HE[V[v].corner_idx].dCN_idx;
+        if (dCN_corner < 0) {
+            std::cout << "Incorrect corner index assignment found in cutmesh::estimateCNPositions" << std::endl;
+            return -1;
+        }
         // Compute the vertex deformation gradient based on the corresponding dCN def grad
         if (V[v].label == 1) {
-            Eigen::Vector3d target_pos = dCN->V[dCN->HE[dCN_corner].dest].pos;
+            Eigen::Vector3d target_pos = dCN->V[dCN->HE[dCN_corner].dest].new_pos;
             new_pos += target_pos;
         } else if (V[v].label == 2) {
-            Eigen::Vector3d next_pos = dCN->V[dCN->HE[dCN_corner].dest].pos;
-            Eigen::Vector3d prev_pos = dCN->V[dCN->HE[dCN->HE[dCN_corner].twin].dest].pos;
+            Eigen::Vector3d next_pos = dCN->V[dCN->HE[dCN_corner].dest].new_pos;
+            Eigen::Vector3d prev_pos = dCN->V[dCN->HE[dCN->HE[dCN_corner].twin].dest].new_pos;
             new_pos += 0.5 * (next_pos + prev_pos);
         }
         cnPos_vector[c] = new_pos.transpose();
@@ -202,15 +242,16 @@ Eigen::MatrixXd cutmesh::estimateCNPositions(const std::vector<int>& cToCM) {
     for (int c = 0; c < cToCM.size(); c++) {
         cnPos.row(c) = cnPos_vector[c];
     }
-    return cnPos;
+    return 1;
 }
 
 // Estimate the deformed faces
 // TODO: Can we parallelize? If so, how?
 // Problem is, we are trying to modify various rows of the deformed face final matrix
 // They shouldn't collide since they're halfedges, but still... check if safe.
-Eigen::MatrixXd cutmesh::estimateFaceDeformations(const std::map<int, int>& CMheTohe) {
-    Eigen::MatrixXd deformedFaces(CMheTohe.size(), 3);
+int cutmesh::estimateFaceDeformations(Eigen::MatrixXd& deformedFaces, const std::map<int, int>& CMheTohe) {
+    deformedFaces.resize(CMheTohe.size(), 3);
+    deformedFaces.setZero();
 
     // For deformed faces
     #pragma omp parallel for 
@@ -237,7 +278,7 @@ Eigen::MatrixXd cutmesh::estimateFaceDeformations(const std::map<int, int>& CMhe
             deformedFaces.row(CMheTohe.at(he)) = defFace.row(v);
         }
     }
-    return deformedFaces;
+    return 1;
 }
 
 }   // namespace Mesh

@@ -90,6 +90,8 @@ class mesh {
         bool copyHalfEdge(int he, HalfEdge& new_he);
         bool copyEdge(int e, Edge& new_e);
 
+        void countNumActive();
+
 
         // ------------- ITERATORS + QUERYING (mesh_iter.cpp) -----------------
 

@@ -74,6 +74,10 @@ polyscope::SurfaceMesh* psCutMesh = nullptr;
 // Local normals
 std::vector<glm::vec3> psCutMesh_VNormals;
 std::vector<glm::vec3> psCutMesh_FNormals;
+// Corner indices
+std::vector<glm::vec3> psCutMesh_corners;
+// Projection vectors
+std::vector<glm::vec3> psCutMesh_projVecs;
 
 
 // VARIABLES FOR PARSING AND WRITING FILES
@@ -209,7 +213,8 @@ void updateProfileMover(bool recompute = true) {
         std::vector<std::array<int, 4>> splines;
         psCN->cnAsStdVector(controlsV, tangentsV, splines);
 
-        PM->deform(controlsV, tangentsV);
+        std::vector<Eigen::Vector3d> deformed_pos = PM->deform(controlsV, tangentsV);
+        psMesh->updateVertexPositions(deformed_pos);
     }
 
     if (psDCN) {
@@ -235,38 +240,47 @@ void updateProfileMover(bool recompute = true) {
     psDCN->setMaterial("flat");
     psDCN->setTransparency(1.0);
     psDCN->setRadius(0.003);
-    psDCN->setEnabled(true);
+    psDCN->setEnabled(false);
     // Vector fields
     auto* posTan = psDCN->addEdgeVectorQuantity("Pos. Tangents", posScaledTangents);
     posTan->setVectorColor(glm::vec3{1.0f, 0.00f, 0.00f});
     auto* posBin = psDCN->addEdgeVectorQuantity("Pos. Binormals", posScaledBinormals);
     posBin->setVectorColor(glm::vec3{1.0f, 0.45f, 0.0f});
-    posBin->setEnabled(true);
+    //posBin->setEnabled(true);
     auto* posNorm =psDCN->addEdgeVectorQuantity("Pos. Normals", posScaledNormals);
     posNorm->setVectorColor(glm::vec3{1.0f, 0.9f, 0.00f});
-    posNorm->setEnabled(true);
+    //posNorm->setEnabled(true);
     auto* negTan = psDCN->addEdgeVectorQuantity("Neg. Tangents", negScaledTangents);
     negTan->setVectorColor(glm::vec3{0.0f, 1.0f, 0.00f});
     auto* negBin = psDCN->addEdgeVectorQuantity("Neg. Binormals", negScaledBinormals);
     negBin->setVectorColor(glm::vec3{0.0f, 0.4f, 1.0f});
-    negBin->setEnabled(true);
+    //negBin->setEnabled(true);
     auto* negNorm = psDCN->addEdgeVectorQuantity("Neg. Normals", negScaledNormals);
     negNorm->setVectorColor(glm::vec3{0.75f, 0.1f, 1.0f});
-    negNorm->setEnabled(true);
+    //negNorm->setEnabled(true);
 
     // Cut-mesh
-    if ((PM->cutmesh()).polyscopeFormat(psCutMesh_V, psCutMesh_F, psCutMesh_VNormals, psCutMesh_FNormals) == 1) {
+    if ((PM->cutmesh()).polyscopeFormat(psCutMesh_V, psCutMesh_F, psCutMesh_VNormals, psCutMesh_FNormals, psCutMesh_corners, psCutMesh_projVecs) == 1) {
         psCutMesh = polyscope::registerSurfaceMesh("Cut Mesh", psCutMesh_V, psCutMesh_F);
         psCutMesh->setSurfaceColor({0.0f, 1.0f, 0.8f});
         auto* vertNorms = psCutMesh->addVertexVectorQuantity("Vert Normals", psCutMesh_VNormals);
-        vertNorms->setEnabled(true);
+        vertNorms->setVectorColor(glm::vec3{1.0f, 0.0f, 0.0f});
+        //vertNorms->setEnabled(true);
         auto* faceNorms = psCutMesh->addFaceVectorQuantity("Face Normals", psCutMesh_FNormals);
-        faceNorms->setEnabled(true);
+        faceNorms->setVectorColor(glm::vec3{0.0f, 0.0f, 1.0f});
+        //faceNorms->setEnabled(true);
+        auto* cutCorners = psCutMesh->addVertexVectorQuantity("Cut Corners", psCutMesh_corners);
+        cutCorners->setVectorColor(glm::vec3{0.3f, 0.3f, 0.3f});
+        //cutCorners->setEnabled(true);
+        auto* projVecs = psCutMesh->addVertexVectorQuantity("Proj Vectors", psCutMesh_projVecs);
+        projVecs->setVectorColor(glm::vec3{1.0f, 1.0f, 0.0f});
+        //projVecs->setEnabled(true);
+        psCutMesh->setEnabled(false);
     }
     return;
 }
 
-
+// Update the curvenet object
 void updateCurvenet(bool conn = false) {
     // Reset curvenet
     psCN->cnAsCurveNetwork(psCN_P, psCN_E);
@@ -326,6 +340,29 @@ void updateCurvenet(bool conn = false) {
     return;
 }
 
+void resetMesh() {
+    if (!IO::readOBJ(InputPath, psMesh_V, psMesh_F)) {
+        return;
+    }
+    psMesh = polyscope::registerSurfaceMesh("Surface Mesh", psMesh_V, psMesh_F);
+    psMesh->setSurfaceColor({0.6f, 0.6f, 0.6f});
+    return;
+}
+
+// Update the mesh vertex positions
+void updateMesh(const std::vector<Eigen::Vector3d>& new_pos) {
+    // Convert to matrix form
+    if (new_pos.size() != psMesh_V.rows()) {
+        std::cout << "Invalid mesh update size: New pos has size " << new_pos.size() << " but mesh has size " << psMesh_V.rows() << std::endl;
+        return;
+    }
+    for (int v = 0; v < psMesh_V.rows(); v++) {
+        psMesh_V.row(v) = new_pos[v].transpose();
+    }
+    // Update mesh
+    psMesh->updateVertexPositions(psMesh_V);
+    return;
+}
 // Reset all control positions in Polyscope
 void resetCurvenet() {
     return;
@@ -336,8 +373,8 @@ void clearPM() {
     CM_init = false;
     psDCN_P.resize(0, 0); // Aggregate list of controls and tangents
     psDCN_E.clear(); // Edge List between controls and tangents
-    //psCutMesh_V.resize(0, 0);
-    //psCutMesh_F.clear();
+    psCutMesh_V.resize(0, 0);
+    psCutMesh_F.clear();
     PM = nullptr;
     if (psDCN) {
         psDCN->remove();
@@ -357,6 +394,8 @@ void clearPM() {
 
     psCutMesh_VNormals.clear();
     psCutMesh_FNormals.clear();
+    psCutMesh_corners.clear();
+    psCutMesh_projVecs.clear();
     return;
 }
 
@@ -383,7 +422,6 @@ int computeDeformation() {
     std::vector<Eigen::Vector3d> controlsV, tangentsV;
     std::vector<std::array<int, 4>> splines;
     psCN->cnAsStdVector(controlsV, tangentsV, splines);
-    PM->deform(controlsV, tangentsV);
     // Update the dCN
     updateProfileMover(true);
     return 1;
@@ -423,26 +461,27 @@ void myCallback() {
             PM_init = true;
             updateProfileMover(false);
             // For easy of debugging, remove all the extra stuff
-            psEditableCN->setEnabled(false);
-            psMesh->setEnabled(false);
-            psTangentsCN->setEnabled(false);
-            psControlsPC->setEnabled(false);
-            psTangentsPC->setEnabled(false);
+            //psEditableCN->setEnabled(false);
+            //psMesh->setEnabled(false);
+            //psTangentsCN->setEnabled(false);
+            //psControlsPC->setEnabled(false);
+            //psTangentsPC->setEnabled(false);
         }
     }
 
     // Deformation stuff
     // TODO: In the future, make this mode automatic after running precomp
+    /*
     if (ImGui::Button("Deformation Mode")) {
         clearModes();
         if (!PM_init) {
             std::cout << "Perform pre-computation before applying deformation." << std::endl;
         } else {
-            std::cout << "Computing Deformation." << std::endl;
-            // computeDeformation();
+            //std::cout << "Computing Deformation." << std::endl;
+            computeDeformation();
             updateProfileMover();
         }
-    }
+    }*/
 
     // User parameter for sampling the spline
     ImGui::SliderInt("Sampling Param", &samplingParam, 2, 8);
@@ -528,15 +567,21 @@ void myCallback() {
     if (ImGui::Button("Clear Curvenet")) {
         std::cout << "Clearing entire curvenet." << std::endl;
         psCN->resetCurvenet();
+        std::cout << "Clearing profilemover object." << std::endl;
         clearPM();
         updateCurvenet(true);
         updateProfileMover(true);
+        // Reset mesh
+        std::cout << "Resetting mesh." << std::endl;
+        resetMesh();
+        psMesh->setEnabled(true);
     }
     // May need to store a copy of the rest curvenet
     if (ImGui::Button("Clear Profile Mover")) {
         std::cout << "Clearing profile mover." << std::endl;
         clearPM();
         updateProfileMover(true);
+        resetMesh();
         clearModes();
     }
 
@@ -707,7 +752,10 @@ int main(int argc, char **argv) {
 
     // Load our mesh object
     std::cout << "\nLoading surface mesh file" << std::endl;
-    IO::readOBJ(InputPath, psMesh_V, psMesh_F);
+    if (!IO::readOBJ(InputPath, psMesh_V, psMesh_F)) {
+        std::cout << "Could not read input mesh" << std::endl;
+        return -1;
+    }
 
     // Register mesh with PS
     std::cout << "Registering Surface Mesh to Polyscope" << std::endl;

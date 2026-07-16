@@ -211,9 +211,10 @@ bool mesh::initHalfEdgeMesh(const std::vector<Eigen::Vector3d>& V_List, const st
         HE[nextBHE].prev = bhe;
     }
 
-    active_e = E.size();
-    active_f = F.size();
-
+    countNumActive();
+    std::cout << "Num. active vertices: " << active_v << std::endl;
+    std::cout << "Num. active edges: " << active_e << std::endl;
+    std::cout << "Num. active faces: " << active_f << std::endl;
     return true;    // success!
 }
 
@@ -336,7 +337,8 @@ Eigen::VectorXd mesh::computeFaceHeight(int f) const {
 // Function which computes a single face's normal/area
 double mesh::computeFVectorArea(int f, Eigen::Vector3d& fN) {
     std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(f);
-    return DECUtils::vectorArea(fVertsPos, fN); // TODO: Be careful about degenerate normals!
+    double area = DECUtils::vectorArea(fVertsPos, fN); // TODO: Be careful about degenerate normals!
+    return area;
 }
 
 // Internal function to precompute normals on all mesh structures
@@ -346,7 +348,12 @@ void mesh::computeFNormalsAreas() {
             continue;
         }
         Eigen::Vector3d fN = Eigen::Vector3d::Zero();
-        F[f].fArea = computeFVectorArea(f, fN);
+        double fArea = computeFVectorArea(f, fN);
+        if (fArea <= 1e-8) {    // Throw an error if we have a degenerate face
+            throw std::runtime_error("mesh::computeFNormalsAreas(): One face is degnerate.");
+            return;
+        }
+        F[f].fArea = fArea;
         F[f].n = fN;
     }
     return;
@@ -556,6 +563,31 @@ bool mesh::copyEdge(int e, Edge& new_e) {
     const Edge& edge = E[e];
     new_e = createEdge(edge.he, edge.n);
     return true;
+}
+
+// Count number of active elements
+void mesh::countNumActive() {
+    active_v = 0;
+    active_e = 0;
+    active_f = 0;
+    for (int f = 0; f < F.size(); f++) {
+        if (F[f].active) {
+            active_f++;
+        }
+    }
+
+    for (int e = 0; e < E.size(); e++) {
+        if (E[e].active) {
+            active_e++;
+        }
+    }
+    
+    for (int v = 0; v < V.size(); v++) {
+        if (V[v].active) {
+            active_v++;
+        }
+    }
+    return;
 }
 
 }   // namespace Mesh

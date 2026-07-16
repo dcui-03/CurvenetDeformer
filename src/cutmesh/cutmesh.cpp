@@ -25,11 +25,9 @@ cutmesh::cutmesh(mesh* MRef, DCurvenet::dcurvenet* dCN): M(MRef), dCN(dCN) {
         throw std::runtime_error("Failed to embed curves.");
     }
     // Actually apply cuts to the mesh
-    /*
     if (cutMesh() != 1) {
         throw std::runtime_error("Failed to cut mesh.");
     }
-    */
     return;
 }
 
@@ -56,31 +54,6 @@ bool cutmesh::assignDCNtoHE(int he, const int dCN_idx) {
     }
     HE[he].dCN_idx = dCN_idx;
     return true;
-}
-
-// Count number of active elements
-void cutmesh::countNumActive() {
-    active_v = 0;
-    active_e = 0;
-    active_f = 0;
-    for (int f = 0; f < F.size(); f++) {
-        if (F[f].active) {
-            active_f++;
-        }
-    }
-
-    for (int e = 0; e < E.size(); e++) {
-        if (E[e].active) {
-            active_e++;
-        }
-    }
-    
-    for (int v = 0; v < V.size(); v++) {
-        if (V[v].active) {
-            active_v++;
-        }
-    }
-    return;
 }
 
 // Initializes by copying the vertex, edge, and halfedge data from the reference mesh

@@ -42,20 +42,23 @@ class cutmesh : public mesh {
 
         // Helpers for profilemover class
         void computeHEMap(std::vector<int>& heToCMhe, std::map<int, int>& CMheTohe);
-        Eigen::SparseMatrix<double> computeVMatrix(std::vector<int>& vToCM, std::map<int, int>& mToV, const std::vector<int>& heToCMhe);
-        Eigen::SparseMatrix<double> computeCMatrix(std::vector<int>& cToCM, std::map<int, std::vector<int>>& mToC, const std::vector<int>& heToCMhe);
-        Eigen::SparseMatrix<double> computeHELaplacian(std::map<int, int>& CMheTohe);
+        int computeVMatrix(Eigen::SparseMatrix<double>& V_mat, std::vector<int>& vToCM, std::map<int, int>& mToV, const std::vector<int>& heToCMhe);
+        int computeCMatrix(Eigen::SparseMatrix<double>& C_mat, std::vector<int>& cToCM, std::map<int, std::vector<int>>& mToC, const std::vector<int>& heToCMhe);
+        int computeHELaplacian(Eigen::SparseMatrix<double>& L, std::map<int, int>& CMheTohe);
         // Compute the deformation gradient on the initial cutmesh dCN verts
-        Eigen::MatrixXd computeDefGrads(const std::vector<int>& cToCM);
+        int computeDefGrads(Eigen::MatrixXd& defGrads, const std::vector<int>& cToCM);
         // Apply solved deformation gradients to the cutmesh
-        void applyDefGrads(Eigen::MatrixXd defGrads, const std::vector<int>& vToCM);
+        void applyDefGrads(const Eigen::MatrixXd& defGrads, const std::vector<int>& vToCM);
         // Estimate projected curvenet positions
-        Eigen::MatrixXd estimateCNPositions(const std::vector<int>& cToCM);
+        int estimateCNPositions(Eigen::MatrixXd& cnPos, const std::vector<int>& cToCM);
         // Estimate the deformed faces
-        Eigen::MatrixXd estimateFaceDeformations(const std::map<int, int>& CMheTohe);
+        int estimateFaceDeformations(Eigen::MatrixXd& faceDef, const std::map<int, int>& CMheTohe);
 
         // POLYSCOPE reformatting
-        int polyscopeFormat(Eigen::MatrixXd& Verts, std::vector<std::vector<int>>& Faces, std::vector<glm::vec3>& VertN, std::vector<glm::vec3>& FaceN) const;
+        int polyscopeFormat(Eigen::MatrixXd& Verts, std::vector<std::vector<int>>& Faces, 
+                            std::vector<glm::vec3>& VertN, std::vector<glm::vec3>& FaceN, 
+                            std::vector<glm::vec3>& cornerIdx,
+                            std::vector<glm::vec3>& projVecs) const;
 
         // Getters
         Eigen::Vector3d getVPos(int v) const;
@@ -68,8 +71,6 @@ class cutmesh : public mesh {
         double getMeanE() const;
         // Get bbox diagonal length
         double getBBoxDiag() const;
-
-        void countNumActive();
 
         // friend class ProfileMover::profilemover;
     protected:

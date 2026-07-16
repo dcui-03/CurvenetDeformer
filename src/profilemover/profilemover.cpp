@@ -8,6 +8,7 @@
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
+#include <iostream>
 
 
 namespace ProfileMover {
@@ -15,11 +16,16 @@ namespace ProfileMover {
                                const std::vector<Eigen::Vector3d> Controls, const std::vector<Eigen::Vector3d> Tangents, 
                                const std::vector<std::array<int, 4>> Splines, int alpha) {
         applyMesh(meshV, meshF);
+        std::cout << "Mesh created." << std::endl;
         applyCurvenet(Controls, Tangents, Splines, alpha);
+        std::cout << "Curvenet created." << std::endl;
         computeDiscreteCurvenet();
+        std::cout << "Discrete Curvenet created." << std::endl;
         computeCutMesh();
+        std::cout << "Cutmesh created." << std::endl;
         
-        // precomputation();
+        precomputation();
+        std::cout << "Operators computed." << std::endl;
     }
     // Only apply mesh
     profilemover::profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF) {
@@ -84,16 +90,29 @@ namespace ProfileMover {
 
     void profilemover::precomputation() {
         if (!M_init || !CN_init || !dCN_init || !CM_init) {
-            // Throw an error
+            throw std::runtime_error("profilemover::precomputation(): curvenet, mesh, cutmesh, or discrete curvenet not initialized.");
             return;
         }
 
         // Compute operators
         CM.computeHEMap(heToCMhe, CMheTohe);
-        V = CM.computeVMatrix(vToCM, mToV, heToCMhe);
-        C = CM.computeCMatrix(cToCM, mToC, heToCMhe);
+        int V_success = CM.computeVMatrix(V, vToCM, mToV, heToCMhe);
+        if (V_success != 1) {
+            throw std::runtime_error("profilemover::precomputation(): Unable to construct matrix V.");
+            return;
+        }
+        int C_success = CM.computeCMatrix(C, cToCM, mToC, heToCMhe);
+        if (C_success != 1) {
+            throw std::runtime_error("profilemover::precomputation(): Unable to construct matrix C.");
+            return;
+        }
         // Face-based Laplacian with values pushed onto halfedges
-        Eigen::SparseMatrix<double> L = CM.computeHELaplacian(CMheTohe);
+        Eigen::SparseMatrix<double> L;
+        int L_success = CM.computeHELaplacian(L, CMheTohe);
+        if (L_success != 1) {
+            throw std::runtime_error("profilemover::precomputation(): Error constructing halfedge Laplacian.");
+            return;
+        }
         // mVtL
         mVtL = -1 * V.transpose() * L;
         // Factor V^TLV
@@ -143,25 +162,37 @@ namespace ProfileMover {
         CN.updateCurveNet(Controls, Tangents);
         // 2. Compute new discrete curvenet and frames
         dCN.updateDiscCurveNet();
-        return temp;
-        /*
         // FIRST SOLVE: Deformation gradients
         // Compute flattened deformation gradient matrix
-        Eigen::MatrixXd f_c = CM.computeDefGrads(cToCM);    // TODO: This can be done in parallel over halfedges
+        Eigen::MatrixXd f_c;
+        int DG_success = CM.computeDefGrads(f_c, cToCM);    // TODO: This can be done in parallel over halfedges
+        if (DG_success != 1) {
+            throw std::runtime_error("profilemover::deform(): deformation gradient computation failed.");
+            return temp;
+        }
         // Solve system to get interpolated 
         Eigen::MatrixXd f_v = VtLV.solve(mVtL * (C * f_c));
         // Fold back together and redistribute to their vertices
         CM.applyDefGrads(f_v, vToCM);                   // TODO: This can be done in parallel
         // SECOND SOLVE: Positions
         // Estimate new projected positions using the distributed def grads
-        Eigen::MatrixXd x_c = CM.estimateCNPositions(cToCM);
+        Eigen::MatrixXd x_c;
+        int cnPos_success = CM.estimateCNPositions(x_c, cToCM);
+        if (cnPos_success != 1) {
+            throw std::runtime_error("profilemover::deform(): curve network projection estimation failed.");
+            return temp;
+        }
         // Compute per-face deformation matrix + assemble
-        Eigen::MatrixXd y_h = CM.estimateFaceDeformations(CMheTohe);
+        Eigen::MatrixXd y_h;
+        int faceDef_success = CM.estimateFaceDeformations(y_h, CMheTohe);
+        if (faceDef_success != 1) {
+            throw std::runtime_error("profilemover::deform(): face deformation estimate failed.");
+            return temp;
+        }
         // Compute new positions
         Eigen::MatrixXd x_v = VtLV.solve(mVtL * (C * x_c - y_h));
         
         return assembleFinalPositions(x_v, x_c);
-        */
     }
 
     // Assemble final positions into our standard data type
