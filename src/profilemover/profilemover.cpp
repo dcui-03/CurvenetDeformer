@@ -8,6 +8,7 @@
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
+#include <chrono>
 #include <iostream>
 
 
@@ -16,16 +17,14 @@ namespace ProfileMover {
                                const std::vector<Eigen::Vector3d> Controls, const std::vector<Eigen::Vector3d> Tangents, 
                                const std::vector<std::array<int, 4>> Splines, int alpha) {
         applyMesh(meshV, meshF);
-        std::cout << "Mesh created." << std::endl;
+
         applyCurvenet(Controls, Tangents, Splines, alpha);
-        std::cout << "Curvenet created." << std::endl;
+        
         computeDiscreteCurvenet();
-        std::cout << "Discrete Curvenet created." << std::endl;
+
         computeCutMesh();
-        std::cout << "Cutmesh created." << std::endl;
         
         precomputation();
-        std::cout << "Operators computed." << std::endl;
     }
     // Only apply mesh
     profilemover::profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF) {
@@ -40,8 +39,12 @@ namespace ProfileMover {
         if (M_init) {
             throw std::runtime_error("profilemover::applyMesh(): mesh already initialized");
         }
+        auto mesh_start = std::chrono::steady_clock::now();
         M = Mesh::mesh(meshV, meshF);
         M_init = true;
+        auto mesh_end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> mesh_elapsed = mesh_end - mesh_start;
+        std::cout << "Mesh created in time " << mesh_elapsed.count() << " seconds"<< std::endl;
         return;
     }
 
@@ -53,8 +56,12 @@ namespace ProfileMover {
             throw std::runtime_error("profilemover::applyCurvenet(): curvenet already initialized");
             return;
         }
+        auto CN_start = std::chrono::steady_clock::now();
         CN = Curvenet::curvenet(Controls, Tangents, Splines, M, alpha);
         CN_init = true;
+        auto CN_end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> CN_elapsed = CN_end - CN_start;
+        std::cout << "Curvenet created in time " << CN_elapsed.count() << " seconds" << std::endl;
         return;
     }
 
@@ -66,9 +73,13 @@ namespace ProfileMover {
             throw std::runtime_error("profilemover::computeDiscreteCurvenet(): discrete curvenet already computed");
             return;
         } else {
+            auto dCN_start = std::chrono::steady_clock::now();
             // Initialize discrete curvenet
             dCN = DCurvenet::dcurvenet(&CN);
             dCN_init = true;
+            auto dCN_end = std::chrono::steady_clock::now();
+            std::chrono::duration<double> dCN_elapsed = dCN_end - dCN_start;
+            std::cout << "Discrete Curvenet created in time " << dCN_elapsed.count() << " seconds" << std::endl;
         }
         return;
     }
@@ -82,8 +93,12 @@ namespace ProfileMover {
             return;
         } else {
             // Compute Cut-mesh
+            auto CM_start = std::chrono::steady_clock::now();
             CM = Mesh::cutmesh(&M, &dCN);
             CM_init = true;
+            auto CM_end = std::chrono::steady_clock::now();
+            std::chrono::duration<double> CM_elapsed = CM_end - CM_start;
+            std::cout << "Cutmesh created in time " << CM_elapsed.count() << " seconds" << std::endl;
         }
         return;
     }
@@ -93,7 +108,7 @@ namespace ProfileMover {
             throw std::runtime_error("profilemover::precomputation(): curvenet, mesh, cutmesh, or discrete curvenet not initialized.");
             return;
         }
-
+        auto Op_start = std::chrono::steady_clock::now();
         // Compute operators
         CM.computeHEMap(heToCMhe, CMheTohe);
         int V_success = CM.computeVMatrix(V, vToCM, mToV, heToCMhe);
@@ -119,6 +134,9 @@ namespace ProfileMover {
         Eigen::SparseMatrix<double> VtLV_Mat = V.transpose() * L * V;
         VtLV.analyzePattern(VtLV_Mat);
         VtLV.factorize(VtLV_Mat);
+        auto Op_end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> Op_elapsed = Op_end - Op_start;
+        std::cout << "Operators computed in time " << Op_elapsed.count() << " seconds" << std::endl;
         return;
     }
 
@@ -159,40 +177,82 @@ namespace ProfileMover {
             return temp;
         }
         // 1. Compute new curvenet
+        auto start = std::chrono::steady_clock::now();
         CN.updateCurveNet(Controls, Tangents);
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed = end - start;
+        std::cout << "Updated Curvenet in " << elapsed.count() << " seconds"<< std::endl;
         // 2. Compute new discrete curvenet and frames
+        start = std::chrono::steady_clock::now();
         dCN.updateDiscCurveNet();
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Updated discrete Curvenet in " << elapsed.count() << " seconds"<< std::endl;
         // FIRST SOLVE: Deformation gradients
         // Compute flattened deformation gradient matrix
+        start = std::chrono::steady_clock::now();
         Eigen::MatrixXd f_c;
         int DG_success = CM.computeDefGrads(f_c, cToCM);    // TODO: This can be done in parallel over halfedges
         if (DG_success != 1) {
             throw std::runtime_error("profilemover::deform(): deformation gradient computation failed.");
             return temp;
         }
-        // Solve system to get interpolated 
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Computed cut-vert def grads in " << elapsed.count() << " seconds"<< std::endl;
+
+        // Solve system to get interpolated def grads
+        start = std::chrono::steady_clock::now();
         Eigen::MatrixXd f_v = VtLV.solve(mVtL * (C * f_c));
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Computed all def grads in " << elapsed.count() << " seconds"<< std::endl;
+
         // Fold back together and redistribute to their vertices
+        start = std::chrono::steady_clock::now();
         CM.applyDefGrads(f_v, vToCM);                   // TODO: This can be done in parallel
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Applied all def grads in " << elapsed.count() << " seconds"<< std::endl;
+
         // SECOND SOLVE: Positions
         // Estimate new projected positions using the distributed def grads
+        start = std::chrono::steady_clock::now();
         Eigen::MatrixXd x_c;
         int cnPos_success = CM.estimateCNPositions(x_c, cToCM);
         if (cnPos_success != 1) {
             throw std::runtime_error("profilemover::deform(): curve network projection estimation failed.");
             return temp;
         }
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Estimated cut-vert positions in " << elapsed.count() << " seconds"<< std::endl;
+
         // Compute per-face deformation matrix + assemble
+        start = std::chrono::steady_clock::now();
         Eigen::MatrixXd y_h;
         int faceDef_success = CM.estimateFaceDeformations(y_h, CMheTohe);
         if (faceDef_success != 1) {
             throw std::runtime_error("profilemover::deform(): face deformation estimate failed.");
             return temp;
         }
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Computed face deformations in " << elapsed.count() << " seconds"<< std::endl;
+
         // Compute new positions
+        start = std::chrono::steady_clock::now();
         Eigen::MatrixXd x_v = VtLV.solve(mVtL * (C * x_c - y_h));
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Solved for positions in " << elapsed.count() << " seconds"<< std::endl;
         
-        return assembleFinalPositions(x_v, x_c);
+        start = std::chrono::steady_clock::now();
+        std::vector<Eigen::Vector3d> final_pos = assembleFinalPositions(x_v, x_c);
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Assembled final positions in " << elapsed.count() << " seconds"<< std::endl;
+        return final_pos;
     }
 
     // Assemble final positions into our standard data type

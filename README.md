@@ -19,11 +19,13 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/16**
+**Update 7/18**
 
-Omg.... omg I think it's working... I would hazard to guess that there's a bunch of teeny tiny bugs, but otherwise, I think things are fairly stable! It also runs in realtime for the small inputs I've been trying, which is awesome! Next, I need to test meshes with boundaries, and also stress test polygonal mesh inputs and non-manifold inputs. ALSO I forgot to debug and clean up the utils.cpp file. There's lots to unused functions there that should just be discarded.
+Fixed the edge start and vertex start bugs! Next, I need to test meshes with boundaries, and also stress test polygonal mesh inputs and non-manifold inputs. ALSO I forgot to debug and clean up the utils.cpp file. There's lots to unused functions there that should just be discarded.
 
-A few things to think about: What happens if we don't enforce the corner normal alignment? Does the code just break?
+A few things to think about: What happens if we don't enforce the corner normal alignment? Does the code just break? Also maybe I should time each component of the solve... I wonder what's taking up most of the compute?
+
+It looks like the face deformation assembly is the bottleneck --> I wonder if I should just go ahead and make this a precomputed matrix operation. It seems like the problem is likely that each iteration, I need to reindex all adjacent vertices and halfedges, which is probably too expensive. I think, actually, that I should precompute operators for everything and just use those, but do not delete the mesh/cut-mesh objects. During the final release, I can have these "deleted" after creation.
 
 Small TODOs: Change dCN verts to store only a single outgoing halfedge, and then use adjHE to get the rest. Add a safe normalization helper function to the utils so that we can safely normalize or catch errors.
 

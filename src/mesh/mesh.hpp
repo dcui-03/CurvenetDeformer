@@ -195,6 +195,9 @@ class mesh {
         int nextEl_Vert(int v, const vertProjData& originData, 
                     const Eigen::Vector3d& prev_direc, Eigen::Vector3d& next_direc, 
                     vertProjData& nextData, bool bdy_snap = true, double eps = 1e-6);
+        // Figures out which next attribute to walk on given the start is on a vert
+        int nextEl_VertStart(int v, const vertProjData& originData, const Eigen::Vector3d& start_direc,
+                           Eigen::Vector3d& next_direc, vertProjData& nextData, bool bdy_snap, double eps = 1e-6);
 };
 
 }   // namespace Mesh

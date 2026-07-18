@@ -350,8 +350,9 @@ void mesh::computeFNormalsAreas() {
         Eigen::Vector3d fN = Eigen::Vector3d::Zero();
         double fArea = computeFVectorArea(f, fN);
         if (fArea <= 1e-8) {    // Throw an error if we have a degenerate face
-            throw std::runtime_error("mesh::computeFNormalsAreas(): One face is degnerate.");
-            return;
+            std::cout << "mesh::computeFNormalsAreas(): One face is degnerate." << std::endl;
+            //throw std::runtime_error("mesh::computeFNormalsAreas(): One face is degnerate.");
+            //return;
         }
         F[f].fArea = fArea;
         F[f].n = fN;

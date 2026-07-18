@@ -88,6 +88,9 @@ std::string OutputPath;
 bool PM_init = false;
 bool CM_init = false;
 
+bool disable_psCN = false;
+bool disable_PM = false;
+
 bool createCtrlMode = false;  // Allows users to place control points
 bool createSplineMode = false;  // Allow users to initialize new splines
 
@@ -240,7 +243,7 @@ void updateProfileMover(bool recompute = true) {
     psDCN->setMaterial("flat");
     psDCN->setTransparency(1.0);
     psDCN->setRadius(0.003);
-    psDCN->setEnabled(false);
+    // psDCN->setEnabled(false);
     // Vector fields
     auto* posTan = psDCN->addEdgeVectorQuantity("Pos. Tangents", posScaledTangents);
     posTan->setVectorColor(glm::vec3{1.0f, 0.00f, 0.00f});
@@ -275,7 +278,7 @@ void updateProfileMover(bool recompute = true) {
         auto* projVecs = psCutMesh->addVertexVectorQuantity("Proj Vectors", psCutMesh_projVecs);
         projVecs->setVectorColor(glm::vec3{1.0f, 1.0f, 0.0f});
         //projVecs->setEnabled(true);
-        psCutMesh->setEnabled(false);
+        // psCutMesh->setEnabled(false);
     }
     return;
 }
@@ -399,6 +402,74 @@ void clearPM() {
     return;
 }
 
+void disableCurvenet() {
+    if (psControls_P.rows() < 1) {
+        disable_psCN = true;
+        std::cout << "No curvenet object to enable/disable." << std::endl;
+        return;
+    }
+    
+    if (disable_psCN) {
+        if (psTangentsCN) {
+            psTangentsCN->setEnabled(false);
+        }
+        if (psTangentsPC) {
+            psTangentsPC->setEnabled(false);
+        }
+        if (psControlsPC) {
+            psControlsPC->setEnabled(false);
+        }
+        if (psEditableCN) {
+            psEditableCN->setEnabled(false);
+        }
+        disable_psCN = false;
+    } else {
+        if (psTangentsCN) {
+            psTangentsCN->setEnabled(true);
+        }
+        if (psTangentsPC) {
+            psTangentsPC->setEnabled(true);
+        }
+        if (psControlsPC) {
+            psControlsPC->setEnabled(true);
+        }
+        if (psEditableCN) {
+            psEditableCN->setEnabled(true);
+        }
+        disable_psCN = true;
+    }
+}
+void disablePM() {
+    if (!PM_init) {
+        disable_PM = true;
+        std::cout << "No Profile Mover object to enable." << std::endl;
+        return;
+    }
+    if (disable_PM) {
+        if (psCutMesh) {
+            psCutMesh->setEnabled(false);
+        }
+        if (psDCN) {
+            psDCN->setEnabled(false);
+        }
+        if (psMesh) {
+            psMesh->setEnabled(true);
+        }
+        disable_PM = false;
+    } else {
+        if (psCutMesh) {
+            psCutMesh->setEnabled(true);
+        }
+        if (psDCN) {
+            psDCN->setEnabled(true);
+        }
+        if (psMesh) {
+            psMesh->setEnabled(false);
+        }
+        disable_PM = true;
+    }
+    return;
+}
 // clear all modes and their variables except for the specified mode
 int clearModes() {
     createCtrlMode = false;
@@ -466,6 +537,8 @@ void myCallback() {
             //psTangentsCN->setEnabled(false);
             //psControlsPC->setEnabled(false);
             //psTangentsPC->setEnabled(false);
+            psDCN->setEnabled(false);
+            psCutMesh->setEnabled(false);
         }
     }
 
@@ -492,6 +565,13 @@ void myCallback() {
         saveCurvenet();
     }
 
+    if (ImGui::Button(disable_psCN ? "Disable Curvenet" : "Enable Curvenet")) {
+        disableCurvenet();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(disable_PM ? "Disable Profile Mover" : "Enable Profile Mover")) {
+        disablePM();
+    }
 
     // CONTROL/SPLINE CREATION
     // Create controls
@@ -571,6 +651,7 @@ void myCallback() {
         clearPM();
         updateCurvenet(true);
         updateProfileMover(true);
+        clearModes();
         // Reset mesh
         std::cout << "Resetting mesh." << std::endl;
         resetMesh();

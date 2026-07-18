@@ -292,11 +292,6 @@ int mesh::traceGeodesic(const Vert& start,
             }
         }
     }
-
-    // At this point, we should only be starting from an edge or a face
-    if (depth == 0 && start.projData.elType == 0) {
-        return -1;
-    }
     // If we still haven't found the vert after searching the max depth, assume that we are going in the wrong direc
     if (++depth > max_depth) {
         return -1;
@@ -329,8 +324,12 @@ int mesh::traceGeodesic(const Vert& start,
     } else {
         int success = -1;
         if (start.projData.elType == 0) {   // We are on a vert
-            std::cout << "Landed on vertex. Computing next direction" << std::endl;
-            success = nextEl_Vert(start.projData.elIdx, prevData, prevDirec, nextDirec, nextData, true);
+            if (prevData.elType == 0) {
+                success = nextEl_VertStart(start.projData.elIdx, prevData, prevDirec, nextDirec, nextData, true);
+            } else {
+                std::cout << "Landed on vertex. Computing next direction" << std::endl;
+                success = nextEl_Vert(start.projData.elIdx, prevData, prevDirec, nextDirec, nextData, true);
+            }
         } else if (start.projData.elType == 1) {    // We are on an edge
             if (prevData.elType == 1) {             // Just started walking
                 std::cout << "Landed on edge. Computing next direction for prev is edge" << std::endl;
@@ -588,16 +587,11 @@ int mesh::nextEl_EdgeStart(int e, const vertProjData& originData, const Eigen::V
     // Get adjacent attributes
     int he0 = E[e].he;
     int he1 = HE[he0].twin;
-    int v0 = HE[HE[he0].twin].dest;
+    int v0 = HE[he1].dest;
     int v1 = HE[he0].dest;
     Eigen::Vector3d tangent = (V[v1].pos - V[v0].pos).normalized();
     int f0 = HE[he0].face;
     int f1 = HE[he1].face;
-    // Check if either face is valid by computing dot products with the binormal of the face's edge
-    bool valid0 = false;
-    bool valid1 = false;
-    Eigen::Vector3d proj0 = Eigen::Vector3d::Zero();
-    Eigen::Vector3d proj1 = Eigen::Vector3d::Zero();
     double dot0 = 0.0;
     double dot1 = 0.0;
 
@@ -605,105 +599,45 @@ int mesh::nextEl_EdgeStart(int e, const vertProjData& originData, const Eigen::V
     // First, check if the desired direction is essentially along the edge
     Eigen::Vector3d edgeProj;
     double edgeProjLen = Utils::projectVectorOntoTangentPlane(E[e].n, start_direc, edgeProj);
+    Eigen::Vector3d binorm0 = E[e].n.cross(tangent);
+    Eigen::Vector3d binorm1 = -1 * binorm0;
     if (edgeProjLen > eps) {
         double edgeAlignment = std::abs(edgeProj.dot(tangent));
         if (edgeAlignment >= 1.0 - 1e-6) {
             return snapWalkToEdge(e, start_direc, next_direc, nextData, eps);
-        }
-    }
-
-
-    // Check each face
-    if (f0 >= 0 && f0 < F.size()) {
-        double projLen0 = Utils::projectVectorOntoTangentPlane(F[f0].n, start_direc, proj0);
-        // If the projection is valid, then test against the binormal
-        if (projLen0 > eps) {
-            // Get the binormal
-            if (tangent.norm() > eps) {
-                Eigen::Vector3d binormal = tangent.cross(F[f0].n);
-                if (binormal.norm() > eps) {
-                    binormal.normalize();
-                    dot0 = proj0.dot(binormal);
-                    valid0 = true;
-                }
-            }
-        }
-    }
-    // Check the second face
-    if (f1 >= 0 && f1 < F.size()) {
-        double projLen1 = Utils::projectVectorOntoTangentPlane(F[f1].n, start_direc, proj1);
-        if (projLen1 > eps) {
-            if (tangent.norm() > eps) {
-                Eigen::Vector3d binormal = (-1*tangent).cross(F[f1].n);
-                if (binormal.norm() > eps) {
-                    binormal.normalize();
-                    dot1 = proj1.dot(binormal);
-                    valid1 = true;
-                }
-            }
-        }
-    }
-    // Screen out bad cases
-    if (!valid0 && !valid1) {
+        } 
+    } else {
         return -1;
-    }
-
-    // Boundary edge case: only f0 exists
-    if (valid0 && !valid1) {
-        // Apply snapping if we are close enough
-        if (std::abs(dot0) <= eps) {
-            return snapWalkToEdge(e, start_direc, next_direc, nextData, eps);
-        }
-        if (dot0 < 0.0) {
-            // Direction points from boundary/exterior into face f0
-            nextData.elType = 2;
-            nextData.elIdx = f0;
-            next_direc = proj0;
-            return 1;
-        }
-        // Direction points outward into boundary/exterior
-        if (bdy_snap) {
-            return snapWalkToEdge(e, start_direc, next_direc, nextData, eps);
-        }
-        return -1;
-    }
-
-    // Boundary edge case: only f1 exists
-    if (!valid0 && valid1) {
-        if (std::abs(dot1) <= eps) {
-            return snapWalkToEdge(e, start_direc, next_direc, nextData, eps);
-        }
-        if (dot1 < 0.0) {
-            // Direction points from boundary/exterior into face f1
-            nextData.elType = 2;
-            nextData.elIdx = f1;
-            next_direc = proj1;
-            return 1;
-        }
-        // Direction points outward into boundary/exterior
-        if (bdy_snap) {
-            return snapWalkToEdge(e, start_direc, next_direc, nextData, eps);
-        }
-
-        return -1;
-    }
-
-    // Interior edge-start case: both adjacent faces exist and we are on the intermediate edge
-    // Same for if we are equally between the two
-    if ((std::abs(dot0) <= eps || std::abs(dot1) <= eps) || std::abs(dot0 - dot1) <= eps) {
-        return snapWalkToEdge(e, start_direc, next_direc, nextData, eps);
     }
 
     // The face whose outward binormal aligns more with the walk direction is the face we are coming from (prev)
+    dot0 = edgeProj.dot(binorm0);
+    dot1 = edgeProj.dot(binorm1);
     vertProjData tempOrigin;
-    tempOrigin.elType = 2;
+    nextData.elType = 2;
     if (dot0 > dot1) {
-        tempOrigin.elIdx = f0;
+        nextData.elIdx = f0;
     } else {
-        tempOrigin.elIdx = f1;
+        nextData.elIdx = f1;
     }
 
-    return nextEl_Edge(e, tempOrigin, start_direc, next_direc, nextData, bdy_snap);
+    if (nextData.elIdx == -1) { // Snap to boundary edge if needed
+        if (bdy_snap) {
+            nextData.elType = 1;
+            nextData.elIdx = e;
+            if (tangent.dot(edgeProj) >= 0.0) {
+                next_direc = tangent;
+            } else {
+                next_direc = -1 * tangent;
+            }
+        } else {
+            return -1;
+        }
+    }
+
+    // We must be on a face; get the new direction
+    Utils::projectVectorOntoTangentPlane(F[nextData.elIdx].n, edgeProj, next_direc);
+    return 1;
 }
 
 // Helper for next edge that performs edge snapping
@@ -811,6 +745,7 @@ int mesh::nextEl_Vert(int v, const vertProjData& originData,
     // Process boundary if we hit one
     if (nextData.elIdx == -1) {
         if (bdy_snap) {
+            nextData.elType = 1;
             // Compute best adjacent edge to snap to
             if (next_direc.dot(heVec) >= next_direc.dot(heVec1)) {
                 next_direc = heVec;
@@ -837,6 +772,103 @@ int mesh::nextEl_Vert(int v, const vertProjData& originData,
         return 1;
     }
     return 1;
+}
+
+int mesh::nextEl_VertStart(int v, const vertProjData& originData, const Eigen::Vector3d& start_direc,
+                           Eigen::Vector3d& next_direc, vertProjData& nextData, bool bdy_snap, double eps) {
+    nextData.elType = -1;
+    nextData.elIdx = -1;
+    next_direc.setZero();
+    if (v < 0 || v >= V.size()) {
+        return -1;
+    }
+    if (originData.elType != 0 || originData.elIdx != v) {
+        return -1;
+    }
+    // Get adjacent attributes
+    Eigen::Vector3d t0, t1;
+    Utils::buildPlaneBasis(V[v].n, t0, t1);
+    std::vector<int> adjHE = vertAdjHEs(v);
+    std::vector<double> adjAngles(adjHE.size());
+    for (int he = 0; he < adjHE.size(); he++) {
+        double theta;
+        if (!Utils::directionAngleInPlane(V[v].pos, V[HE[adjHE[he]].dest].pos, V[v].n, t0, t1, theta)) {
+            return -1;
+        }
+        adjAngles[he] = theta;
+    }
+    double start_theta;
+    if (!Utils::directionAngleInPlane(V[v].pos, V[v].pos + start_direc, V[v].n, t0, t1, start_theta)) {
+        return -1;
+    }
+    int face_he = -1;
+    for (int he = 0; he < adjHE.size(); he++) { // Find which "corner" we are in
+        double curr_angle = adjAngles[he];
+        double next_angle = adjAngles[(he+1) % adjHE.size()];
+
+        double d = std::abs(adjAngles[he] - start_theta);
+        d = std::min(d, 2.0 * M_PI - d);
+        if (d <= eps) { // i.e., we are on the edge of the halfedge
+            next_direc = (V[HE[adjHE[he]].dest].pos - V[v].pos).normalized();
+            nextData.elType = 1;
+            nextData.elIdx = HE[adjHE[he]].edge;
+            return 1;
+        }
+        // Wrap-around check
+        double temp_start = start_theta;
+        if (adjAngles[he] > next_angle) {
+            next_angle += 2.0*M_PI;
+            if (temp_start < adjAngles[he]) {
+                temp_start += 2.0*M_PI;
+            }
+        }
+        // Once we find the right one, return
+        if (temp_start < next_angle && temp_start > adjAngles[he]) {
+            face_he = he;
+        }
+    }
+    if (face_he == -1) {    // NOTE: face_he is an index local to adjHE
+        return -1;
+    }
+
+    nextData.elType = 2;
+    nextData.elIdx = HE[adjHE[face_he]].face;
+    // To get the estimated new direction, project onto vertex tangent plane, and then project again onto the corner normal plane
+    Eigen::Vector3d v_ProjDirec;
+    Utils::projectVectorOntoTangentPlane(V[v].n, start_direc, v_ProjDirec);
+    int next_he = (face_he + 1) % adjHE.size();
+    Eigen::Vector3d tangent0 = (V[HE[adjHE[face_he]].dest].pos - V[v].pos).normalized();
+    Eigen::Vector3d tangent1 = (V[HE[adjHE[next_he]].dest].pos - V[v].pos).normalized();
+    Eigen::Vector3d corner_normal = tangent0.cross(tangent1);
+    if (corner_normal.norm() <= eps) {
+        if (nextData.elIdx != -1) {
+            corner_normal = F[nextData.elIdx].n;
+        } else {
+            corner_normal = V[v].n;
+        }
+    } else {
+        corner_normal.normalize();
+    }
+    if (Utils::projectVectorOntoTangentPlane(corner_normal, v_ProjDirec, next_direc) <= eps) {
+        return -1;
+    };
+    next_direc.normalize();
+    // Handle the boundary case
+    if (HE[adjHE[face_he]].face == -1) {    // Handle boundary case
+        if (bdy_snap) {
+            nextData.elType = 1;
+            if (tangent0.dot(next_direc) >= tangent1.dot(next_direc)) {
+                nextData.elIdx = HE[adjHE[face_he]].edge;
+            } else {
+                nextData.elIdx = HE[adjHE[next_he]].edge;
+            }
+        } else {
+            return -1;
+        }
+    }
+    
+    return 1;
+    
 }
 
 }   // namespace Mesh
