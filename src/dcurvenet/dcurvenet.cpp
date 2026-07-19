@@ -644,4 +644,5 @@ namespace DCurvenet {
         }
         return 1;
     }
+
 }   // namespace DCurvenet

@@ -52,7 +52,7 @@ class cutmesh : public mesh {
         // Estimate projected curvenet positions
         int estimateCNPositions(Eigen::MatrixXd& cnPos, const std::vector<int>& cToCM);
         // Estimate the deformed faces
-        int estimateFaceDeformations(Eigen::MatrixXd& faceDef, const std::map<int, int>& CMheTohe);
+        int estimateFaceDeformations(Eigen::MatrixXd& faceDef, const std::map<int, int>& CMheTohe, bool arap = false);
 
         // POLYSCOPE reformatting
         int polyscopeFormat(Eigen::MatrixXd& Verts, std::vector<std::vector<int>>& Faces, 

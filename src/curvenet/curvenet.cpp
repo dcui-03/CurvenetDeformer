@@ -117,6 +117,7 @@ namespace Curvenet {
 
     // Compute normals for each vertex by projecting onto a mesh
     int curvenet::ctrlNormalsFromMesh(const Mesh::mesh& m) {
+        #pragma omp parallel for
         for (int c = 0; c < C.size(); c++) {
             if (!C[c].active) {
                 continue;

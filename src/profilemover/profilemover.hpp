@@ -22,7 +22,7 @@ class profilemover {
         // Constructor, which first builds the mesh
         profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF, 
                                const std::vector<Eigen::Vector3d> Controls, const std::vector<Eigen::Vector3d> Tangents, 
-                               const std::vector<std::array<int, 4>> Splines, int alpha = 5);
+                               const std::vector<std::array<int, 4>> Splines, int alpha = 5, bool arap = false);
         // Only apply mesh
         profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF);
         profilemover();
@@ -33,6 +33,7 @@ class profilemover {
         const Curvenet::curvenet& curvenet() const;
         const DCurvenet::dcurvenet& discreteCurvenet() const;
         
+        void toggleARAP(bool toggle);
         void applyMesh(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF);
         void applyCurvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, int alpha = 5);
         void computeDiscreteCurvenet();
@@ -49,6 +50,16 @@ class profilemover {
         // Assemble final positions into our standard data type
         std::vector<Eigen::Vector3d> assembleFinalPositions(Eigen::MatrixXd x_v, Eigen::MatrixXd x_c);
 
+        // Matrix-forms of runtime computation
+        int assembleDiscreteCurvenetMats();
+        int computeCDefGrads();
+        int computeFaceDefGrads();
+        int applyFaceDeformations();
+        int computeCPositions();
+        int assembleFinalPositions(std::vector<Eigen::Vector3d>& newV);
+
+        // ARAP-style deformations
+        bool arap = false;
         // Store copy of mesh
         Mesh::mesh M;
         bool M_init = false;
@@ -77,6 +88,30 @@ class profilemover {
         // Instead of maps, store these as precomputed operators?
         std::map<int, std::vector<int>> mToC;
         std::map<int, int> mToV;
+
+        // Matrix forms of the relevant cutmesh components
+        Eigen::MatrixXd proj_c;                         // Dense matrix with the proj vectors for each C cut-vertex
+        Eigen::SparseMatrix<double> he_pos;             // Sparse, block matrix of corner positions per face
+        Eigen::MatrixXd f_dCN_flat;                     // Dense matrix of flattened dCN-based deformation gradients
+        Eigen::MatrixXd f_dCN;                          // Dense matrix of compressed dCN-based deformation gradients
+        Eigen::MatrixXd f_faces;                        // Dense matrix of def grads on cut-faces
+        Eigen::MatrixXd f_c;                            // Dense matrix of cutmesh C cut-vertex flattened def grads
+        Eigen::MatrixXd f_v;                            // Dense matrix of cutmesh V cut-vertex flattened def grads
+        Eigen::MatrixXd x_c;                            // Dense matrix of cutmesh C cut-vertex estimated positions
+        Eigen::MatrixXd x_v;                            // Dense matrix of cutmesh V cut-vertex solved positions
+        Eigen::MatrixXd x_dCN;                          // Dense matrix of dCN vertices
+        Eigen::MatrixXd y_h;
+
+        // Sparse maps
+        Eigen::SparseMatrix<double> M_dCN_flat;         // Sparse averaging map from dCN halfedges to cutmesh C
+        Eigen::SparseMatrix<double> M_v_F;              // Sparse matrix from V cut-vertices to faces
+        Eigen::SparseMatrix<double> M_c_F;              // Sparse matrix from C cut-vertices to faces
+        Eigen::SparseMatrix<double> M_v_M;              // Sparse matrix from V cut-vertices to the mesh
+        Eigen::SparseMatrix<double> M_c_M;              // Sparse matrix from C cut-vertices to the mesh
+        Eigen::SparseMatrix<double> M_dCN_c;            // Sparse matrix from dCN verts to cutmesh C
+        Eigen::SparseMatrix<double> M_3dCN_c;           // Sparse matrix from dCN def grads to cutmesh C
+        std::vector<std::pair<int, int>> he_to_f;       // Map from local halfedge indices to their corresponding local face indices
+
         
         // Store operators
         // TODO: Need functions to compute V and C

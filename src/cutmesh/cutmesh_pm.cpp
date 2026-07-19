@@ -249,7 +249,7 @@ int cutmesh::estimateCNPositions(Eigen::MatrixXd& cnPos, const std::vector<int>&
 // TODO: Can we parallelize? If so, how?
 // Problem is, we are trying to modify various rows of the deformed face final matrix
 // They shouldn't collide since they're halfedges, but still... check if safe.
-int cutmesh::estimateFaceDeformations(Eigen::MatrixXd& deformedFaces, const std::map<int, int>& CMheTohe) {
+int cutmesh::estimateFaceDeformations(Eigen::MatrixXd& deformedFaces, const std::map<int, int>& CMheTohe, bool arap) {
     deformedFaces.resize(CMheTohe.size(), 3);
     deformedFaces.setZero();
 
@@ -271,7 +271,15 @@ int cutmesh::estimateFaceDeformations(Eigen::MatrixXd& deformedFaces, const std:
             defGrad += V[adjV_idxs[v]].defData.defGrad;
         }
         defGrad /= adjV.size();
-        Eigen::MatrixXd defFace = V_Matrix * defGrad.transpose();
+        Eigen::MatrixXd defFace;
+        // ARAP: Extract rotations (test)
+        if (arap) {
+            Eigen::Matrix3d R, S;
+            Utils::polarDecomposition(defGrad, R, S);
+            defFace = V_Matrix * R.transpose();
+        } else {
+            defFace = V_Matrix * defGrad.transpose();
+        }
 
         for (int v = 0; v < adjV.size(); v++) {
             int he = adjHE_idxs[v];

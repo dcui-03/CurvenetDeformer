@@ -15,7 +15,7 @@
 namespace ProfileMover {
     profilemover::profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF, 
                                const std::vector<Eigen::Vector3d> Controls, const std::vector<Eigen::Vector3d> Tangents, 
-                               const std::vector<std::array<int, 4>> Splines, int alpha) {
+                               const std::vector<std::array<int, 4>> Splines, int alpha, bool arap): arap(arap) {
         applyMesh(meshV, meshF);
 
         applyCurvenet(Controls, Tangents, Splines, alpha);
@@ -33,6 +33,11 @@ namespace ProfileMover {
     // Blank init
     profilemover::profilemover() {
 
+    }
+
+    void profilemover::toggleARAP(bool toggle) {
+        arap = toggle;
+        return;
     }
 
     void profilemover::applyMesh(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF) {
@@ -181,13 +186,13 @@ namespace ProfileMover {
         CN.updateCurveNet(Controls, Tangents);
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> elapsed = end - start;
-        std::cout << "Updated Curvenet in " << elapsed.count() << " seconds"<< std::endl;
+        // std::cout << "Updated Curvenet in " << elapsed.count() << " seconds"<< std::endl;
         // 2. Compute new discrete curvenet and frames
         start = std::chrono::steady_clock::now();
         dCN.updateDiscCurveNet();
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
-        std::cout << "Updated discrete Curvenet in " << elapsed.count() << " seconds"<< std::endl;
+        // std::cout << "Updated discrete Curvenet in " << elapsed.count() << " seconds"<< std::endl;
         // FIRST SOLVE: Deformation gradients
         // Compute flattened deformation gradient matrix
         start = std::chrono::steady_clock::now();
@@ -199,21 +204,21 @@ namespace ProfileMover {
         }
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
-        std::cout << "Computed cut-vert def grads in " << elapsed.count() << " seconds"<< std::endl;
+        // std::cout << "Computed cut-vert def grads in " << elapsed.count() << " seconds"<< std::endl;
 
         // Solve system to get interpolated def grads
         start = std::chrono::steady_clock::now();
         Eigen::MatrixXd f_v = VtLV.solve(mVtL * (C * f_c));
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
-        std::cout << "Computed all def grads in " << elapsed.count() << " seconds"<< std::endl;
+        // std::cout << "Computed all def grads in " << elapsed.count() << " seconds"<< std::endl;
 
         // Fold back together and redistribute to their vertices
         start = std::chrono::steady_clock::now();
         CM.applyDefGrads(f_v, vToCM);                   // TODO: This can be done in parallel
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
-        std::cout << "Applied all def grads in " << elapsed.count() << " seconds"<< std::endl;
+        // std::cout << "Applied all def grads in " << elapsed.count() << " seconds"<< std::endl;
 
         // SECOND SOLVE: Positions
         // Estimate new projected positions using the distributed def grads
@@ -226,32 +231,32 @@ namespace ProfileMover {
         }
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
-        std::cout << "Estimated cut-vert positions in " << elapsed.count() << " seconds"<< std::endl;
+        // std::cout << "Estimated cut-vert positions in " << elapsed.count() << " seconds"<< std::endl;
 
         // Compute per-face deformation matrix + assemble
         start = std::chrono::steady_clock::now();
         Eigen::MatrixXd y_h;
-        int faceDef_success = CM.estimateFaceDeformations(y_h, CMheTohe);
+        int faceDef_success = CM.estimateFaceDeformations(y_h, CMheTohe, arap);
         if (faceDef_success != 1) {
             throw std::runtime_error("profilemover::deform(): face deformation estimate failed.");
             return temp;
         }
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
-        std::cout << "Computed face deformations in " << elapsed.count() << " seconds"<< std::endl;
+        // std::cout << "Computed face deformations in " << elapsed.count() << " seconds"<< std::endl;
 
         // Compute new positions
         start = std::chrono::steady_clock::now();
         Eigen::MatrixXd x_v = VtLV.solve(mVtL * (C * x_c - y_h));
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
-        std::cout << "Solved for positions in " << elapsed.count() << " seconds"<< std::endl;
+        // std::cout << "Solved for positions in " << elapsed.count() << " seconds"<< std::endl;
         
         start = std::chrono::steady_clock::now();
         std::vector<Eigen::Vector3d> final_pos = assembleFinalPositions(x_v, x_c);
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
-        std::cout << "Assembled final positions in " << elapsed.count() << " seconds"<< std::endl;
+        // std::cout << "Assembled final positions in " << elapsed.count() << " seconds"<< std::endl;
         return final_pos;
     }
 
@@ -274,6 +279,70 @@ namespace ProfileMover {
             newV[v] = x_v.row(mToV[v]).transpose();
         }
         return newV;
+    }
+
+    // Matrix forms
+
+    int profilemover::assembleDiscreteCurvenetMats() {
+        // TODO
+        if ((f_dCN_flat.rows() != dCN.numHalfedges() && f_dCN_flat.cols() != 9) ||
+            (x_dCN.rows() != dCN.numVerts() && x_dCN.cols() != 3) || 
+            (f_dCN.rows() != 3*dCN.numHalfedges() && f_dCN.cols() != 3)) {
+                f_dCN_flat.resize(dCN.numHalfedges(), 9);
+                f_dCN_flat.setZero();
+                x_dCN.resize(dCN.numVerts(), 3);
+                x_dCN.setZero();
+                f_dCN.resize(3*dCN.numHalfedges(), 3);
+        }
+        //dCN.computeDefGradOperators(f_dCN_flat, f_dCN, M_dCN_flat, M_3dCN_c);
+        //dCN.computedCNVerts(x_dCN, M_dCN_c);
+        return 1;
+    }
+
+    int profilemover::computeCDefGrads() {
+        f_c = M_dCN_flat * f_dCN_flat;
+        return 1;
+    }
+
+    int profilemover::computeFaceDefGrads() {
+        Eigen::MatrixXd f_F_flat = M_v_F * f_v + M_c_F * f_c;
+        return 1;
+    }
+
+    int profilemover::applyFaceDeformations() {
+        // We don't need to fold the def grads together; we can just parallelize
+        y_h = V.transpose() * x_v + C.transpose() * x_c;
+        /*
+        #pragma omp parallel for
+        for (int he_idx = 0; he_idx < he_to_f.size(); he_idx++) {
+            int he = he_to_f[he_idx].first;
+            int f = he_to_f[he_idx].second;
+            Eigen::Vector3d he_pos = y_h.row(he).transpose();
+            // Use the transposed convention
+            y_h(he, 0) = he_pos(0) * f_F_flat[f, 0] + he_pos(1) * f_F_flat[f, 3] + he_pos(2) * f_F_flat[f, 6];
+            y_h(he, 1) = he_pos(0) * f_F_flat[f, 1] + he_pos(1) * f_F_flat[f, 4] + he_pos(2) * f_F_flat[f, 7];
+            y_h(he, 2) = he_pos(0) * f_F_flat[f, 2] + he_pos(1) * f_F_flat[f, 5] + he_pos(2) * f_F_flat[f, 8];
+        }
+            */
+        return 1;
+    }
+
+    int profilemover::computeCPositions() {
+        x_c = M_dCN_c * x_dCN - M_3dCN_c * f_dCN * proj_c;
+        return 1;
+    }
+
+    int profilemover::assembleFinalPositions(std::vector<Eigen::Vector3d>& newV) {
+        Eigen::MatrixXd m = M_v_M * x_v + M_c_M * x_c;
+        if (newV.size() != m.rows()) {
+            newV.resize(m.rows());
+            newV.clear();
+        }
+        #pragma omp parallel for
+        for (int v = 0; v < m.rows(); v++) {
+            newV[v] = m.row(v).transpose();
+        }
+        return 1;
     }
 
 }   // namespace ProfileMover

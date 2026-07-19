@@ -62,6 +62,9 @@ namespace Utils {
     bool orientFacesConsistently(std::vector<std::vector<int>>& F_List);
 
     // VECTOR/PROJECTION HELPERS
+    // Rotation variant SVD
+    void rotationVariantSVD(Eigen::Matrix3d& mat, Eigen::Matrix3d& U, Eigen::Vector3d& Sigma, Eigen::Matrix3d& V);
+    void polarDecomposition(Eigen::Matrix3d& mat, Eigen::Matrix3d& R, Eigen::Matrix3d& S);
 
     // Compute signed angle between two vectors in 3D given the axis
     double signedAngle(const Eigen::Vector3d& v0, const Eigen::Vector3d& v1, const Eigen::Vector3d& axis, bool positive = false);

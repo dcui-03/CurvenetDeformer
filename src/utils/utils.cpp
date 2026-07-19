@@ -432,6 +432,46 @@ bool orientFacesConsistently(std::vector<std::vector<int>>& F_List) {
 
 // GEOMETRY HELPERS
 
+// Rotation-variant SVD
+// Compute the Rotation Variant SVD
+// Input an empty U, Sigma, V
+void rotationVariantSVD(Eigen::Matrix3d& mat, Eigen::Matrix3d& U, Eigen::Vector3d& Sigma, Eigen::Matrix3d& V) {
+    // Compute SVD to get Sigma, U and V
+    Eigen::JacobiSVD<Eigen::Matrix3d> svd(mat, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    U = svd.matrixU();
+    Sigma = svd.singularValues();
+    V = svd.matrixV();
+
+    // Compute L and remove reflections from U and V
+    Eigen::Matrix3d L;
+    L.setIdentity();
+    L(2,2) = (U*V.transpose()).determinant();
+    Sigma(2) = Sigma(2) * L(2,2); // To keep it a vector (taken from HOBAK)
+
+    double u_det = U.determinant();
+    double v_det = V.determinant();
+    if (u_det < 0 && v_det > 0) {
+        U = U * L;
+    } else if (u_det > 0 && v_det < 0) {
+        V = V * L;
+    }
+
+    return;
+}
+
+// Compute Polar Decomposition given rotation variant SVD
+// Returns a vector containing R and then S
+void polarDecomposition(Eigen::Matrix3d& mat, Eigen::Matrix3d& R, Eigen::Matrix3d& S) {
+    Eigen::Matrix3d U, V; 
+    Eigen::Vector3d Sigma;
+    rotationVariantSVD(mat, U, Sigma, V);
+
+    // Put together R and S from the inputs
+    R = U * V.transpose();
+    S = V * Sigma.asDiagonal() * V.transpose();
+    return;
+}
+
 // Compute 3D signed angle between two vectors
 double signedAngle(const Eigen::Vector3d& v0, const Eigen::Vector3d& v1, const Eigen::Vector3d& axis, bool positive) {
     const double eps = 1e-12;

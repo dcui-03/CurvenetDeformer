@@ -106,6 +106,7 @@ std::pair<int, int> selectedPair = {-1, -1};
 
 // Editing helpers
 bool tanConstraint = true;  // Constrain tangent movement to tangent plane only
+bool applyARAP = false; // Whether the curvenetwork should apply arap or not
 
 // Gizmo helpers
 bool activeGizmo = false; // This tells us if there is an active gizmo
@@ -528,7 +529,7 @@ void myCallback() {
             std::vector<std::array<int, 4>> splines;
             psCN->cnAsStdVector(controlsV, tangentsV, splines);
             // Apply mesh and curvenet
-            PM = std::make_unique<ProfileMover::profilemover>(meshV, psMesh_F, controlsV, tangentsV, splines, samplingParam);
+            PM = std::make_unique<ProfileMover::profilemover>(meshV, psMesh_F, controlsV, tangentsV, splines, samplingParam, applyARAP);
             PM_init = true;
             updateProfileMover(false);
             // For easy of debugging, remove all the extra stuff
@@ -539,6 +540,12 @@ void myCallback() {
             //psTangentsPC->setEnabled(false);
             psDCN->setEnabled(false);
             psCutMesh->setEnabled(false);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("ARAP", &applyARAP)) {
+        if (PM_init && PM) {
+            PM->toggleARAP(applyARAP);
         }
     }
 
