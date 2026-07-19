@@ -6,6 +6,7 @@
 #include <vector>
 #include <array>
 #include <map>
+#include <string>
 
 namespace psCurvenet {
 
@@ -45,6 +46,10 @@ class pscurvenet {
         int removeSplineByTangent(int ps_TIdx);
         // Clean up all loose controls
         int cleanupControls();
+
+        // --------- IO -----------
+        int saveCurvenet(const std::string& filepath) const;
+        int loadCurvenet(const std::string& filepath);
 
         // --------- COMPLEX OPERATIONS -----------
         // Merge two splines about a specified control point

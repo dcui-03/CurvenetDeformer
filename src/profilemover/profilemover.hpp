@@ -40,22 +40,23 @@ class profilemover {
         void computeCutMesh();
         // Apply deformation given the new control and tangent locations (connectivity should be same)
         // Returns new mesh positions as an Nx3 matrix
-        std::vector<Eigen::Vector3d> deform(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents);
+        std::vector<Eigen::Vector3d> deform(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents);
+        std::vector<Eigen::Vector3d> deformOps(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents);
     protected:
         // No class inheritance
     private:
         // Precompute cut-mesh and operators
         // Takes as input the necessary items to construct the curve network
         void precomputation();
+        void precomputeOps();
         // Assemble final positions into our standard data type
         std::vector<Eigen::Vector3d> assembleFinalPositions(Eigen::MatrixXd x_v, Eigen::MatrixXd x_c);
 
         // Matrix-forms of runtime computation
         int assembleDiscreteCurvenetMats();
         int computeCDefGrads();
-        int computeFaceDefGrads();
-        int applyFaceDeformations();
-        int computeCPositions();
+        int applyFaceDeformations(const Eigen::MatrixXd& f_F_flat);
+        int applyDefGradsToProj();
         int assembleFinalPositions(std::vector<Eigen::Vector3d>& newV);
 
         // ARAP-style deformations
@@ -91,14 +92,12 @@ class profilemover {
 
         // Matrix forms of the relevant cutmesh components
         Eigen::MatrixXd proj_c;                         // Dense matrix with the proj vectors for each C cut-vertex
-        Eigen::SparseMatrix<double> he_pos;             // Sparse, block matrix of corner positions per face
         Eigen::MatrixXd f_dCN_flat;                     // Dense matrix of flattened dCN-based deformation gradients
-        Eigen::MatrixXd f_dCN;                          // Dense matrix of compressed dCN-based deformation gradients
-        Eigen::MatrixXd f_faces;                        // Dense matrix of def grads on cut-faces
         Eigen::MatrixXd f_c;                            // Dense matrix of cutmesh C cut-vertex flattened def grads
         Eigen::MatrixXd f_v;                            // Dense matrix of cutmesh V cut-vertex flattened def grads
         Eigen::MatrixXd x_c;                            // Dense matrix of cutmesh C cut-vertex estimated positions
         Eigen::MatrixXd x_v;                            // Dense matrix of cutmesh V cut-vertex solved positions
+        Eigen::MatrixXd x_h;                            // Dense matrix of ALL halfedge origin positions
         Eigen::MatrixXd x_dCN;                          // Dense matrix of dCN vertices
         Eigen::MatrixXd y_h;
 
@@ -109,8 +108,7 @@ class profilemover {
         Eigen::SparseMatrix<double> M_v_M;              // Sparse matrix from V cut-vertices to the mesh
         Eigen::SparseMatrix<double> M_c_M;              // Sparse matrix from C cut-vertices to the mesh
         Eigen::SparseMatrix<double> M_dCN_c;            // Sparse matrix from dCN verts to cutmesh C
-        Eigen::SparseMatrix<double> M_3dCN_c;           // Sparse matrix from dCN def grads to cutmesh C
-        std::vector<std::pair<int, int>> he_to_f;       // Map from local halfedge indices to their corresponding local face indices
+        std::vector<int> M_he_F;                        // Map from halfedges (in matrix indexing) to face index
 
         
         // Store operators

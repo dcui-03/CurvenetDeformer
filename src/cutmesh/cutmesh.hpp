@@ -44,6 +44,25 @@ class cutmesh : public mesh {
         void computeHEMap(std::vector<int>& heToCMhe, std::map<int, int>& CMheTohe);
         int computeVMatrix(Eigen::SparseMatrix<double>& V_mat, std::vector<int>& vToCM, std::map<int, int>& mToV, const std::vector<int>& heToCMhe);
         int computeCMatrix(Eigen::SparseMatrix<double>& C_mat, std::vector<int>& cToCM, std::map<int, std::vector<int>>& mToC, const std::vector<int>& heToCMhe);
+        
+        int compute_dCNMaps(Eigen::SparseMatrix<double>& M_dCN_flat,
+                             Eigen::SparseMatrix<double>& M_dCN_c,
+                             const std::vector<int>& cToCM);
+        int computeProjMatrix(Eigen::MatrixXd& projVecs, const std::vector<int>& cToCM);
+        int computeFaceOps(Eigen::SparseMatrix<double>& M_v_F,
+                            Eigen::SparseMatrix<double>& M_c_F,
+                            std::vector<int>& M_he_F,
+                            Eigen::MatrixXd& x_h,
+                            const std::vector<int>& vToCM,
+                            const std::vector<int>& cToCM,
+                            const std::vector<int>& heToCMhe,
+                            const std::map<int, int>& CMheTohe);
+        int computeAssemblyOps(Eigen::SparseMatrix<double>& M_v_M,
+                               Eigen::SparseMatrix<double>& M_c_M,
+                               const std::map<int, int>& mToV,
+                               const std::map<int, std::vector<int>>& mToC,
+                               int num_M, int num_V, int num_C);
+        
         int computeHELaplacian(Eigen::SparseMatrix<double>& L, std::map<int, int>& CMheTohe);
         // Compute the deformation gradient on the initial cutmesh dCN verts
         int computeDefGrads(Eigen::MatrixXd& defGrads, const std::vector<int>& cToCM);

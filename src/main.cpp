@@ -83,6 +83,8 @@ std::vector<glm::vec3> psCutMesh_projVecs;
 // VARIABLES FOR PARSING AND WRITING FILES
 std::string InputPath;
 std::string OutputPath;
+std::string CurvenetPath;
+bool loadedCurvenet = false;
 
 // UI HELPERS
 bool PM_init = false;
@@ -127,8 +129,25 @@ std::unique_ptr<ProfileMover::profilemover> PM = nullptr;
 
 // Saves current curvenet to some file format
 int saveCurvenet() {
-    std::cout << "Curvenet saved to file." << std::endl;
-    return 1;
+    if (!psCN) {
+        std::cout << "No curvenet object to save." << std::endl;
+        return -1;
+    }
+
+    if (OutputPath.empty()) {
+        std::cout << "No output .curvenet path specified." << std::endl;
+        return -1;
+    }
+
+    int success = psCN->saveCurvenet(OutputPath);
+
+    if (success == 1) {
+        std::cout << "Curvenet saved to: " << OutputPath << std::endl;
+    } else {
+        std::cout << "Failed to save curvenet to: " << OutputPath << std::endl;
+    }
+
+    return success;
 }
 
 // Creates gizmo at vertex
@@ -217,7 +236,7 @@ void updateProfileMover(bool recompute = true) {
         std::vector<std::array<int, 4>> splines;
         psCN->cnAsStdVector(controlsV, tangentsV, splines);
 
-        std::vector<Eigen::Vector3d> deformed_pos = PM->deform(controlsV, tangentsV);
+        std::vector<Eigen::Vector3d> deformed_pos = PM->deformOps(controlsV, tangentsV);
         psMesh->updateVertexPositions(deformed_pos);
     }
 
@@ -520,6 +539,7 @@ void myCallback() {
         } else {
             // Compress the curvenet
             psCN->cleanupControls();
+            saveCurvenet();
             clearPM();
             updateCurvenet();
             // Convert to input format
@@ -816,12 +836,31 @@ void myCallback() {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 2) {
-        std::cout << "Too few arguments. Usage: ./profile_mover <input OBJ file path>" << std::endl;
+    if (argc < 3) {
+        std::cout << "Too few arguments.\n"
+                  << "Usage: ./profile_mover <input OBJ file path> <output .curvenet path> [--load <input .curvenet path>]"
+                  << std::endl;
         return 1;
     }
     InputPath = argv[1];
-    // OutputPath = argv[2];
+    OutputPath = argv[2];
+    for (int i = 3; i < argc; i++) {
+        std::string arg = argv[i];
+
+        if (arg == "--load") {
+            if (i + 1 >= argc) {
+                std::cout << "Missing path after --load." << std::endl;
+                return 1;
+            }
+            CurvenetPath = argv[++i];
+            loadedCurvenet = true;
+        } else {
+            std::cout << "Unknown argument: " << arg << std::endl;
+            std::cout << "Usage: ./profile_mover <input OBJ file path> <output .curvenet path> [--load <input .curvenet path>]"
+                      << std::endl;
+            return 1;
+        }
+    }
 
     // Initialize polyscope
     polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None; // Disable ground plane
@@ -852,6 +891,17 @@ int main(int argc, char **argv) {
 
     // Create polyscope's curvenet
     psCN = std::make_unique<psCurvenet::pscurvenet>();
+    if (loadedCurvenet) {
+        int loadSuccess = psCN->loadCurvenet(CurvenetPath);
+        if (loadSuccess == 1) {
+            std::cout << "Loaded curvenet from: " << CurvenetPath << std::endl;
+            updateCurvenet(true);
+        } else {
+            std::cout << "Failed to load curvenet from: " << CurvenetPath
+                    << ". Starting from an empty curvenet." << std::endl;
+            psCN->resetCurvenet();
+        }
+    }
 
     // Give control to the polyscope gui
     polyscope::show();

@@ -6,6 +6,8 @@ set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+find_package(OpenMP)
+
 list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 # Only set default build type for single-config generators
@@ -75,6 +77,13 @@ target_link_libraries(pm_core PUBLIC
   polyscope
   #geometry-central
 )
+
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(pm_core PUBLIC OpenMP::OpenMP_CXX)
+  target_compile_definitions(pm_core PUBLIC PM_USE_OPENMP=1)
+else()
+  message(WARNING "OpenMP not found. Building without OpenMP parallelism.")
+endif()
 
 # Add your project files
 add_executable(profile_mover src/main.cpp)

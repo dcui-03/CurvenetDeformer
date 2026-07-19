@@ -21,6 +21,8 @@ pscurvenet::pscurvenet() {
 void pscurvenet::resetCurvenet() {
     C.clear();
     S.clear();
+    psTangentToS.clear();
+    recomputeMap = false;
 }
 
 // Update control position

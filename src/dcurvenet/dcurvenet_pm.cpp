@@ -8,34 +8,32 @@
 #include <iostream>
 
 namespace DCurvenet {
-/*
-// Pre-compute maps
-int dcurvenet::computedCNMaps(Eigen::SparseMatrix<double>& M_dCN_flat, 
-                    Eigen::SparseMatrix<double>& M_3dCN_c,
-                    const std::vector<std::pair<int, int>>& dCNV_to_c,
-                    const std::vector<std::pair<int, int>>& dCNHE_to_c) {
-    return 1;
-}
 
-// Compute dCN positions matrix
-int dcurvenet::computedCNVerts(Eigen::MatrixXd& x_dCN, const std::vector<std::pair<int, int>>& dCNV_to_c) {
-    #pragma omp parallel for
-    for (int c = 0; c < dCNV_to_c.size(); c++) {
-        x_dCN.row(dCNV_to_c[c].second) = V[dCNV_to_c[c].first].pos.transpose();
+// Runtime operators
+int dcurvenet::computedCNMats(Eigen::MatrixXd& f_dCN_flat, Eigen::MatrixXd& x_dCN) {
+    int num_HE = numHalfedges();
+    int num_V  = numVerts();
+
+    if (f_dCN_flat.rows() != num_HE || f_dCN_flat.cols() != 9) {
+        f_dCN_flat.resize(num_HE, 9);
     }
+
+    if (x_dCN.rows() != num_V || x_dCN.cols() != 3) {
+        x_dCN.resize(num_V, 3);
+    }
+
+    #pragma omp parallel for
+    for (int he = 0; he < num_HE; he++) {
+        f_dCN_flat.row(he) =
+            Utils::flattenMatrix3d(HE[he].defData.defGrad).transpose();
+    }
+
+    #pragma omp parallel for
+    for (int v = 0; v < num_V; v++) {
+        x_dCN.row(v) = V[v].new_pos.transpose();
+    }
+
     return 1;
 }
-// Compute the def grad operators at runtime
-int dcurvenet::computeDefGradOperators(Eigen::MatrixXd& f_dCN_flat, Eigen::MatrixXd& f_dCN, 
-                                       const std::vector<std::pair<int, int>>& dCNHE_to_c) {
-    #pragma omp parallel for
-    for (int c = 0; c < dCNHE_to_c.size(); c++) {
-        const Eigen::Matrix3d& defGrad = HE[dCNHE_to_c[c].first].defData.defGrad;
-        f_dCN_flat.row(dCNHE_to_c[c].second) = Utils::flattenMatrix3d(HE[dCNHE_to_c[c].first].defData.defGrad).transpose();
-        f_dCN.block<3, 3>(3 * dCNHE_to_c[c].second, 0) = defGrad;
-    }
-    return 1;
-}
-*/
 
 }   // namespace DCurvenet

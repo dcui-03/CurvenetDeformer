@@ -5,6 +5,7 @@
 #include "dcurvenet/dcurvenet.hpp"
 #include "cutmesh/cutmesh.hpp"
 #include "utils/decUtils.hpp"
+#include "utils/utils.hpp"
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
@@ -24,7 +25,8 @@ namespace ProfileMover {
 
         computeCutMesh();
         
-        precomputation();
+        //precomputation();
+        precomputeOps();
     }
     // Only apply mesh
     profilemover::profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF) {
@@ -175,7 +177,7 @@ namespace ProfileMover {
 
     // Runtime solvers
     // Runtime deformation
-    std::vector<Eigen::Vector3d> profilemover::deform(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents) {
+    std::vector<Eigen::Vector3d> profilemover::deform(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents) {
         std::vector<Eigen::Vector3d> temp;
         if (!M_init || !CN_init || !dCN_init || !CM_init) {
             throw std::runtime_error("profilemover::deform(): mesh, curvenet, discrete curvenet, or cutmesh not computed");
@@ -283,52 +285,227 @@ namespace ProfileMover {
 
     // Matrix forms
 
-    int profilemover::assembleDiscreteCurvenetMats() {
-        // TODO
-        if ((f_dCN_flat.rows() != dCN.numHalfedges() && f_dCN_flat.cols() != 9) ||
-            (x_dCN.rows() != dCN.numVerts() && x_dCN.cols() != 3) || 
-            (f_dCN.rows() != 3*dCN.numHalfedges() && f_dCN.cols() != 3)) {
-                f_dCN_flat.resize(dCN.numHalfedges(), 9);
-                f_dCN_flat.setZero();
-                x_dCN.resize(dCN.numVerts(), 3);
-                x_dCN.setZero();
-                f_dCN.resize(3*dCN.numHalfedges(), 3);
+    void profilemover::precomputeOps() {
+        if (!M_init || !CN_init || !dCN_init || !CM_init) {
+            throw std::runtime_error("profilemover::precomputeOps(): curvenet, mesh, cutmesh, or discrete curvenet not initialized.");
+            return;
         }
-        //dCN.computeDefGradOperators(f_dCN_flat, f_dCN, M_dCN_flat, M_3dCN_c);
-        //dCN.computedCNVerts(x_dCN, M_dCN_c);
-        return 1;
+        auto Op_start = std::chrono::steady_clock::now();
+        // Compute operators
+        CM.computeHEMap(heToCMhe, CMheTohe);
+        int V_success = CM.computeVMatrix(V, vToCM, mToV, heToCMhe);
+        std::cout << "Computed V" << std::endl;
+        if (V_success != 1) {
+            throw std::runtime_error("profilemover::precomputateOps(): Unable to construct matrix V.");
+            return;
+        }
+        int C_success = CM.computeCMatrix(C, cToCM, mToC, heToCMhe);
+        std::cout << "Computed C" << std::endl;
+        if (C_success != 1) {
+            throw std::runtime_error("profilemover::precomputateOps(): Unable to construct matrix C.");
+            return;
+        }
+        // Pre-compute a matrix of projection vectors
+        int proj_success = CM.computeProjMatrix(proj_c, cToCM);
+        std::cout << "Computed proj Matrix" << std::endl;
+        if (proj_success != 1) {
+            throw std::runtime_error("profilemover::precomputateOps(): Unable to compute projection matrix.");
+            return;
+        }
+
+        int dcn_success = CM.compute_dCNMaps(M_dCN_flat, M_dCN_c, cToCM);
+        std::cout << "Computed dCN maps" << std::endl;
+        if (dcn_success != 1) {
+            throw std::runtime_error("profilemover::precomputeOps(): Unable to compute dCN operators.");
+        }
+
+        int face_success = CM.computeFaceOps(M_v_F, M_c_F, M_he_F, x_h, vToCM, cToCM, heToCMhe, CMheTohe);
+        std::cout << "Computed face ops" << std::endl;
+        if (face_success != 1) {
+            throw std::runtime_error("profilemover::precomputeOps(): Unable to compute face operators.");
+        }
+
+        int assembly_success = CM.computeAssemblyOps(M_v_M, M_c_M, mToV, mToC, M.getNumActiveV(), vToCM.size(), cToCM.size());
+        std::cout << "Computed assembly ops" << std::endl;
+        if (assembly_success != 1) {
+            throw std::runtime_error("profilemover::precomputeOps(): Unable to compute final assembly operators.");
+        }
+        // Face-based Laplacian with values pushed onto halfedges
+        Eigen::SparseMatrix<double> L;
+        int L_success = CM.computeHELaplacian(L, CMheTohe);
+        std::cout << "Computed laplacian" << std::endl;
+        if (L_success != 1) {
+            throw std::runtime_error("profilemover::precomputateOps(): Error constructing halfedge Laplacian.");
+            return;
+        }
+        // mVtL
+        mVtL = -1 * V.transpose() * L;
+        // Factor V^TLV
+        Eigen::SparseMatrix<double> VtLV_Mat = V.transpose() * L * V;
+        VtLV.analyzePattern(VtLV_Mat);
+        VtLV.factorize(VtLV_Mat);
+        auto Op_end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> Op_elapsed = Op_end - Op_start;
+        std::cout << "Operators computed in time " << Op_elapsed.count() << " seconds" << std::endl;
+        return;
     }
 
-    int profilemover::computeCDefGrads() {
+    std::vector<Eigen::Vector3d> profilemover::deformOps(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents) {
+        std::vector<Eigen::Vector3d> newV;
+        if (!M_init || !CN_init || !dCN_init || !CM_init) {
+            throw std::runtime_error("profilemover::deformOps(): mesh, curvenet, discrete curvenet, or cutmesh not computed");
+            return newV;
+        }
+        // 1. Compute new curvenet
+        auto start = std::chrono::steady_clock::now();
+        CN.updateCurveNet(Controls, Tangents);
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed = end - start;
+        std::cout << "Updated Curvenet in " << elapsed.count() << " seconds"<< std::endl;
+        // 2. Compute new discrete curvenet and frames
+        start = std::chrono::steady_clock::now();
+        dCN.updateDiscCurveNet();
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Updated discrete Curvenet in " << elapsed.count() << " seconds"<< std::endl;
+        // FIRST SOLVE: Deformation gradients
+        // Compute flattened deformation gradient matrix
+        start = std::chrono::steady_clock::now();
+        int DG_success = assembleDiscreteCurvenetMats();
+        if (DG_success != 1) {
+            throw std::runtime_error("profilemover::deformOps(): deformation gradient computation failed.");
+            return newV;
+        }
+        // Constraint deformation gradients
         f_c = M_dCN_flat * f_dCN_flat;
-        return 1;
-    }
-
-    int profilemover::computeFaceDefGrads() {
-        Eigen::MatrixXd f_F_flat = M_v_F * f_v + M_c_F * f_c;
-        return 1;
-    }
-
-    int profilemover::applyFaceDeformations() {
-        // We don't need to fold the def grads together; we can just parallelize
-        y_h = V.transpose() * x_v + C.transpose() * x_c;
-        /*
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Computed cut-vert def grads in " << elapsed.count() << " seconds"<< std::endl;
+        // Solve system to get interpolated def grads
+        start = std::chrono::steady_clock::now();
+        //f_v = VtLV.solve(mVtL * (C * f_c));
+        Eigen::MatrixXd rhs_f = mVtL * (C * f_c);
+        f_v.resize(rhs_f.rows(), rhs_f.cols());
         #pragma omp parallel for
-        for (int he_idx = 0; he_idx < he_to_f.size(); he_idx++) {
-            int he = he_to_f[he_idx].first;
-            int f = he_to_f[he_idx].second;
-            Eigen::Vector3d he_pos = y_h.row(he).transpose();
-            // Use the transposed convention
-            y_h(he, 0) = he_pos(0) * f_F_flat[f, 0] + he_pos(1) * f_F_flat[f, 3] + he_pos(2) * f_F_flat[f, 6];
-            y_h(he, 1) = he_pos(0) * f_F_flat[f, 1] + he_pos(1) * f_F_flat[f, 4] + he_pos(2) * f_F_flat[f, 7];
-            y_h(he, 2) = he_pos(0) * f_F_flat[f, 2] + he_pos(1) * f_F_flat[f, 5] + he_pos(2) * f_F_flat[f, 8];
+        for (int j = 0; j < rhs_f.cols(); j++) {
+            f_v.col(j) = VtLV.solve(rhs_f.col(j));
         }
-            */
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Computed all def grads in " << elapsed.count() << " seconds"<< std::endl;
+
+        // SECOND SOLVE: Positions
+        // Estimate new projected positions using the distributed def grads
+        start = std::chrono::steady_clock::now();
+        int cnPos_success = applyDefGradsToProj();
+        if (cnPos_success != 1) {
+            throw std::runtime_error("profilemover::deformOps(): curve network projection estimation failed.");
+            return newV;
+        }
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Applied def grads to projected vectors in " << elapsed.count() << " seconds"<< std::endl;
+
+        start = std::chrono::steady_clock::now();
+        x_c = M_dCN_c * x_dCN - x_c;
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Estimated cut-vert positions in " << elapsed.count() << " seconds"<< std::endl;
+
+        // Compute per-face deformation matrix + assemble
+        start = std::chrono::steady_clock::now();
+        Eigen::MatrixXd f_F_flat = M_v_F * f_v + M_c_F * f_c;
+        int faceDef_success = applyFaceDeformations(f_F_flat);
+        if (faceDef_success != 1) {
+            throw std::runtime_error("profilemover::deformOps(): face deformation estimate failed.");
+            return newV;
+        }
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+        std::cout << "Computed face deformations in " << elapsed.count() << " seconds"<< std::endl;
+
+        // Compute new positions
+        start = std::chrono::steady_clock::now();
+        x_v = VtLV.solve(mVtL * (C * x_c - y_h));
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+         std::cout << "Solved for positions in " << elapsed.count() << " seconds"<< std::endl;
+        
+        start = std::chrono::steady_clock::now();
+        int final_success = assembleFinalPositions(newV);
+        end = std::chrono::steady_clock::now();
+        elapsed = end - start;
+         std::cout << "Assembled final positions in " << elapsed.count() << " seconds"<< std::endl;
+        return newV;
+    }
+
+    int profilemover::assembleDiscreteCurvenetMats() {
+        if (f_dCN_flat.rows() != dCN.numHalfedges() || f_dCN_flat.cols() != 9) {
+            f_dCN_flat.resize(dCN.numHalfedges(), 9);
+        }
+
+        if (x_dCN.rows() != dCN.numVerts() || x_dCN.cols() != 3) {
+            x_dCN.resize(dCN.numVerts(), 3);
+        }
+
+        return dCN.computedCNMats(f_dCN_flat, x_dCN);
+    }
+
+    int profilemover::applyDefGradsToProj() {
+        int num_C = cToCM.size();
+        x_c.resize(num_C, 3);
+
+        #pragma omp parallel for
+        for (int c = 0; c < num_C; c++) {
+            Eigen::VectorXd f = f_c.row(c).transpose();
+            double px = proj_c(c, 0);
+            double py = proj_c(c, 1);
+            double pz = proj_c(c, 2);
+
+            x_c(c, 0) = f_c(c, 0) * px + f_c(c, 3) * py + f_c(c, 6) * pz;
+            x_c(c, 1) = f_c(c, 1) * px + f_c(c, 4) * py + f_c(c, 7) * pz;
+            x_c(c, 2) = f_c(c, 2) * px + f_c(c, 5) * py + f_c(c, 8) * pz;
+        }
         return 1;
     }
 
-    int profilemover::computeCPositions() {
-        x_c = M_dCN_c * x_dCN - M_3dCN_c * f_dCN * proj_c;
+    int profilemover::applyFaceDeformations(const Eigen::MatrixXd& f_F_flat) {
+        const int num_h = static_cast<int>(heToCMhe.size());
+        y_h.resize(num_h, 3);
+        // Non-ARAP version
+        if (!arap) {
+            #pragma omp parallel for
+            for (int he = 0; he < num_h; he++) {
+                int f = M_he_F[he];
+
+                double x = x_h(he, 0);
+                double y = x_h(he, 1);
+                double z = x_h(he, 2);
+                // Compute the deformation directly (no folding)
+                y_h(he, 0) = x * f_F_flat(f, 0) + y * f_F_flat(f, 3) + z * f_F_flat(f, 6);
+                y_h(he, 1) = x * f_F_flat(f, 1) + y * f_F_flat(f, 4) + z * f_F_flat(f, 7);
+                y_h(he, 2) = x * f_F_flat(f, 2) + y * f_F_flat(f, 5) + z * f_F_flat(f, 8);
+            }
+            return 1;
+        }
+
+        // ARAP branch only does polar decomposition
+        std::vector<Eigen::Matrix3d> faceTransform(f_F_flat.rows());
+
+        #pragma omp parallel for
+        for (int f = 0; f < f_F_flat.rows(); f++) {
+            Eigen::Matrix3d F = Utils::compressVector9d(f_F_flat.row(f).transpose());
+            Eigen::Matrix3d R, S;
+            Utils::polarDecomposition(F, R, S);
+            faceTransform[f] = R;
+        }
+
+        #pragma omp parallel for
+        for (int he = 0; he < num_h; he++) {
+            int f = M_he_F[he];
+            y_h.row(he) = x_h.row(he) * faceTransform[f].transpose();
+        }
+
         return 1;
     }
 
@@ -336,7 +513,6 @@ namespace ProfileMover {
         Eigen::MatrixXd m = M_v_M * x_v + M_c_M * x_c;
         if (newV.size() != m.rows()) {
             newV.resize(m.rows());
-            newV.clear();
         }
         #pragma omp parallel for
         for (int v = 0; v < m.rows(); v++) {

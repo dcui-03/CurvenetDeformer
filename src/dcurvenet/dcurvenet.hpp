@@ -61,13 +61,9 @@ class dcurvenet {
         // Compute deformation gradients on all halfedges
         int computeDefGradAll();
         // Pre-compute maps
-        int computedCNMaps(Eigen::SparseMatrix<double>& M_dCN_flat, 
-                           Eigen::SparseMatrix<double>& M_dCN_c, 
-                           Eigen::SparseMatrix<double>& M_3dCN_c);
+        int computedCNMats(Eigen::MatrixXd& f_dCN_flat, Eigen::MatrixXd& x_dCN);
         // Compute dCN positions matrix
         int computedCNVerts(Eigen::MatrixXd& x_dCN);
-        // Compute the def grad operators at runtime
-        int computeDefGradOperators(Eigen::MatrixXd& f_dCN_flat, Eigen::MatrixXd& f_dCN);
 
         friend class Mesh::cutmesh;    // Friend class to access curvenet variables
     protected:

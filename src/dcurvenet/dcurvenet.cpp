@@ -61,7 +61,7 @@ namespace DCurvenet {
         }
         // 2. Iterate over curves and recompute
         // TODO: Can we parallelize this?
-        #pragma omp parallel for
+        // #pragma omp parallel for
         for (const auto& idxPair : inputCrvToC) {
             std::vector<int> splines = cnCurve[idxPair.first].splines;
             int c = idxPair.second;
@@ -270,9 +270,6 @@ namespace DCurvenet {
     }
     // Rewire incoming and outgoing halfedges of intersection and anchor vertices
     int dcurvenet::rewireVertAdjHE(int v) {
-        if (V[v].cn_type == 2) {
-            return -1;
-        }
         const std::vector<int> adjHE = V[v].adjHE;
         for (int he = 0; he < adjHE.size(); he++) {
             int he0 = adjHE[he];
