@@ -13,6 +13,7 @@
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
+#include <Eigen/IterativeLinearSolvers>
 
 
 namespace ProfileMover {
@@ -115,6 +116,8 @@ class profilemover {
         // TODO: Need functions to compute V and C
         // TODO: Instead of storing VtLV, store its factorization.
         Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> VtLV;
+        // Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower|Eigen::Upper, Eigen::IncompleteCholesky<double>> VtLV;
+        // Eigen::SparseMatrix<double> VtLV_Mat;
         Eigen::SparseMatrix<double> mVtL;
         Eigen::SparseMatrix<double> V;
         Eigen::SparseMatrix<double> C;

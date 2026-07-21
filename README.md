@@ -21,13 +21,13 @@ cd ..
 # Updates and Notes
 **Update 7/18**
 
-Ok, I matricized things and added IO functionality to the pscurvenet. The good thing is that matricizing speeds up face deformation by half! The bad news is that everything else takes pretty much the same amount of time, so overall it's still not "real-time" on larger meshes. So unless I incorporate something even faster, like CUDA, I'm pretty much capped here.
+I realized that if I switch to Release mode, it's very much realtime! Having OpenMP isn't even necessary, although it can be nice to have. Also tested with CG and it's remarkably MUCH slower, even with capped iterations/tolerance. Also, although I keep calling it "ARAP", the current system is more like a single block-coordinate ARAP solve, meaning we're not quite at a local minimum actually. I think that even on release mode, a true ARAP would be extremely expensive, to the point of becoming non-realtime.
 
-Turns out I did not in fact have OpenMP turned on. It's now fixed (changed CMakelists.txt). This does make it faster (cuts matrix compute time AND face def grads by half!), although I'm learning a few things about openmp that may be troublesome... Definitely check TODO's, esp in cutmesh and dcurvenet for more details. May still consider (1) CUDA for some computations and (2) an iterative solver like conjugate gradient instead of cholesky.
+I think that next I should refactor the front-end so that it can do closest-point queries on polygons. The easiest thing would just be to use the custom mesh class as a basis for this. I also need to start thinking about cleanup and shipping (i.e., which components to include like OpenMP, etc.)
 
-Next, I need to test meshes with boundaries, and also stress test polygonal mesh inputs and non-manifold inputs. ALSO I forgot to debug and clean up the utils.cpp file. There's lots to unused functions there that should just be discarded. After this, the big thing is cleanup and robustness. The code is actually quite messy right now and needs a lot more error messages + asserts.
+Another thing: I need to make this spline-type agnostic. Maybe a good idea is to template the spline class/make a parent spline class that can handle the different variations in curve type (i.e., to support Catmull-Rom splines). It might be hard to allow mixing curve types though, since they each have different needs and therefore sizes. In this same 
 
-Another question: What happens if we don't enforce the corner normal alignment? Is that better? I do notice there actually is that discontinuous "snapping" when we flip.
+It's also time to start thinking about the plug-in itself. It looks like Maya and Blender's Bezier curve types are not robust enough to handle multiple adjacent curves to a control.
 
 **NOTE ON EIGEN**
 

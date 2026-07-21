@@ -3,6 +3,7 @@
 #include "curvenet/curvenet.hpp"
 #include "utils/utils.hpp"
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 #include <vector>
 #include <cmath>
 #include <algorithm>

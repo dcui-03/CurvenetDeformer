@@ -1,6 +1,7 @@
 #include "decUtils.hpp"
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 #include <Eigen/Sparse>
 #include <mesh/mesh.hpp>
 #include <vector>

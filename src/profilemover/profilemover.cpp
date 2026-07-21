@@ -9,6 +9,7 @@
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
+#include <Eigen/IterativeLinearSolvers>
 #include <chrono>
 #include <iostream>
 
@@ -284,7 +285,6 @@ namespace ProfileMover {
     }
 
     // Matrix forms
-
     void profilemover::precomputeOps() {
         if (!M_init || !CN_init || !dCN_init || !CM_init) {
             throw std::runtime_error("profilemover::precomputeOps(): curvenet, mesh, cutmesh, or discrete curvenet not initialized.");
@@ -342,11 +342,21 @@ namespace ProfileMover {
         mVtL = -1 * V.transpose() * L;
         // Factor V^TLV
         Eigen::SparseMatrix<double> VtLV_Mat = V.transpose() * L * V;
+        // VtLV_Mat = V.transpose() * L * V;
         VtLV.analyzePattern(VtLV_Mat);
         VtLV.factorize(VtLV_Mat);
+        // Iterative solver with preconditioner
+        // VtLV.compute(VtLV_Mat);
+        // VtLV.setMaxIterations(20);
+        // VtLV.setTolerance(0.001);
         auto Op_end = std::chrono::steady_clock::now();
         std::chrono::duration<double> Op_elapsed = Op_end - Op_start;
         std::cout << "Operators computed in time " << Op_elapsed.count() << " seconds" << std::endl;
+
+        f_v.resize(L.rows(), 9);
+        f_v.setZero();
+        f_c.resize(L.rows(), 3);
+        f_c.setZero();
         return;
     }
 
@@ -383,13 +393,9 @@ namespace ProfileMover {
         std::cout << "Computed cut-vert def grads in " << elapsed.count() << " seconds"<< std::endl;
         // Solve system to get interpolated def grads
         start = std::chrono::steady_clock::now();
-        //f_v = VtLV.solve(mVtL * (C * f_c));
-        Eigen::MatrixXd rhs_f = mVtL * (C * f_c);
-        f_v.resize(rhs_f.rows(), rhs_f.cols());
-        #pragma omp parallel for
-        for (int j = 0; j < rhs_f.cols(); j++) {
-            f_v.col(j) = VtLV.solve(rhs_f.col(j));
-        }
+        f_v = VtLV.solve(mVtL * (C * f_c));
+        // Eigen::MatrixXd rhs_f = mVtL * (C * f_c);
+        // f_v = VtLV.solveWithGuess(rhs_f, f_v);
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
         std::cout << "Computed all def grads in " << elapsed.count() << " seconds"<< std::endl;
@@ -426,6 +432,7 @@ namespace ProfileMover {
 
         // Compute new positions
         start = std::chrono::steady_clock::now();
+        // x_v = VtLV.solveWithGuess(mVtL * (C * x_c - y_h), x_v);
         x_v = VtLV.solve(mVtL * (C * x_c - y_h));
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
@@ -455,7 +462,7 @@ namespace ProfileMover {
         int num_C = cToCM.size();
         x_c.resize(num_C, 3);
 
-        #pragma omp parallel for
+        // #pragma omp parallel for
         for (int c = 0; c < num_C; c++) {
             Eigen::VectorXd f = f_c.row(c).transpose();
             double px = proj_c(c, 0);
@@ -474,7 +481,7 @@ namespace ProfileMover {
         y_h.resize(num_h, 3);
         // Non-ARAP version
         if (!arap) {
-            #pragma omp parallel for
+            // #pragma omp parallel for
             for (int he = 0; he < num_h; he++) {
                 int f = M_he_F[he];
 
@@ -492,7 +499,7 @@ namespace ProfileMover {
         // ARAP branch only does polar decomposition
         std::vector<Eigen::Matrix3d> faceTransform(f_F_flat.rows());
 
-        #pragma omp parallel for
+        // #pragma omp parallel for
         for (int f = 0; f < f_F_flat.rows(); f++) {
             Eigen::Matrix3d F = Utils::compressVector9d(f_F_flat.row(f).transpose());
             Eigen::Matrix3d R, S;
@@ -500,7 +507,7 @@ namespace ProfileMover {
             faceTransform[f] = R;
         }
 
-        #pragma omp parallel for
+        // #pragma omp parallel for
         for (int he = 0; he < num_h; he++) {
             int f = M_he_F[he];
             y_h.row(he) = x_h.row(he) * faceTransform[f].transpose();
@@ -514,7 +521,7 @@ namespace ProfileMover {
         if (newV.size() != m.rows()) {
             newV.resize(m.rows());
         }
-        #pragma omp parallel for
+        // #pragma omp parallel for
         for (int v = 0; v < m.rows(); v++) {
             newV[v] = m.row(v).transpose();
         }
