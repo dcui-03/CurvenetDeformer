@@ -21,6 +21,7 @@
 
 // My files
 #include "profilemover/profilemover.hpp"
+#include "mesh/mesh.hpp"
 #include "psCurvenet/pscurvenet.hpp"
 #include "utils/utils.hpp"
 #include "IO/io.hpp"
@@ -123,6 +124,7 @@ std::unique_ptr<psCurvenet::pscurvenet> psCN = nullptr; // Curvenet that polysco
 
 // Profile Mover
 std::unique_ptr<ProfileMover::profilemover> PM = nullptr;
+std::unique_ptr<Mesh::mesh> PM_Mesh = nullptr;
 
 
 // ----------------- FUNCTIONS BEGIN HERE -------------------------
@@ -702,9 +704,10 @@ void myCallback() {
             Eigen::Vector3d pos = Utils::glmToEigen(pick.position);
 
             // TODO: Switch to a different version for non-triangle meshes
-            Eigen::Vector3d normal;
-            int valid = Utils::closestPointNormalOnMesh(pos, psMesh_V, psMesh_F, normal);
-            if (valid == 1) {
+            Eigen::Vector3d proj;
+            Mesh::vertProjData vProjData = PM_Mesh->computeVProjection(pos, proj);
+            if (vProjData.elIdx != -1 && vProjData.elType != -1) {
+                Eigen::Vector3d normal = PM_Mesh->getNormal(vProjData);
                 psCN->addControl(pos, normal);
                 clearPM();
                 updateCurvenet(true);
@@ -888,6 +891,11 @@ int main(int argc, char **argv) {
     std::cout << "Registering Surface Mesh to Polyscope" << std::endl;
     psMesh = polyscope::registerSurfaceMesh("Surface Mesh", psMesh_V, psMesh_F);
     psMesh->setSurfaceColor({0.6f, 0.6f, 0.6f});
+
+    // Convert to input format
+    std::vector<Eigen::Vector3d> meshV;
+    Utils::EigM3toStdV(psMesh_V, meshV);
+    PM_Mesh = std::make_unique<Mesh::mesh>(meshV, psMesh_F);
 
     // Create polyscope's curvenet
     psCN = std::make_unique<psCurvenet::pscurvenet>();

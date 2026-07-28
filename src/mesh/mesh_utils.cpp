@@ -46,9 +46,13 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
         int fSize = fVerts.size();
         Eigen::Vector3d fNormal = F[f].n;
         std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(f);
-        // If the face is a triangle, just compute triangle closest point
-        if (fVerts.size() == 3) {
-            v_proj = Utils::triangleClosestPoint(fVertsPos, v);
+        // If the face is a triangle or quad patch, just compute the closest point that way
+        if (fVerts.size() <= 4) {
+            if (fVerts.size() == 3) {
+                v_proj = Utils::triangleClosestPoint(fVertsPos, v);
+            } else {
+                v_proj = Utils::bilinearPatchClosestPoint(fVertsPos, v);
+            }
             double snap_tol = snap ? tol : 1e-6 * meanE;
             // Snap to a vertex if we get too close
             for (int fv = 0; fv < fSize; fv++) {
@@ -190,6 +194,10 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
     std::vector<Eigen::Vector3d> fVertsPos = adjVerts(fVerts);
     Eigen::Vector3d fN = F[projData.elIdx].n;
 
+    if (fSize <= 4) {   // Triangles are inherently flat; quads/bilinear patches are solved
+        return projData;
+    }
+
     // Check if we are on a non-planar face. If so, pin-point the location using MVC
     Eigen::VectorXd fHeight = computeFaceHeight(projData.elIdx);
     bool planar = true;
@@ -198,7 +206,7 @@ vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d&
             planar = false;
         }
     }
-    if (planar || fHeight.size() == 3) {   // Planar face, no MVC interpolation to be done
+    if (planar) {   // Planar face, no MVC interpolation to be done
         return projData;
     }
 
@@ -385,7 +393,7 @@ int mesh::traceGeodesic(const Vert& start,
     // Project walk direction onto specified direction
     Eigen::Vector3d hit;
     vertProjData hit_Data;
-    std::cout << "Walking along face" << std::endl;
+    std::cout << "Walking along face " << nextData.elIdx << std::endl;
     if (rayCastOnFace(nextData.elIdx, start.pos, nextDirec, hit, hit_Data) == -1) {
         std::cout << "Raycasting failed." << std::endl;
         return -1;
@@ -599,11 +607,11 @@ int mesh::nextEl_EdgeStart(int e, const vertProjData& originData, const Eigen::V
     // First, check if the desired direction is essentially along the edge
     Eigen::Vector3d edgeProj;
     double edgeProjLen = Utils::projectVectorOntoTangentPlane(E[e].n, start_direc, edgeProj);
-    Eigen::Vector3d binorm0 = E[e].n.cross(tangent);
+    Eigen::Vector3d binorm0 = (E[e].n.cross(tangent)).normalized();
     Eigen::Vector3d binorm1 = -1 * binorm0;
     if (edgeProjLen > eps) {
-        double edgeAlignment = std::abs(edgeProj.dot(tangent));
-        if (edgeAlignment >= 1.0 - 1e-6) {
+        double side = edgeProj.dot(binorm0);
+        if (std::abs(side) <= 1e-5) {
             return snapWalkToEdge(e, start_direc, next_direc, nextData, eps);
         } 
     } else {

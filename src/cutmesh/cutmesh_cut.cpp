@@ -21,7 +21,7 @@ namespace Mesh {
         const std::vector<DCurvenet::Vert>& dCN_V = dCN->V;
         std::vector<Vert> proj_V(dCN_V.size());
         // 1. First, create a list of all projections (parallel)
-        #pragma omp parallel for
+        // #pragma omp parallel for
         for (int v = 0; v < dCN_V.size(); v++) {
             Eigen::Vector3d pos = dCN_V[v].pos;
             Eigen::Vector3d proj;

@@ -462,7 +462,7 @@ namespace ProfileMover {
         int num_C = cToCM.size();
         x_c.resize(num_C, 3);
 
-        // #pragma omp parallel for
+        #pragma omp parallel for
         for (int c = 0; c < num_C; c++) {
             Eigen::VectorXd f = f_c.row(c).transpose();
             double px = proj_c(c, 0);
@@ -481,7 +481,7 @@ namespace ProfileMover {
         y_h.resize(num_h, 3);
         // Non-ARAP version
         if (!arap) {
-            // #pragma omp parallel for
+            #pragma omp parallel for
             for (int he = 0; he < num_h; he++) {
                 int f = M_he_F[he];
 
@@ -499,7 +499,7 @@ namespace ProfileMover {
         // ARAP branch only does polar decomposition
         std::vector<Eigen::Matrix3d> faceTransform(f_F_flat.rows());
 
-        // #pragma omp parallel for
+        #pragma omp parallel for
         for (int f = 0; f < f_F_flat.rows(); f++) {
             Eigen::Matrix3d F = Utils::compressVector9d(f_F_flat.row(f).transpose());
             Eigen::Matrix3d R, S;
@@ -507,7 +507,7 @@ namespace ProfileMover {
             faceTransform[f] = R;
         }
 
-        // #pragma omp parallel for
+        #pragma omp parallel for
         for (int he = 0; he < num_h; he++) {
             int f = M_he_F[he];
             y_h.row(he) = x_h.row(he) * faceTransform[f].transpose();
@@ -521,7 +521,7 @@ namespace ProfileMover {
         if (newV.size() != m.rows()) {
             newV.resize(m.rows());
         }
-        // #pragma omp parallel for
+        #pragma omp parallel for
         for (int v = 0; v < m.rows(); v++) {
             newV[v] = m.row(v).transpose();
         }

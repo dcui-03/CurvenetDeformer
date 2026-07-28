@@ -9,182 +9,9 @@
 #include <algorithm>
 #include <random>
 #include <cmath>
+#include <iostream>
 
 namespace Utils {
-
-// Helper for computing 
-// NOTE: This is TEMPORARY, only for triangle meshes
-int closestPointNormalOnMesh(
-    const Eigen::Vector3d& p,
-    const Eigen::MatrixXd& V,
-    const std::vector<std::vector<int>>& faces,
-    Eigen::Vector3d& n)
-{
-    n = Eigen::Vector3d::Zero();
-
-    // Failure cases
-    if (V.rows() == 0) {
-        return -1;
-    }
-    for (const auto& f : faces) {
-        if (f.size() != 3) {
-            return -1;
-        }
-    }
-    if (faces.empty()) {
-        return -1;
-    }
-
-    // Convert std::vector<std::vector<int>> faces to Eigen::MatrixXi
-    Eigen::MatrixXi F(faces.size(), 3);
-
-    for (int i = 0; i < static_cast<int>(faces.size()); ++i) {
-        for (int j = 0; j < 3; ++j) {
-            int vid = faces[i][j];
-            // Not explicitly requested, but prevents invalid memory access.
-            if (vid < 0 || vid >= V.rows()) {
-                return -1;
-            }
-            F(i, j) = vid;
-        }
-    }
-
-    // Bounding box diagonal tolerance
-    Eigen::Vector3d bbMin = V.colwise().minCoeff();
-    Eigen::Vector3d bbMax = V.colwise().maxCoeff();
-
-    double bboxDiag = (bbMax - bbMin).norm();
-    double snapTol = 1e-6 * bboxDiag;
-
-    // Query closest point on mesh
-    Eigen::MatrixXd P(1, 3);
-    P.row(0) = p.transpose();
-
-    Eigen::VectorXd sqrD;
-    Eigen::VectorXi I;
-    Eigen::MatrixXd C;
-
-    igl::point_mesh_squared_distance(P, V, F, sqrD, I, C);
-
-    int closestFace = I[0];
-    Eigen::Vector3d q = C.row(0).transpose();
-
-    // Precompute face normals and double areas
-    std::vector<Eigen::Vector3d> faceNormals(F.rows(), Eigen::Vector3d::Zero());
-    std::vector<double> faceDoubleAreas(F.rows(), 0.0);
-
-    for (int fi = 0; fi < F.rows(); ++fi) {
-        Eigen::Vector3d a = V.row(F(fi, 0)).transpose();
-        Eigen::Vector3d b = V.row(F(fi, 1)).transpose();
-        Eigen::Vector3d c = V.row(F(fi, 2)).transpose();
-
-        Eigen::Vector3d rawNormal = (b - a).cross(c - a);
-        double doubleArea = rawNormal.norm();
-
-        faceDoubleAreas[fi] = doubleArea;
-
-        if (doubleArea > 0.0) {
-            faceNormals[fi] = rawNormal / doubleArea;
-        }
-    }
-
-    // Precompute area-weighted vertex normals
-    std::vector<Eigen::Vector3d> vertexNormals(V.rows(), Eigen::Vector3d::Zero());
-
-    for (int fi = 0; fi < F.rows(); ++fi) {
-        Eigen::Vector3d areaWeightedNormal =
-            faceDoubleAreas[fi] * faceNormals[fi];
-
-        for (int lv = 0; lv < 3; ++lv) {
-            vertexNormals[F(fi, lv)] += areaWeightedNormal;
-        }
-    }
-
-    for (int vi = 0; vi < V.rows(); ++vi) {
-        if (vertexNormals[vi].norm() > 0.0) {
-            vertexNormals[vi].normalize();
-        }
-    }
-
-    auto closestPointOnSegment = [](
-        const Eigen::Vector3d& x,
-        const Eigen::Vector3d& a,
-        const Eigen::Vector3d& b) -> Eigen::Vector3d {
-        Eigen::Vector3d ab = b - a;
-        double denom = ab.squaredNorm();
-
-        if (denom == 0.0) {
-            return a;
-        }
-
-        double t = (x - a).dot(ab) / denom;
-        t = std::max(0.0, std::min(1.0, t));
-
-        return a + t * ab;
-    };
-
-    // First: snap to vertex if close enough
-    for (int lv = 0; lv < 3; ++lv) {
-        int vi = F(closestFace, lv);
-        Eigen::Vector3d v = V.row(vi).transpose();
-
-        if ((q - v).norm() <= snapTol) {
-            n = vertexNormals[vi];
-
-            if (n.norm() == 0.0) {
-                n = faceNormals[closestFace];
-            }
-
-            return 1;
-        }
-    }
-
-    // Second: snap to edge if close enough
-    for (int le = 0; le < 3; ++le) {
-        int v0 = F(closestFace, le);
-        int v1 = F(closestFace, (le + 1) % 3);
-
-        Eigen::Vector3d a = V.row(v0).transpose();
-        Eigen::Vector3d b = V.row(v1).transpose();
-
-        Eigen::Vector3d qEdge = closestPointOnSegment(q, a, b);
-
-        if ((q - qEdge).norm() <= snapTol) {
-            Eigen::Vector3d edgeNormal = Eigen::Vector3d::Zero();
-
-            // Average normals of all faces adjacent to this edge.
-            // For manifold meshes this is usually 1 or 2 faces.
-            for (int fj = 0; fj < F.rows(); ++fj) {
-                bool hasV0 = false;
-                bool hasV1 = false;
-
-                for (int k = 0; k < 3; ++k) {
-                    if (F(fj, k) == v0) hasV0 = true;
-                    if (F(fj, k) == v1) hasV1 = true;
-                }
-
-                if (hasV0 && hasV1) {
-                    edgeNormal += faceNormals[fj];
-                }
-            }
-
-            if (edgeNormal.norm() > 0.0) {
-                n = edgeNormal.normalized();
-            }
-            else {
-                n = faceNormals[closestFace];
-            }
-            return 1;
-        }
-    }
-
-    // Otherwise, closest point is treated as being on the face interior
-    n = faceNormals[closestFace];
-    if (n.norm() == 0.0) {
-        return -1;
-    }
-    return 1;
-}
 
 // HELPERS FOR CONVERSION/COPYING
 
@@ -588,6 +415,87 @@ Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts
     const double vBary = vb * invDenom;
     const double wBary = vc * invDenom;
     return a + vBary * ab + wBary * ac;
+}
+
+// Computes the closest point to a bilinear patch
+// NOTE: Currently uses a "cheap" convergence check by thresholding u, v
+Eigen::Vector3d bilinearPatchClosestPoint(const std::vector<Eigen::Vector3d>& patchVerts, const Eigen::Vector3d& p, double eps, int max_iter) {
+    if (patchVerts.size() != 4) {
+        return Eigen::Vector3d::Zero();
+    }
+    // 1. Find closest point on segments
+    Eigen::Vector3d new_guess;
+    double u, v;
+    double closest = std::numeric_limits<double>::infinity();
+    int closest_idx = 0;
+    for (int e = 0; e < 4; e++) {
+        Eigen::Vector3d closestOnEdge = closestPointOnSegment3D(p, patchVerts[e], patchVerts[(e+1)%4]);
+        double dist = (p - closestOnEdge).squaredNorm();
+        if (dist < closest) {
+            closest = dist;
+            new_guess = closestOnEdge;
+            closest_idx = e;
+        }
+    }
+    double edge_len = (patchVerts[(closest_idx+1)%4] - patchVerts[closest_idx]).norm();
+    double seg_len = (new_guess - patchVerts[closest_idx]).norm();
+    if (edge_len <= eps) {  // Minor guard against bad behavior
+        edge_len = 1.0;
+        seg_len = 0.0;
+    }
+    double t = seg_len / edge_len;
+    if (closest_idx == 0) {
+        u = t;
+        v = 0.0;
+    } else if (closest_idx == 1) {
+        u = 1.0;
+        v = t;
+    } else if (closest_idx == 2) {
+        u = 1.0 - t;
+        v = 1.0;
+    } else {
+        u = 0.0;
+        v = 1.0 - t;
+    }
+    // 3. Given this start guess, optimize
+    // double curr_loss = (new_guess - p).squaredNorm();
+    Eigen::Vector3d a = patchVerts[1] - patchVerts[0];
+    Eigen::Vector3d b = patchVerts[2] - patchVerts[1];
+    Eigen::Vector3d c = patchVerts[3] - patchVerts[2];
+    Eigen::Vector3d d = patchVerts[0] - patchVerts[3];
+    int counter = 0;
+    for (int i = 0; i < max_iter; i++) {
+        double old_u = u;
+        double old_v = v;
+        // Update u with v fixed.
+        Eigen::Vector3d A = (1.0 - v) * patchVerts[0] + v * patchVerts[3];
+        Eigen::Vector3d B = (1.0 - v) * (a) - v * (c);
+        double denom = B.squaredNorm();
+        if (denom > 1e-16) {
+            u = std::clamp((p - A).dot(B) / denom, 0.0, 1.0);
+        }
+
+        // Update v with u fixed.
+        Eigen::Vector3d C = (1.0 - u) * patchVerts[0] + u * patchVerts[1];
+        Eigen::Vector3d D = u * (b) - (1.0 - u) * (d);
+        denom = D.squaredNorm();
+        if (denom > 1e-16) {
+            v = std::clamp((p - C).dot(D) / denom, 0.0, 1.0);
+        }
+        counter++;
+        // If we have stagnated, then return
+        if (std::abs(u - old_u) <= eps && std::abs(v - old_v) <= eps) {
+            break;
+        }
+    }
+    std::cout << "Converged in " << counter << " iterations: (" << u << ", " << v << ")" << std::endl;
+    return bilinearPatch(patchVerts, u, v);
+    // return new_guess;
+}
+// Evaluate bilinear patch point at specified u, v
+// NOTE: I am not guarding values outside the range 0, 1
+Eigen::Vector3d bilinearPatch(const std::vector<Eigen::Vector3d>& patchVerts, double u, double v) {
+    return (1 - v) * ((1 - u) * patchVerts[0] + u * patchVerts[1]) + v * ((1 - u) * patchVerts[3] + u * patchVerts[2]);
 }
 
 // Converts a 3D direction into an angle in the tangent plane spanned by t1, t2.

@@ -22,13 +22,13 @@ int dcurvenet::computedCNMats(Eigen::MatrixXd& f_dCN_flat, Eigen::MatrixXd& x_dC
         x_dCN.resize(num_V, 3);
     }
 
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for (int he = 0; he < num_HE; he++) {
         f_dCN_flat.row(he) =
             Utils::flattenMatrix3d(HE[he].defData.defGrad).transpose();
     }
 
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for (int v = 0; v < num_V; v++) {
         x_dCN.row(v) = V[v].new_pos.transpose();
     }

@@ -379,7 +379,7 @@ int cutmesh::computeDefGrads(Eigen::MatrixXd& defGrads, const std::vector<int>& 
     defGrads.resize(cToCM.size(), 9);
     defGrads.setZero();
     // Grab deformation gradients from the corresponding cutmesh
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for (int c = 0; c < cToCM.size(); c++) {
         int v = cToCM[c];
         int dCN_prev = HE[V[v].corner_idx].dCN_idx;
@@ -405,7 +405,7 @@ int cutmesh::computeDefGrads(Eigen::MatrixXd& defGrads, const std::vector<int>& 
 // Apply solved deformation gradients to the cutmesh
 void cutmesh::applyDefGrads(const Eigen::MatrixXd& defGrads, const std::vector<int>& vToCM) {
     // std::cout << "Num def grads to distribute: " << defGrads.rows() << std::endl;
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for (int v = 0; v < vToCM.size(); v++) {
         Eigen::Matrix3d defGrad = Utils::compressVector9d(defGrads.row(v).transpose());
         V[vToCM[v]].defData.defGrad = defGrad;
@@ -420,7 +420,7 @@ int cutmesh::estimateCNPositions(Eigen::MatrixXd& cnPos, const std::vector<int>&
     cnPos.setZero();
     std::vector<Eigen::Vector3d> cnPos_vector(cToCM.size());
 
-    // #pragma omp parallel for
+    #pragma omp parallel for
     // Grab deformation gradients from the corresponding cutmesh
     for (int c = 0; c < cToCM.size(); c++) {
         int v = cToCM[c];
@@ -458,7 +458,7 @@ int cutmesh::estimateFaceDeformations(Eigen::MatrixXd& deformedFaces, const std:
     deformedFaces.setZero();
 
     // For deformed faces
-    // #pragma omp parallel for 
+    #pragma omp parallel for 
     for (int f = 0; f < F.size(); f++) {
         if (!F[f].active) {
             continue;

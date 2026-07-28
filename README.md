@@ -19,15 +19,16 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/18**
+**Update 7/28**
 
-I realized that if I switch to Release mode, it's very much realtime! Having OpenMP isn't even necessary, although it can be nice to have. Also tested with CG and it's remarkably MUCH slower, even with capped iterations/tolerance. Also, although I keep calling it "ARAP", the current system is more like a single block-coordinate ARAP solve, meaning we're not quite at a local minimum actually. I think that even on release mode, a true ARAP would be extremely expensive, to the point of becoming non-realtime.
+Added a bilinear patch closest point test and a bit of a hacky front-end polygon query. Also fixed a bug with the edge start that was causing major trouble for quad meshes. More quad mesh testing for sure, and then try some non-planar ones too! Note also that I think tracing geodesics on bilinear patches is a bit too expensive and mathematically intensive. Better by far to just use the Newell plane approximation for now... should be plenty sufficient.
 
-I think that next I should refactor the front-end so that it can do closest-point queries on polygons. The easiest thing would just be to use the custom mesh class as a basis for this. I also need to start thinking about cleanup and shipping (i.e., which components to include like OpenMP, etc.)
+A few things:
+- On the front end, my curve representation needs to be broad enought to handle catmull-rom and cubic bezier.
+- Also create BVH for faster distance querying --> use an elimination strategy by keeping only the closest possible candidates until we hit a low enough set of leaves 
+- Code cleanup: It's getting messy, let's clean it up...
 
-Another thing: I need to make this spline-type agnostic. Maybe a good idea is to template the spline class/make a parent spline class that can handle the different variations in curve type (i.e., to support Catmull-Rom splines). It might be hard to allow mixing curve types though, since they each have different needs and therefore sizes. In this same 
-
-It's also time to start thinking about the plug-in itself. It looks like Maya and Blender's Bezier curve types are not robust enough to handle multiple adjacent curves to a control.
+It's also time to start thinking about the plug-in itself. It looks like Maya and Blender's Bezier curve types are not robust enough to handle multiple adjacent curves to a control. May need to do some front-end magic to make this happen. Thoughts on Houdini as well?
 
 **NOTE ON EIGEN**
 
@@ -37,10 +38,12 @@ Important note about Eigen. For Eigen fixed-size containers that are a multiple 
 
 - *Code Cleanup*: Change checks into asserts and add error flags. Delete unused variables, uniformify naming.
 
+- *Additional Features*: (1) Add an option for authored weights. Let all weights be 1 by default, then allow users to mark each with a different weight, or set it as "free", meaning we solve a sparse curvenet laplacian system to distribute weights. Then, weigh the influence of the deformation gradient at each of these vertices by their corresponding weight (ex. maybe as lerp between identity and new def grad?) (2) Extending off of this, add support for face rigging. This will take a little more background research, but it seems to be def grad-free, and instead computes the new positions directly as a linear system of everything else.
+
 - *Robustness*: A couple of extra things to try once its tested and stable: (1) use a better arclength curve sampling strategy than the naive one we currently have --> Do we need to? Naive samples with many more points is potentially just faster and simpler; (2) Preliminary validity checks and unique error signatures (1) Test manifoldness + planarity of faces, 2. Test that no projected vertices collide, 3. Bound the sampling rate by the snapping criteria, 4. Test failure modes of the geodesics step (do we catch most/all errors?) 4. Test that the input curvenets/deformed curvenets do not have degenerate tangents/normals, 5. Test validity of input splines at init AND at runtime i.e., no degenerate splines such as when start and endpoint have the same location and tangent vectors, 6. Test mesh orientability code. 7. Test validity of input meshes and curve networks. Prevent curvenets and meshes with loose verts/edges or clean them up before using.
 
-- *Mid-level Speedups*: (1) Bounding boxes for projections: Create a hierarchical bounding box structure for subsets of faces (binary AABB is probably fine). Then test closest face for any box we are inside or is nearest to us (need to test both if so). (2) Assemble the halfedge Laplacian operator without building the other operators, if possible. (3) Identify places where we can parallelize and use OpenMP OR even CUDA... (ex. curvenet creation requires a bunch of projection. Could use this here)
+- *Mid-level Speedups*: (1) Bounding boxes for projections: Create a hierarchical bounding box structure for subsets of faces (binary AABB is probably fine). Then test closest face for any box we are inside or is nearest to us (need to test both if so).
 
-- *Stretch Goals/Major Speedups*: (1) Parallelization with CUDA. There are a bunch of runtime operations (small/medium sized matrix multiplications) that could definitely use this. (3) Augment the cutmesh class to accept colors/scalars instead of deformation gradients. This lets us do discontinuous color interpolation, although figuring out how to interface this is hard... (4) Template the mesh class so that we can have various other attributes for free. This one seems tough though... (5) Projection posing mentioned in the paper.
+- *Stretch Goals/Major Speedups*: (1) Parallelization with CUDA. There are a bunch of runtime operations (small/medium sized matrix multiplications) that could definitely use this. (2) Augment the cutmesh class to accept colors/scalars instead of deformation gradients. This lets us do discontinuous color interpolation, although figuring out how to interface this is hard... (3) Template the mesh class so that we can have various other attributes for free. This one seems tough though... (5) Projection posing mentioned in the paper.
 
 - *Port to Blender + Maya*: This will require some python front-end and figuring out how to compile and interface.

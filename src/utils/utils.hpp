@@ -12,14 +12,6 @@
 
 namespace Utils {
 
-    // Get the normal of the closest point on a triangle mesh
-    // NOTE: Replace this with different version eventually
-    int closestPointNormalOnMesh(
-        const Eigen::Vector3d& p,
-        const Eigen::MatrixXd& V,
-        const std::vector<std::vector<int>>& faces,
-        Eigen::Vector3d& n);
-
     // GLM::vec3 to Eigen::Vector3d converter
     Eigen::Vector3d glmToEigen(const glm::vec3 input);
 
@@ -72,6 +64,10 @@ namespace Utils {
     // Computes the closest point to a triangle
     Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts, const Eigen::Vector3d p);
 
+    // Computes the closest point to a bilinear patch
+    Eigen::Vector3d bilinearPatchClosestPoint(const std::vector<Eigen::Vector3d>& patchVerts, const Eigen::Vector3d& p, double eps = 1e-6, int max_iter = 15);
+    // Evaluate a bilinear patch query point given u and v
+    Eigen::Vector3d bilinearPatch(const std::vector<Eigen::Vector3d>& patchVerts, double u, double v);
     // Compute the angle of a vector starting at an origin and ending at a target, when projected onto a basis spanned by t1 and t2.
     bool directionAngleInPlane(
         const Eigen::Vector3d& origin,
