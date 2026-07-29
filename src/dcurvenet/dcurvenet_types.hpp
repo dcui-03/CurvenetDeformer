@@ -20,6 +20,9 @@ namespace DCurvenet {
         int cn_idx = -1;    // curvenet index if coincident with a control vertex
         int cn_type = -1;   // curvenet vertex type if coincident with a control vertex
 
+        // Weights
+        double w = 1.0;
+
         // Runtime variables
         Eigen::Vector3d new_pos;
     };

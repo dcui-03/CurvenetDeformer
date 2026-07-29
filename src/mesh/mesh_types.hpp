@@ -3,10 +3,21 @@
 
 #include <Eigen/Core>
 #include <vector>
+#include <array>
 
 // File with basic structs used by mesh class
 
 namespace Mesh {
+    // Bounding Volume Hierarchy for mesh
+    struct AABB {
+        std::array<Eigen::Vector3d, 8> bdyVerts;
+        std::vector<int> faces;
+    };
+    struct BVH {
+        int depth;
+        std::vector<int> children;
+        AABB bbox;
+    };
 
     // Data needed if we want to interpolate deformations
     struct vertProjData {

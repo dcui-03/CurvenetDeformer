@@ -4,6 +4,7 @@
 #include "utils/utils.hpp"
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <Eigen/Sparse>
 #include <vector>
 #include <cmath>
 #include <utility>
@@ -643,4 +644,81 @@ namespace DCurvenet {
         return 1;
     }
 
+    // Propagate weights to rest of curvenet using Laplacian
+    int dcurvenet::propagateWeights() {
+        using T = Eigen::Triplet<double>;
+        std::vector<T> tripletList;
+        tripletList.reserve(E.size() * 4);  // Conservative overestimate
+        // First, build Laplacian system
+        Eigen::SparseMatrix<double> cnL(V.size(), V.size());
+        // Eigen::VectorXd M(V.size());
+        Eigen::VectorXd f(V.size());
+        f.setZero();
+        // M.setZero();
+        std::vector<bool> fixed(V.size(), false);
+        int num_fixed = 0;
+        // Process fixed verts first
+        for (int v = 0; v < V.size(); v++) {
+            int v_type = V[v].cn_type;
+            int v_idx = V[v].cn_idx;
+
+            if (v_type != -1 && CN->C[v_idx].fixed_w) {
+                fixed[v] = true;
+                V[v].w = CN->C[v_idx].w;
+                f[v] = V[v].w;
+                tripletList.push_back(T(v, v, 1.0));
+                num_fixed++;
+            }
+        }
+        if (num_fixed == 0) {
+            for (int v = 0; v < V.size(); v++) {
+                V[v].w = 1.0;
+            }
+            return 1;
+        }
+        for (int e = 0; e < E.size(); e++) {
+            int v0 = HE[E[e].he].dest;
+            int v1 = HE[HE[E[e].he].twin].dest;
+
+            int v0_idx = V[v0].cn_idx;
+            int v1_idx = V[v1].cn_idx;
+            // If both are fixed, then skip
+            if (fixed[v0] && fixed[v1]) {   // Unlikely case, but check anyways
+                continue;
+            }
+            double e_len = std::max((V[v1].pos - V[v0].pos).norm(), 1e-8);
+            double weight = 1/e_len;
+            bool f0 = fixed[v0];
+            bool f1 = fixed[v1];
+            // Add to diagonal entries
+            if (!f0 && !f1) {
+                tripletList.push_back(T(v0, v0,  weight));
+                tripletList.push_back(T(v1, v1,  weight));
+                tripletList.push_back(T(v0, v1, -weight));
+                tripletList.push_back(T(v1, v0, -weight));
+            } else if (!f0 && f1) {
+                tripletList.push_back(T(v0, v0, weight));
+                f[v0] += weight * V[v1].w;
+            } else if (f0 && !f1) {
+                tripletList.push_back(T(v1, v1, weight));
+                f[v1] += weight * V[v0].w;
+            }
+            // M[v0] += e_len;
+            // M[v1] += e_len;
+        }
+        cnL.setFromTriplets(tripletList.begin(), tripletList.end());
+        // M *= 0.5;
+        // Eigen::VectorXd RHS = M.asDiagonal() * f;
+        Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> factorL;
+        factorL.analyzePattern(cnL);
+        factorL.factorize(cnL);
+        Eigen::VectorXd new_weights = factorL.solve(f);
+        
+        // Redistribute weights
+        for (int v = 0; v < V.size(); v++) {
+            V[v].w = std::clamp(new_weights[v], 0.0, 1.0);
+        }
+
+        return 1;
+    }
 }   // namespace DCurvenet

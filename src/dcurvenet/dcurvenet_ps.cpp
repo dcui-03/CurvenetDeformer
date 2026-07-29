@@ -18,8 +18,10 @@ int dcurvenet::polyscopeFormat(Eigen::MatrixXd& Verts,
                             std::vector<glm::vec3>& posEdgeNormals,
                             std::vector<glm::vec3>& negEdgeTangents,
                             std::vector<glm::vec3>& negEdgeBinormals,
-                            std::vector<glm::vec3>& negEdgeNormals) const {
+                            std::vector<glm::vec3>& negEdgeNormals, 
+                            std::vector<double>& weights) const {
     Verts.resize(V.size(), 3);
+    weights.resize(V.size());
     Edges.resize(E.size());
     posEdgeTangents.resize(E.size());
     posEdgeBinormals.resize(E.size());
@@ -30,6 +32,7 @@ int dcurvenet::polyscopeFormat(Eigen::MatrixXd& Verts,
 
     for (int v = 0; v < V.size(); v++) {
         Verts.row(v) = V[v].new_pos.transpose();
+        weights[v] = V[v].w;
     }
 
     for (int e = 0; e < E.size(); e++) {
@@ -109,7 +112,6 @@ int dcurvenet::polyscopeFormat(Eigen::MatrixXd& Verts,
             }
             negEdgeNormals[e] = Utils::eigenToGLM(Eigen::Vector3d::Zero());
         }
-        
     }
     return 1;
 }

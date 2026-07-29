@@ -43,6 +43,37 @@ namespace ProfileMover {
         return;
     }
 
+    // Weights
+    void profilemover::assignWeight(int cnVert, bool fixed, double w) {
+        if (!CN_init || !dCN_init) {
+            return;
+        }
+        int success = CN.assignWeight(cnVert, fixed, w);
+        if (success != 1) {
+            return;
+        } 
+        // Rebuild weight operator
+        success = dCN.propagateWeights();
+        if (success != 1) {
+            return;
+        }
+        recompute_weights = true;
+        return;
+    }
+    void profilemover::clearWeights() {
+        if (!CN_init || !dCN_init) {
+            return;
+        }
+        CN.resetWeights();
+        // Rebuild weight operator
+        int success = dCN.propagateWeights();
+        if (success != 1) {
+            return;
+        }
+        recompute_weights = true;
+        return;
+    }
+
     void profilemover::applyMesh(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF) {
         if (M_init) {
             throw std::runtime_error("profilemover::applyMesh(): mesh already initialized");
@@ -124,7 +155,7 @@ namespace ProfileMover {
             throw std::runtime_error("profilemover::precomputation(): Unable to construct matrix V.");
             return;
         }
-        int C_success = CM.computeCMatrix(C, cToCM, mToC, heToCMhe);
+        int C_success = CM.computeCMatrix(C, c_rest, cToCM, mToC, heToCMhe);
         if (C_success != 1) {
             throw std::runtime_error("profilemover::precomputation(): Unable to construct matrix C.");
             return;
@@ -299,7 +330,7 @@ namespace ProfileMover {
             throw std::runtime_error("profilemover::precomputateOps(): Unable to construct matrix V.");
             return;
         }
-        int C_success = CM.computeCMatrix(C, cToCM, mToC, heToCMhe);
+        int C_success = CM.computeCMatrix(C, c_rest, cToCM, mToC, heToCMhe);
         std::cout << "Computed C" << std::endl;
         if (C_success != 1) {
             throw std::runtime_error("profilemover::precomputateOps(): Unable to construct matrix C.");
@@ -318,6 +349,12 @@ namespace ProfileMover {
         if (dcn_success != 1) {
             throw std::runtime_error("profilemover::precomputeOps(): Unable to compute dCN operators.");
         }
+        int weights_success = CM.computeWeightOps(weights, cToCM);
+        std::cout << "Computed weight operator" << std::endl;
+        if (weights_success != 1) {
+            throw std::runtime_error("profilemover::precomputeOps(): Unable to compute weight operator.");
+        }
+        recompute_weights = false;
 
         int face_success = CM.computeFaceOps(M_v_F, M_c_F, M_he_F, x_h, vToCM, cToCM, heToCMhe, CMheTohe);
         std::cout << "Computed face ops" << std::endl;
@@ -353,10 +390,17 @@ namespace ProfileMover {
         std::chrono::duration<double> Op_elapsed = Op_end - Op_start;
         std::cout << "Operators computed in time " << Op_elapsed.count() << " seconds" << std::endl;
 
-        f_v.resize(L.rows(), 9);
+        f_v.resize(V.cols(), 9);
         f_v.setZero();
-        f_c.resize(L.rows(), 3);
+
+        f_c.resize(C.cols(), 9);
         f_c.setZero();
+
+        x_v.resize(V.cols(), 3);
+        x_v.setZero();
+
+        x_c.resize(C.cols(), 3);
+        x_c.setZero();
         return;
     }
 
@@ -378,6 +422,10 @@ namespace ProfileMover {
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
         std::cout << "Updated discrete Curvenet in " << elapsed.count() << " seconds"<< std::endl;
+        if (recompute_weights) {
+            CM.computeWeightOps(weights, cToCM);
+            recompute_weights = false;
+        }
         // FIRST SOLVE: Deformation gradients
         // Compute flattened deformation gradient matrix
         start = std::chrono::steady_clock::now();
@@ -388,6 +436,10 @@ namespace ProfileMover {
         }
         // Constraint deformation gradients
         f_c = M_dCN_flat * f_dCN_flat;
+        if (weight_defgrads) {
+            // Multiply by weights
+            weightDefGrads();
+        }
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
         std::cout << "Computed cut-vert def grads in " << elapsed.count() << " seconds"<< std::endl;
@@ -413,7 +465,17 @@ namespace ProfileMover {
         std::cout << "Applied def grads to projected vectors in " << elapsed.count() << " seconds"<< std::endl;
 
         start = std::chrono::steady_clock::now();
-        x_c = M_dCN_c * x_dCN - x_c;
+        if (weight_pos) {
+            Eigen::MatrixXd q_new  = M_dCN_c * x_dCN;
+            Eigen::MatrixXd q_rest = M_dCN_c * c_rest;
+            for (int c = 0; c < q_new.rows(); c++) {
+                double w = std::clamp(weights[c], 0.0, 1.0);
+                q_new.row(c) = q_rest.row(c) + w * (q_new.row(c) - q_rest.row(c));
+            }
+            x_c = q_new - x_c;
+        } else {
+            x_c = M_dCN_c * x_dCN - x_c;
+        }
         end = std::chrono::steady_clock::now();
         elapsed = end - start;
         std::cout << "Estimated cut-vert positions in " << elapsed.count() << " seconds"<< std::endl;
@@ -456,6 +518,18 @@ namespace ProfileMover {
         }
 
         return dCN.computedCNMats(f_dCN_flat, x_dCN);
+    }
+
+    int profilemover::weightDefGrads() {
+        if (weights.rows() != f_c.rows()) {
+            return -1;
+        }
+        Eigen::VectorXd Id_flat = Utils::flattenMatrix3d(Eigen::Matrix3d::Identity());
+        #pragma omp parallel for
+        for (int r = 0; r < f_c.rows(); r++) {
+            f_c.row(r) = (1 - weights[r]) * Id_flat.transpose() + weights[r] * f_c.row(r);
+        }
+        return 1;
     }
 
     int profilemover::applyDefGradsToProj() {

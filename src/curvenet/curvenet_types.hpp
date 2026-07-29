@@ -18,6 +18,10 @@ namespace Curvenet {
         bool sorted = false;    // Safety flag. True when outgoing halfedges are sorted
         int cType = 0;      // Control point type (1 = anchor, 2 = loop, 3 = intersection)
 
+        // Weight, if specified
+        bool fixed_w = true;
+        double w = 1.0;
+
         // Runtime info
         Eigen::Vector3d new_pos;
     };

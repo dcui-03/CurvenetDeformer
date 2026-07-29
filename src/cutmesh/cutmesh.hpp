@@ -43,7 +43,7 @@ class cutmesh : public mesh {
         // Helpers for profilemover class
         void computeHEMap(std::vector<int>& heToCMhe, std::map<int, int>& CMheTohe);
         int computeVMatrix(Eigen::SparseMatrix<double>& V_mat, std::vector<int>& vToCM, std::map<int, int>& mToV, const std::vector<int>& heToCMhe);
-        int computeCMatrix(Eigen::SparseMatrix<double>& C_mat, std::vector<int>& cToCM, std::map<int, std::vector<int>>& mToC, const std::vector<int>& heToCMhe);
+        int computeCMatrix(Eigen::SparseMatrix<double>& C_mat, Eigen::MatrixXd& c_rest, std::vector<int>& cToCM, std::map<int, std::vector<int>>& mToC, const std::vector<int>& heToCMhe);
         
         int compute_dCNMaps(Eigen::SparseMatrix<double>& M_dCN_flat,
                              Eigen::SparseMatrix<double>& M_dCN_c,
@@ -62,6 +62,7 @@ class cutmesh : public mesh {
                                const std::map<int, int>& mToV,
                                const std::map<int, std::vector<int>>& mToC,
                                int num_M, int num_V, int num_C);
+        int computeWeightOps(Eigen::VectorXd& weights, const std::vector<int>& cToCM);
         
         int computeHELaplacian(Eigen::SparseMatrix<double>& L, std::map<int, int>& CMheTohe);
         // Compute the deformation gradient on the initial cutmesh dCN verts

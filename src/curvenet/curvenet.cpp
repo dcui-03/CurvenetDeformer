@@ -51,6 +51,43 @@ namespace Curvenet {
         return;
     }
 
+    // Assign weight to a control
+    int curvenet::assignWeight(int c, bool fixed_w, double w) {
+        if (c < 0 || c >= C.size() || w < 0.0 || w > 1.0) {
+            return -1;
+        }
+        C[c].w = w;
+        C[c].fixed_w = fixed_w;
+        if (fixed_w == false) {
+            C[c].w = 1.0;
+        }
+        return 1;
+    }
+    void curvenet::resetWeights() {
+        for (int c = 0; c < C.size(); c++) {
+            C[c].w = 1.0;
+            C[c].fixed_w = true;
+        }
+        return;
+    }
+    // Check if all weights are free or not
+    // If all weights are free, then return them all to 1
+    int curvenet::validWeights() {
+        int num_free = 0;
+        int num_fixed = 0;
+        for (int c = 0; c < C.size(); c++) {
+            if (C[c].fixed_w) {
+                num_fixed++;
+            } else {
+                num_free++;
+            }
+        }
+        if (num_fixed < 2) {    // We need at least two constraints, or else we get the null space
+            return -1;
+        }
+        return 1;
+    }
+
     // empty initializer
     curvenet::curvenet() {
         C.clear();

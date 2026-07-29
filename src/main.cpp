@@ -67,6 +67,7 @@ std::vector<glm::vec3> posScaledNormals;
 std::vector<glm::vec3> negScaledTangents;
 std::vector<glm::vec3> negScaledBinormals;
 std::vector<glm::vec3> negScaledNormals;
+std::vector<double> weights;
 
 // Cutmesh
 Eigen::MatrixXd psCutMesh_V; // Vertex list
@@ -103,6 +104,8 @@ bool editTanMode = false;   // Allows users to modify tangents
 bool delCtrlMode = false;   // Allows users to remove control points
 bool delSplineMode = false;  // Allows users to remove splines
 
+bool weightMode = false;
+
 // Spline creation/removal helpers
 int selectedIdx = -1;    // Index of selected vertex on mesh
 std::pair<int, int> selectedPair = {-1, -1};
@@ -115,6 +118,9 @@ bool applyARAP = false; // Whether the curvenetwork should apply arap or not
 bool activeGizmo = false; // This tells us if there is an active gizmo
 Eigen::Vector3d gizmoPos;
 static polyscope::TransformationGizmo* vertexGizmo = nullptr;
+
+// Weights
+double activeWeight = 1.0;
 
 // Pre-computation
 int samplingParam = 5;
@@ -259,7 +265,8 @@ void updateProfileMover(bool recompute = true) {
                                                         posScaledNormals,
                                                         negScaledTangents,
                                                         negScaledBinormals,
-                                                        negScaledNormals);
+                                                        negScaledNormals,
+                                                        weights);
     psDCN = polyscope::registerCurveNetwork("Disc. Curvenet", psDCN_P, psDCN_E);
     psDCN->setColor({0.1f, 0.1f, 0.1f}); // Dark
     psDCN->setMaterial("flat");
@@ -283,6 +290,9 @@ void updateProfileMover(bool recompute = true) {
     auto* negNorm = psDCN->addEdgeVectorQuantity("Neg. Normals", negScaledNormals);
     negNorm->setVectorColor(glm::vec3{0.75f, 0.1f, 1.0f});
     //negNorm->setEnabled(true);
+    auto* ps_weights = psDCN->addNodeScalarQuantity("Weights", weights);
+    ps_weights->setColorMap("reds");
+    ps_weights->setEnabled(true);
 
     // Cut-mesh
     if ((PM->cutmesh()).polyscopeFormat(psCutMesh_V, psCutMesh_F, psCutMesh_VNormals, psCutMesh_FNormals, psCutMesh_corners, psCutMesh_projVecs) == 1) {
@@ -500,6 +510,7 @@ int clearModes() {
     editTanMode = false;
     delCtrlMode = false;
     delSplineMode = false;
+    weightMode = false;
     
     removeGizmo();
 
@@ -520,6 +531,13 @@ int computeDeformation() {
     return 1;
 }
 
+void ImGuiSection(const char* label) {
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::TextUnformatted(label);
+    ImGui::Spacing();
+}
+
 // A user-defined callback, for creating control panels (etc)
 // Use ImGUI commands to build whatever you want here, see
 // https://github.com/ocornut/imgui/blob/master/imgui.h
@@ -532,8 +550,9 @@ void myCallback() {
 
     polyscope::PickResult pick = polyscope::pickAtScreenCoords(screen);
 
+    ImGuiSection("Profile Mover Initialization");
     // Pre-compute cut-mesh and operators
-    if (ImGui::Button("Reset Profile Mover")) {
+    if (ImGui::Button("Recompute Profile Mover")) {
         clearModes();
         PM_init = false;
         if (psControls_P.rows() <= 1) {
@@ -588,12 +607,68 @@ void myCallback() {
     // User parameter for sampling the spline
     ImGui::SliderInt("Sampling Param", &samplingParam, 2, 8);
 
+    ImGuiSection("Vertex Weights");
+    // Weighting vertices
+    if (ImGui::Button(weightMode ? "Stop Weighting" : "Select Weight")) {
+        bool tempMode = weightMode;
+        clearModes();
+        weightMode = !tempMode;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset Weights")) {
+        if (PM_init && PM) {
+            PM->clearWeights();
+        }
+    }
+    ImGui::InputDouble("Vertex Weight", &activeWeight, 0.0, 1.0, "%.2f");
+    if (ImGui::Button("Apply Weight")) {
+        if (!weightMode) {
+            std::cout << "Weight mode not selected." << std::endl;
+        } else if (!PM_init) {
+            std::cout << "Profile Mover not created." << std::endl;
+        } else if (selectedIdx == -1) {
+            std::cout << "No vertex selected."  << std::endl;
+        } else {
+            PM->assignWeight(selectedIdx, true, activeWeight);
+            std::cout << "Applied weight " << activeWeight << " to vertex " << selectedIdx << std::endl;
+            // Update viz
+            updateProfileMover(false);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Make Free")) {
+        if (!weightMode) {
+            std::cout << "Weight mode not selected." << std::endl;
+        } else if (!PM_init) {
+            std::cout << "Profile Mover not created." << std::endl;
+        } else if (selectedIdx == -1) {
+            std::cout << "No vertex selected."  << std::endl;
+        } else {
+            PM->assignWeight(selectedIdx, false);
+            std::cout << "Vertex " << selectedIdx << " assigned as free" << std::endl;
+            // Update viz
+            updateProfileMover(false);
+        }
+    }
+
+    if (weightMode && mouseClicked) {
+        if (pick.isHit && pick.structure == psControlsPC) {
+            polyscope::PointCloudPickResult pcPick = psControlsPC->interpretPickResult(pick);
+            selectedIdx = static_cast<int>(pcPick.index);
+            std::cout << "Selected Control " << selectedIdx << std::endl;
+        }
+    }
+
+    ImGuiSection("Saving and Viewing");
     // Save the current curvenet state
     if (ImGui::Button("Save Curvenet")) {
         clearModes();
         saveCurvenet();
     }
-
+    ImGui::SameLine();
+    if (ImGui::Button("Save Mesh")) {   // TODO
+        clearModes();
+    }
     if (ImGui::Button(disable_psCN ? "Disable Curvenet" : "Enable Curvenet")) {
         disableCurvenet();
     }
@@ -602,6 +677,7 @@ void myCallback() {
         disablePM();
     }
 
+    ImGuiSection("Create and Edit Splines");
     // CONTROL/SPLINE CREATION
     // Create controls
     if (ImGui::Button(createCtrlMode ? "Stop Creating Controls" : "Create Controls")) {
@@ -666,6 +742,8 @@ void myCallback() {
         }
     }
     
+
+    ImGuiSection("Resets");
     // RESETs
     if (ImGui::Button("Clear Gizmo")) {
         std::cout << "Removing current gizmo." << std::endl;

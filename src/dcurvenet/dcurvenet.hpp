@@ -48,7 +48,8 @@ class dcurvenet {
                             std::vector<glm::vec3>& posEdgeNormals,
                             std::vector<glm::vec3>& negEdgeTangents,
                             std::vector<glm::vec3>& negEdgeBinormals,
-                            std::vector<glm::vec3>& negEdgeNormals) const;
+                            std::vector<glm::vec3>& negEdgeNormals,
+                            std::vector<double>& weights) const;
 
         
         // --------- RUNTIME COMPUTATION -----------
@@ -64,6 +65,9 @@ class dcurvenet {
         int computedCNMats(Eigen::MatrixXd& f_dCN_flat, Eigen::MatrixXd& x_dCN);
         // Compute dCN positions matrix
         int computedCNVerts(Eigen::MatrixXd& x_dCN);
+
+        // Propagate weights along curvenet
+        int propagateWeights();
 
         friend class Mesh::cutmesh;    // Friend class to access curvenet variables
     protected:

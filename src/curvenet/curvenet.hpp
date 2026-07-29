@@ -27,6 +27,12 @@ class curvenet {
 
         // --------- UPDATE CURVENET -----------
         void updateCurveNet(std::vector<Eigen::Vector3d> Controls, std::vector<Eigen::Vector3d> Tangents);
+        // Assign weight to a control
+        int assignWeight(int c, bool fixed_w = true, double w = 1.0);
+        void resetWeights();
+        // Check if all weights are free or not
+        // If all weights are free, then return them all to 1
+        int validWeights();
 
         // --------- GETTERS -----------
         const int numControls() const { return C.size(); }

@@ -33,6 +33,11 @@ class profilemover {
         const Mesh::cutmesh& cutmesh() const;
         const Curvenet::curvenet& curvenet() const;
         const DCurvenet::dcurvenet& discreteCurvenet() const;
+
+        // Weights
+        void assignWeight(int cnVert, bool fixed = true, double w = 1.0);
+        void clearWeights();
+
         
         void toggleARAP(bool toggle);
         void applyMesh(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF);
@@ -55,6 +60,7 @@ class profilemover {
 
         // Matrix-forms of runtime computation
         int assembleDiscreteCurvenetMats();
+        int weightDefGrads();
         int computeCDefGrads();
         int applyFaceDeformations(const Eigen::MatrixXd& f_F_flat);
         int applyDefGradsToProj();
@@ -74,6 +80,11 @@ class profilemover {
         // Store the cut-mesh
         Mesh::cutmesh CM;
         bool CM_init = false;
+        // Flag to recompute weight vector
+        bool recompute_weights = true;
+        bool weight_defgrads = true;
+        bool weight_pos = false;
+
 
         // Map from matrices (C, V) to cutmesh cut-vertices and vice versa
         // BE CAREFUL about inactive vertices
@@ -87,11 +98,11 @@ class profilemover {
 
         // Map from the orginal mesh's vertices to the C and V vertices
         // Note that I'm opting to use a map here, since we need to split between C and V
-        // Instead of maps, store these as precomputed operators?
         std::map<int, std::vector<int>> mToC;
         std::map<int, int> mToV;
 
         // Matrix forms of the relevant cutmesh components
+        Eigen::MatrixXd c_rest;                         // Positions of controls at rest
         Eigen::MatrixXd proj_c;                         // Dense matrix with the proj vectors for each C cut-vertex
         Eigen::MatrixXd f_dCN_flat;                     // Dense matrix of flattened dCN-based deformation gradients
         Eigen::MatrixXd f_c;                            // Dense matrix of cutmesh C cut-vertex flattened def grads
@@ -100,7 +111,8 @@ class profilemover {
         Eigen::MatrixXd x_v;                            // Dense matrix of cutmesh V cut-vertex solved positions
         Eigen::MatrixXd x_h;                            // Dense matrix of ALL halfedge origin positions
         Eigen::MatrixXd x_dCN;                          // Dense matrix of dCN vertices
-        Eigen::MatrixXd y_h;
+        Eigen::MatrixXd y_h;                            // Estimated positions at halfedges
+        Eigen::VectorXd weights;                        // Weights at cutmesh vertices
 
         // Sparse maps
         Eigen::SparseMatrix<double> M_dCN_flat;         // Sparse averaging map from dCN halfedges to cutmesh C

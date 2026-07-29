@@ -77,7 +77,7 @@ int cutmesh::computeVMatrix(Eigen::SparseMatrix<double>& V_mat, std::vector<int>
     return 1;
 }
 
-int cutmesh::computeCMatrix(Eigen::SparseMatrix<double>& C_mat, std::vector<int>& cToCM, std::map<int, std::vector<int>>& mToC, const std::vector<int>& heToCMhe) {
+int cutmesh::computeCMatrix(Eigen::SparseMatrix<double>& C_mat, Eigen::MatrixXd& c_rest, std::vector<int>& cToCM, std::map<int, std::vector<int>>& mToC, const std::vector<int>& heToCMhe) {
     // Def. triplets for filling sparse matrices
     typedef Eigen::Triplet<double> T;
     cToCM.clear();
@@ -99,8 +99,15 @@ int cutmesh::computeCMatrix(Eigen::SparseMatrix<double>& C_mat, std::vector<int>
     int num_he = heToCMhe.size();
     C_mat.resize(num_he, num_c);
     C_mat.setZero();
+    c_rest.resize(num_c, 3);
     std::vector<T> tripletList;
     tripletList.reserve(num_he);
+
+    for (int c = 0; c < cToCM.size(); c++) {
+        int he_idx = V[cToCM[c]].corner_idx;
+        int dCN_v_idx = dCN->HE[HE[he_idx].dCN_idx].dest;
+        c_rest.row(c) = (dCN->V[dCN_v_idx].pos).transpose();
+    }
     
     // Fill the matrix
     // Our convention is that each halfedge uses its origin vertex
@@ -321,6 +328,28 @@ int cutmesh::computeAssemblyOps(Eigen::SparseMatrix<double>& M_v_M,
     return 1;
 }
 
+// Create a vector of weights per constraint vertex v
+int cutmesh::computeWeightOps(Eigen::VectorXd& weights, const std::vector<int>& cToCM) {
+    weights.resize(cToCM.size());
+    for (int c = 0; c < cToCM.size(); c++) {
+        int v = cToCM[c];
+        if (!V[v].active || V[v].label == 0) {
+            continue;
+        }
+        int dCN_prev = HE[V[v].corner_idx].dCN_idx;
+        if (V[v].label == 1) {
+            int dCN_v = dCN->HE[dCN_prev].dest;
+            weights[c] = dCN->V[dCN_v].w;
+        } else if (V[v].label == 2) {
+            int dCN_twin = dCN->HE[dCN_prev].twin;
+            int next_v = dCN->HE[dCN_prev].dest;
+            int prev_v = dCN->HE[dCN_twin].dest;
+            weights[c] = 0.5 * (dCN->V[next_v].w + dCN->V[prev_v].w);
+        }
+    }
+    return 1;
+}
+
 // Compute the halfedge-based laplacian 
 int cutmesh::computeHELaplacian(Eigen::SparseMatrix<double>& L, std::map<int, int>& CMheTohe) {
     typedef Eigen::Triplet<double> T;
@@ -424,14 +453,13 @@ int cutmesh::estimateCNPositions(Eigen::MatrixXd& cnPos, const std::vector<int>&
     // Grab deformation gradients from the corresponding cutmesh
     for (int c = 0; c < cToCM.size(); c++) {
         int v = cToCM[c];
-        Eigen::Vector3d proj = V[v].defData.projVector;
-        Eigen::Vector3d new_pos = -1 * V[v].defData.defGrad * V[v].defData.projVector;
         int dCN_corner = HE[V[v].corner_idx].dCN_idx;
         if (dCN_corner < 0) {
             std::cout << "Incorrect corner index assignment found in cutmesh::estimateCNPositions" << std::endl;
             // return -1;
         }
-        // Compute the vertex deformation gradient based on the corresponding dCN def grad
+        Eigen::Vector3d new_pos = -1 * V[v].defData.defGrad * V[v].defData.projVector;
+        // Compute the vertex deformation position based on the corresponding dCN def grad
         if (V[v].label == 1) {
             Eigen::Vector3d target_pos = dCN->V[dCN->HE[dCN_corner].dest].new_pos;
             new_pos += target_pos;
@@ -450,9 +478,6 @@ int cutmesh::estimateCNPositions(Eigen::MatrixXd& cnPos, const std::vector<int>&
 }
 
 // Estimate the deformed faces
-// TODO: Can we parallelize? If so, how?
-// Problem is, we are trying to modify various rows of the deformed face final matrix
-// They shouldn't collide since they're halfedges, but still... check if safe.
 int cutmesh::estimateFaceDeformations(Eigen::MatrixXd& deformedFaces, const std::map<int, int>& CMheTohe, bool arap) {
     deformedFaces.resize(CMheTohe.size(), 3);
     deformedFaces.setZero();
