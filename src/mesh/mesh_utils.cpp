@@ -7,11 +7,12 @@
 #include <Eigen/Dense>
 #include <vector>
 #include <limits>
+#include <queue>
 #include <utility>
 #include <algorithm>
 #include <iostream>
 
-// Utility functions for mesh (projection, insertion, etc.)
+// Utility functions for mesh (projection, etc.)
 
 namespace Mesh {
 
@@ -23,860 +24,443 @@ int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, in
     elIdx = projData.elIdx;
     return projData.elType;
 }
-vertProjData mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, bool snap, bool fast) const {
-    double tol = 1e-5 * bboxDiag;
-    double min_dist = std::numeric_limits<double>::infinity();
+vertProjData mesh::computeVProjection(const Eigen::Vector3d& v,
+                                      Eigen::Vector3d& proj,
+                                      bool snap,
+                                      bool fast) const {
     vertProjData projData({-1, -1});
+
     if (active_f == 0) {
         return projData;
     }
-    // First find closest face by iterating over faces
-    // NOTE: For triangles, this can be done much more simply using
-    // barycentric coordinates w/ a linear solve. For arbitrary non-planar polygons,
-    // this isn't possible, since polygons may not be convex
-    projData.elType = 2;
-    for (int f = 0; f < F.size(); f++) {
-        Eigen::Vector3d v_proj;
-        vertProjData candidateProj({2, f});
-        // Skip inactive faces
-        if (!F[f].active) {
-            continue;
-        }
-        std::vector<int> fVerts = faceAdjVertIdxs(f);
-        int fSize = fVerts.size();
-        Eigen::Vector3d fNormal = F[f].n;
-        std::vector<Eigen::Vector3d> fVertsPos = faceAdjVerts(f);
-        // If the face is a triangle or quad patch, just compute the closest point that way
-        if (fVerts.size() <= 4) {
-            if (fVerts.size() == 3) {
-                v_proj = Utils::triangleClosestPoint(fVertsPos, v);
-            } else {
-                v_proj = Utils::bilinearPatchClosestPoint(fVertsPos, v);
-            }
-            double snap_tol = snap ? tol : 1e-6 * meanE;
-            // Snap to a vertex if we get too close
-            for (int fv = 0; fv < fSize; fv++) {
-                if ((v_proj - fVertsPos[fv]).norm() <= snap_tol) {
-                    v_proj = fVertsPos[fv];
-                    candidateProj.elType = 0;
-                    candidateProj.elIdx = fVerts[fv];
-                    break;
-                }
-            }
-            // Edge snap, only if we did not already snap to a vertex
-            if (candidateProj.elType == 2) {
-                for (int fv = 0; fv < fSize; fv++) {
-                    int fv1 = (fv + 1) % fSize;
-                    Eigen::Vector3d v_projE = Utils::closestPointOnSegment3D(v_proj, fVertsPos[fv], fVertsPos[fv1]);
 
-                    if ((v_proj - v_projE).norm() <= snap_tol) {
-                        v_proj = v_projE;
-                        int he_idx = vertPairToHE.at({fVerts[fv], fVerts[fv1]});
-                        candidateProj.elType = 1;
-                        candidateProj.elIdx = HE[he_idx].edge;
-                        break;
-                    }
-                }
-            }
-        } else {    // Otherwise, we need to use the Newell plane approach
-            // Get barycenter 
-            Eigen::Vector3d barycenter = DECUtils::computeBarycenter(fVertsPos);
-
-            // Build local 2D basis
-            Eigen::Vector3d t1;
-            Eigen::Vector3d t2;
-            Utils::buildPlaneBasis(fNormal, t1, t2);
-            // Project p onto Newell plane and get its 2D coordinate
-            Eigen::Vector3d v_proj3d = Utils::projectPointOntoPlane(fNormal, barycenter, v);
-            Eigen::Vector2d v_proj2d = Utils::convertTo2D(v_proj3d, barycenter, t1, t2);
-
-            // Project face vertices onto Newell plane using basis vectors
-            std::vector<Eigen::Vector2d> fVert2D(fSize);
-            for (int fv = 0; fv < fSize; fv++) {
-                Eigen::Vector3d fv_proj3D = Utils::projectPointOntoPlane(fNormal, barycenter, fVertsPos[fv]);
-                fVert2D[fv] = Utils::convertTo2D(fv_proj3D, barycenter, t1, t2);
-            }
-            
-            Eigen::Vector2d v_cp;
-            bool in_polygon2D = Utils::pointInPolygon2D(v_proj2d, fVert2D);
-            // Check if 2D point is in Newell polygon
-            // If so, take that one
-            if (in_polygon2D) {
-                v_cp = v_proj2d;
-                v_proj = Utils::revertTo3D(v_cp, barycenter, t1, t2);
-            } else {
-                // Project onto all edges to find closest point in 3D
-                double min_dist = std::numeric_limits<double>::infinity();
-                double endpointTol = snap ? tol : 1e-6 * bboxDiag;
-                for (int i = 0; i < fVertsPos.size(); i++) {
-                    int j = (i + 1) % fVertsPos.size();
-                    Eigen::Vector3d candidate_proj = Utils::closestPointOnSegment3D(v, fVertsPos[i], fVertsPos[j]);
-                    double dist = (v - candidate_proj).norm();
-
-                    if (dist < min_dist) {
-                        min_dist = dist;
-                        if ((candidate_proj - fVertsPos[i]).norm() <= endpointTol) {
-                            v_proj = fVertsPos[i];
-                            candidateProj.elType = 0;
-                            candidateProj.elIdx = fVerts[i];
-                        } else if ((candidate_proj - fVertsPos[j]).norm() <= endpointTol) {
-                            v_proj = fVertsPos[j];
-                            candidateProj.elType = 0;
-                            candidateProj.elIdx = fVerts[j];
-                        } else {
-                            v_proj = candidate_proj;
-                            candidateProj.elType = 1;
-                            int he_idx = vertPairToHE.at({fVerts[i], fVerts[j]});
-                            candidateProj.elIdx = HE[he_idx].edge;
-                        }
-                    }
-                }
-            }
-            // Newell-plane snapping/classification.
-            if (in_polygon2D && snap) {
-                // Snap to a vertex if available
-                for (int fv = 0; fv < fSize; fv++) {
-                    if ((v_cp - fVert2D[fv]).norm() <= tol) {
-                        v_proj = fVertsPos[fv];
-                        candidateProj.elType = 0;
-                        candidateProj.elIdx = fVerts[fv];
-                        break;
-                    }
-                }
-
-                // Snap to edge in 2D if available, using the stored t value to lift to the true 3D edge.
-                // Note this will only get triggered if we already landed within a face and did not snap to a vertex
-                if (candidateProj.elType == 2) {
-                    // Find nearest edge
-                    for (int i = 0; i < fSize; i++) {
-                        int j = (i + 1) % fSize;
-                        Eigen::Vector2d e = fVert2D[j] - fVert2D[i];
-                        double denom = e.squaredNorm();
-                        double t = 0.0;
-                        if (denom > 1e-20) {
-                            t = (v_cp - fVert2D[i]).dot(e) / denom;
-                            t = std::max(0.0, std::min(1.0, t));
-                        }
-                        Eigen::Vector2d cp = fVert2D[i] + t * e;
-                        double d = (v_cp - cp).norm();
-                        // Track the closest edge
-                        if (d <= tol) {
-                            v_proj = fVertsPos[i] + t * (fVertsPos[j] - fVertsPos[i]);
-                            candidateProj.elType = 1;
-                            candidateProj.elIdx = HE[vertPairToHE.at({fVerts[i], fVerts[j]})].edge;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        // True distance in 3D from query point
-        double dist = (v - v_proj).norm();
-        if (dist < min_dist) {
-            min_dist = dist;
-            proj = v_proj;
-            projData = candidateProj;
-        }
+    // 1. Closest point search
+    int success = -1;
+    // If BVH is not empty, then find the closest point using the BVH
+    if (!BVH.empty()) {
+        success = closestFaceBVH(v, proj, projData, snap);
     }
 
-    if (projData.elIdx < 0) {
+    // Fallback to brute force if BVH is unavailable or failed
+    if (success != 1) {
+        double minDist2 = std::numeric_limits<double>::infinity();
+
+        for (int f = 0; f < F.size(); f++) {
+            if (!F[f].active) {
+                continue;
+            }
+
+            Eigen::Vector3d candidateProj;
+            vertProjData candidateData({2, f});
+
+            if (closestPointOnFace(f, v, candidateProj, candidateData, snap) != 1) {
+                continue;
+            }
+
+            double dist2 = (v - candidateProj).squaredNorm();
+
+            if (dist2 < minDist2) {
+                minDist2 = dist2;
+                proj = candidateProj;
+                projData = candidateData;
+            }
+        }
+    }
+    if (projData.elIdx < 0) {   // Invalid
         return projData;
     }
 
-    // If fast or snapped to edge/vert, then simply return
+    // 2. If fast or snapped to edge/vert, return immediately
     if (fast || projData.elType != 2) {
         return projData;
     }
 
-    // Else, do lifting the slow way via MVC heights
+    // 3. Slow MVC-based lifting for non-planar 5+ sided faces
     std::vector<int> fVerts = faceAdjVertIdxs(projData.elIdx);
     int fSize = fVerts.size();
     std::vector<Eigen::Vector3d> fVertsPos = adjVerts(fVerts);
     Eigen::Vector3d fN = F[projData.elIdx].n;
-
-    if (fSize <= 4) {   // Triangles are inherently flat; quads/bilinear patches are solved
+    // If we hit a triangle or bilinear patch, then we have an exact hit. No need to lift
+    if (fSize <= 4) {
         return projData;
     }
 
-    // Check if we are on a non-planar face. If so, pin-point the location using MVC
     Eigen::VectorXd fHeight = computeFaceHeight(projData.elIdx);
+    // Check if we are on a planar face
     bool planar = true;
-    for (int v = 0; v < fSize; v++) {
-        if (std::abs(fHeight(v)) >= 1e-6) {
+    for (int i = 0; i < fSize; i++) {
+        if (std::abs(fHeight(i)) >= 1e-6) {
             planar = false;
+            break;
         }
     }
-    if (planar) {   // Planar face, no MVC interpolation to be done
+    // If we are on a planar face, then we have an "exact" answer
+    if (planar) {
         return projData;
     }
 
-    // Otherwise, we need to compute mean value coordinates to get projection location
+    // Otherwise, do lifting
     Eigen::Vector3d barycenter = DECUtils::computeBarycenter(fVertsPos);
-    // Build local 2D basis
-    Eigen::Vector3d t1, t2;
+    Eigen::Vector3d t1;
+    Eigen::Vector3d t2;
     Utils::buildPlaneBasis(fN, t1, t2);
     Eigen::Vector2d v_proj2d = Utils::convertTo2D(proj, barycenter, t1, t2);
-
     std::vector<Eigen::Vector2d> fVerts2D(fSize);
     for (int fv = 0; fv < fSize; fv++) {
         Eigen::Vector3d fv_proj3D = Utils::projectPointOntoPlane(fN, barycenter, fVertsPos[fv]);
         fVerts2D[fv] = Utils::convertTo2D(fv_proj3D, barycenter, t1, t2);
     }
-    // Second, apply mean value coordinates to get height function weights
     Eigen::VectorXd MVCWeights(fSize);
     Utils::meanValueCoordinates(v_proj2d, fVerts2D, MVCWeights);
-
-    // Now recover the height using MVC weights
     double h = MVCWeights.dot(fHeight);
-    // Add height to current Newell projection
     proj += h * fN;
 
     return projData;
 }
 
-// Trace a "straightest" geodesic (ish) from the start vert to the end
-int mesh::traceGeodesic(const Vert& start, 
-                  const Vert& end, 
-                  Eigen::Vector3d prevDirec,
-                  vertProjData prevData, 
-                  std::vector<Vert>& tracedVerts,
-                  int depth,
-                  const int max_depth,
-                  bool recompute,
-                  bool fast) {
-    double eps = 1e-6;
-    // First, do some simple tests for termination
-    // It's good to have these to catch tiny directional drift
-    if (prevData.elType == end.projData.elType && prevData.elIdx == end.projData.elIdx) {   // The next mesh element is exactly the goal
-        return 1;
-    } else if (start.projData.elType == 0 && end.projData.elType == 0) {    // Both are vertices
-        if (vertPairToHE.find(std::make_pair(start.projData.elIdx, end.projData.elIdx)) != vertPairToHE.end()) {
-            return 1;
+// Squared distance from a point to an AABB
+double mesh::pointAABBDist2(const Eigen::Vector3d& p, int box) const {
+    if (box < 0 || box >= BVH.size()) {
+        return std::numeric_limits<double>::infinity();
+    }
+    const Eigen::Vector3d& bmin = BVH[box].bdyVerts.first;
+    const Eigen::Vector3d& bmax = BVH[box].bdyVerts.second;
+
+    double d2 = 0.0;
+    // Find the closest distance to the bounding box by testing against each axis
+    for (int k = 0; k < 3; k++) {
+        if (p[k] < bmin[k]) {
+            double d = bmin[k] - p[k];
+            d2 += d * d;
+        } else if (p[k] > bmax[k]) {
+            double d = p[k] - bmax[k];
+            d2 += d * d;
         }
-    } else if (start.projData.elType == 0 && end.projData.elType == 1) {    // Start is vertex, end is edge
-        // Check if either end of the edge is the vertex
-        if (HE[E[end.projData.elIdx].he].dest == start.projData.elIdx || HE[HE[E[end.projData.elIdx].he].twin].dest == start.projData.elIdx) {
-            return 1;
-        }
-    } else if (start.projData.elType == 1 && end.projData.elType == 0) {    // Start is edge, end is vertex
-        // Check if either end of the edge is the vertex
-        if (HE[E[start.projData.elIdx].he].dest == end.projData.elIdx || HE[HE[E[start.projData.elIdx].he].twin].dest == end.projData.elIdx) {
-            return 1;
-        }
-    } else if (start.projData.elType == 1 && end.projData.elType == 1) {    // Both are on edges
-        // Check if they share an edge
-        if (start.projData.elIdx == end.projData.elIdx) {
-            return 1;
-        }
+    }
+    return d2;
+}
+
+int mesh::closestPointOnFace(int f, const Eigen::Vector3d& v, Eigen::Vector3d& v_proj,
+                             vertProjData& candidateProj, bool snap) const {
+    if (f < 0 || f >= F.size() || !F[f].active) {
+        return -1;
+    }
+    std::vector<int> fVerts = faceAdjVertIdxs(f);
+    const int fSize = static_cast<int>(fVerts.size());
+    if (fSize < 3) {    // Invalid face
+        return -1;
     }
 
-    // Otherwise need to do a face-wise check
-    // Find shared faces between start and end, if any
-    std::vector<int> startAdjF = adjFaces(start.projData.elType, start.projData.elIdx);
-    std::vector<int> endAdjF = adjFaces(end.projData.elType, end.projData.elIdx);
-    std::vector<int> sharedAdjF;
-    for (int i = 0; i < startAdjF.size(); i++) {
-        if (startAdjF[i] == -1) {
-            continue;
-        }
-        for (int j = 0; j < endAdjF.size(); j++) {
-            if (endAdjF[j] == -1) {
-                continue;
-            }
-            if (startAdjF[i] == endAdjF[j]) {
-                sharedAdjF.push_back(startAdjF[i]);
-            }
-        }
+    std::vector<Eigen::Vector3d> fVertsPos = adjVerts(fVerts);
+    double snapTol = snap ? 1e-5 * bboxDiag : 1e-6 * meanE;
+
+    int projType, projIdx;
+
+    if (fSize == 3) {
+        v_proj = Utils::triangleClosestPoint(fVertsPos, v, projType, projIdx, snapTol);
+    } else if (fSize == 4) {
+        v_proj = Utils::bilinearPatchClosestPoint(fVertsPos, v, projType, projIdx, snapTol);
+    } else {
+        v_proj = Utils::polygonClosestPointNewell(fVertsPos, v, F[f].n, projType, projIdx, snapTol);
     }
-    // Check if there are any shared faces (termination condition)
-    if (sharedAdjF.size() >= 1) {   // Share at least one face
-        if (fast) { // Fast version is a simple face check
-            return 1;
-        } else {    // Slow version does a visibility check
-            for (int f_idx : sharedAdjF) {
-                if (testVisibility(f_idx, start.pos, end.pos)) {
-                    return 1;
+
+    if (projType == 0) {
+        int local_v = projIdx;
+        if (local_v < 0 || local_v >= fSize) {
+            return -1;
+        }
+        candidateProj.elType = 0;
+        candidateProj.elIdx = fVerts[local_v];
+        return 1;
+    }
+
+    if (projType == 1) {
+        int local_e = projIdx;
+        if (local_e < 0 || local_e >= fSize) {
+            return -1;
+        }
+        int local_next = (local_e + 1) % fSize;
+        auto it = vertPairToHE.find({fVerts[local_e], fVerts[local_next]});
+        if (it == vertPairToHE.end()) {
+            return -1;
+        }
+        candidateProj.elType = 1;
+        candidateProj.elIdx = HE[it->second].edge;
+        return 1;
+    }
+
+    if (projType == 2) {
+        candidateProj.elType = 2;
+        candidateProj.elIdx = f;
+        return 1;
+    }
+
+    return -1;
+}
+
+// Closest face test for BVH 
+int mesh::closestFaceBVH(const Eigen::Vector3d& v, Eigen::Vector3d& proj, vertProjData& projData, bool snap) const {
+    if (BVH.empty()) {
+        return -1;
+    }
+    // Initialize closest distance and projData
+    double bestDist2 = std::numeric_limits<double>::infinity();
+    projData = {-1, -1};
+    // Init priority queue with best nodes
+    std::priority_queue<BVHQueueEntry> q;
+    q.push({0, pointAABBDist2(v, 0)});
+    // Pop bbox from queue until empty (i.e., found closest face)
+    while (!q.empty()) {
+        BVHQueueEntry curr = q.top();
+        q.pop();
+        // Since queue is ordered, if the closest remaining box cannot improve,
+        // no later box can improve either
+        if (curr.dist2 >= bestDist2) {
+            break;
+        }
+
+        const AABB& box = BVH[curr.box];
+        if (box.leaf) {     // If we are at a leaf, then we need to test distances to the participating faces
+            for (int i = 0; i < box.faces.size(); i++) {
+                int f = box.faces[i];
+                Eigen::Vector3d candidateProj;
+                vertProjData candidateData({2, f});
+                if (closestPointOnFace(f, v, candidateProj, candidateData, snap) != 1) {
+                    continue;
+                }
+                double d2 = (v - candidateProj).squaredNorm();
+                if (d2 < bestDist2) {
+                    bestDist2 = d2;
+                    proj = candidateProj;
+                    projData = candidateData;
+                }
+            }
+        } else {    // Otherwise, trace down to lower depth bbox
+            for (int i = 0; i < box.children.size(); i++) {
+                int child = box.children[i];
+                double childDist2 = pointAABBDist2(v, child);
+                if (childDist2 < bestDist2) {   // If we have a closer candidate, then push onto queue
+                    q.push({child, childDist2});
                 }
             }
         }
     }
-    // If we still haven't found the vert after searching the max depth, assume that we are going in the wrong direc
-    if (++depth > max_depth) {
+
+    if (projData.elIdx < 0) {   // Invalid projData
         return -1;
     }
-    std::cout << "Reached depth " << depth << std::endl;
-    std::cout << "Start vertex: " << start.pos[0] << ", "
-                                  << start.pos[1] << ", "
-                                  << start.pos[2] << "; End vertex: "
-                                  << end.pos[0] << ", "
-                                  << end.pos[1] << ", "
-                                  << end.pos[2] << std::endl;
-    std::cout << "Previous direction: " << prevDirec[0] << ", "
-                                        << prevDirec[1] << ", "
-                                        << prevDirec[2] << std::endl;
 
-    // We have to walk, so we now compute the next walk direction
-    vertProjData nextData;
-    Eigen::Vector3d nextDirec;
-    prevDirec.normalize();
-    if (recompute && start.projData.elType == 2) {
-        Eigen::Vector3d refDirec = (end.pos - start.pos);
-        nextData.elType = prevData.elType;
-        nextData.elIdx = prevData.elIdx;
-        // If projection is degenerate, defer to valid previous version
-        if (Utils::projectVectorOntoTangentPlane(F[nextData.elIdx].n, refDirec, nextDirec) <= eps) {
-            nextDirec = prevDirec;
-        } else if (nextDirec.dot(prevDirec) < 0.0) {    // Else do a soft check to make sure we're going the right way
-            nextDirec *= -1;
+    return 1;
+}
+
+// Alternative to vertex projection that also computes additional bind data
+int mesh::computeVBinding(const Eigen::Vector3d& p, meshBindData& bind, bool snap, bool fast) const {
+    bind = meshBindData();
+    Eigen::Vector3d proj;
+    vertProjData projData = computeVProjection(p, proj, snap, fast);
+
+    if (projData.elIdx < 0) {
+        return -1;
+    }
+
+    bind.elType = projData.elType;
+    bind.elIdx = projData.elIdx;
+    bind.proj = proj;
+    bind.offset = p - proj;
+
+    if (computeBindCoords(bind.elType, bind.elIdx, proj, bind.coords) != 1) {
+        return -1;
+    }
+    if (computeBindFrame(bind.elType, bind.elIdx, bind.restFrame) != 1) {
+        return -1;
+    }
+
+    return 1;
+}
+
+int mesh::computeBindCoords(int elType, int elIdx, const Eigen::Vector3d& proj, Eigen::VectorXd& coords) const {
+    coords.resize(0);
+    const double eps = 1e-12;
+
+    if (elType == 2) {  // Landed on face; need MVC
+        int f = elIdx;
+        if (f < 0 || f >= F.size() || !F[f].active) {
+            return -1;
         }
-    } else {
-        int success = -1;
-        if (start.projData.elType == 0) {   // We are on a vert
-            if (prevData.elType == 0) {
-                success = nextEl_VertStart(start.projData.elIdx, prevData, prevDirec, nextDirec, nextData, true);
-            } else {
-                std::cout << "Landed on vertex. Computing next direction" << std::endl;
-                success = nextEl_Vert(start.projData.elIdx, prevData, prevDirec, nextDirec, nextData, true);
+        std::vector<int> fVerts = faceAdjVertIdxs(f);
+        int fSize = fVerts.size();
+        if (fSize < 3) {    // Invalid face
+            return -1;
+        }
+        std::vector<Eigen::Vector3d> fVertsPos = adjVerts(fVerts);
+        coords.resize(fSize);
+        coords.setZero();
+
+        if (fSize == 3) {   // Triangle. Get Barycentric coords
+            const Eigen::Vector3d& a = fVertsPos[0];
+            const Eigen::Vector3d& b = fVertsPos[1];
+            const Eigen::Vector3d& c = fVertsPos[2];
+
+            Eigen::Vector3d v0 = b - a;
+            Eigen::Vector3d v1 = c - a;
+            Eigen::Vector3d v2 = proj - a;
+
+            double d00 = v0.dot(v0);
+            double d01 = v0.dot(v1);
+            double d11 = v1.dot(v1);
+            double d20 = v2.dot(v0);
+            double d21 = v2.dot(v1);
+
+            double denom = d00 * d11 - d01 * d01;
+            if (std::abs(denom) <= eps) {
+                return -1;
             }
-        } else if (start.projData.elType == 1) {    // We are on an edge
-            if (prevData.elType == 1) {             // Just started walking
-                std::cout << "Landed on edge. Computing next direction for prev is edge" << std::endl;
-                success = nextEl_EdgeStart(start.projData.elIdx, prevData, prevDirec, nextDirec, nextData, true);
-            } else if (prevData.elType == 2) {  // We landed on an edge from a face
-                std::cout << "Landed on edge. Computing next direction for prev is face" << std::endl;
-                success = nextEl_Edge(start.projData.elIdx, prevData, prevDirec, nextDirec, nextData, true);
-            } else {
-                std::cout << "Landed on edge. Invalid next direction" << std::endl;
+            double v = (d11 * d20 - d01 * d21) / denom;
+            double w = (d00 * d21 - d01 * d20) / denom;
+            double u = 1.0 - v - w;
+            coords(0) = u;
+            coords(1) = v;
+            coords(2) = w;
+            return 1;
+        } else if (fSize == 4) {
+            double u, v;
+            Utils::bilinearPatchClosestPoint(fVertsPos, proj, u, v, 0.0);
+            coords.resize(2);
+            coords(0) = u;
+            coords(1) = v;
+            return 1;
+        }
+
+        // 5+ polygons: MVC on the face/Newell plane.
+        Eigen::Vector3d n = F[f].n;
+        if (n.squaredNorm() <= eps) {
+            return -1;
+        }
+        n.normalize();
+
+        Eigen::Vector3d barycenter = DECUtils::computeBarycenter(fVertsPos);
+
+        Eigen::Vector3d t0;
+        Eigen::Vector3d t1;
+        Utils::buildPlaneBasis(n, t0, t1);
+
+        std::vector<Eigen::Vector2d> fVerts2D(fSize);
+
+        for (int i = 0; i < fSize; i++) {
+            Eigen::Vector3d vi_proj =
+                Utils::projectPointOntoPlane(n, barycenter, fVertsPos[i]);
+            fVerts2D[i] = Utils::convertTo2D(vi_proj, barycenter, t0, t1);
+        }
+
+        Eigen::Vector3d projPlane = Utils::projectPointOntoPlane(n, barycenter, proj);
+        Eigen::Vector2d proj2D = Utils::convertTo2D(projPlane, barycenter, t0, t1);
+
+        Utils::meanValueCoordinates(proj2D, fVerts2D, coords);
+
+        return 1;
+    }
+
+    if (elType == 1) {  // Edge case. Simply compute t-value
+        int e = elIdx;
+        if (e < 0 || e >= E.size() || !E[e].active) {
+            return -1;
+        }
+        int he = E[e].he;
+        int v1 = HE[he].dest;
+        int v0 = HE[HE[he].twin].dest;
+
+        Eigen::Vector3d a = V[v0].pos;
+        Eigen::Vector3d b = V[v1].pos;
+        Eigen::Vector3d ab = b - a;
+
+        double denom = ab.squaredNorm();
+        if (denom <= eps) {
+            return -1;
+        }
+
+        double t = (proj - a).dot(ab) / denom;
+        t = std::clamp(t, 0.0, 1.0);    // Safety
+        coords.resize(1);
+        coords(0) = t;
+        return 1;
+    }
+
+    if (elType == 0) {  // Vertex. Do nothing
+        int v = elIdx;
+        if (v < 0 || v >= V.size() || !V[v].active) {
+            return -1;
+        }
+        coords.resize(0);
+        return 1;
+    }
+    return -1;
+}
+
+// Compute the frame at the bind point
+int mesh::computeBindFrame(int elType, int elIdx, Eigen::Matrix3d& frame) const {
+    const double eps = 1e-12;
+    frame.setIdentity();
+    Eigen::Vector3d t;
+    Eigen::Vector3d b;
+    Eigen::Vector3d n;
+
+    if (elType == 2) {  // Face
+        int f = elIdx;
+        int he = F[f].he;
+        n = F[f].n;
+        t = V[HE[he].dest].pos - V[HE[HE[he].twin].dest].pos;
+    } else if (elType == 1) {   // Edge
+        int e = elIdx;
+        int he = E[e].he;
+        n = E[e].n;
+        t = V[HE[he].dest].pos - V[HE[HE[he].twin].dest].pos;
+    } else if (elType == 0) {
+        int v = elIdx;
+        n = V[v].n;
+        int he = V[v].he;
+
+        if (he >= 0 && he < HE.size()) {
+            t = V[HE[he].dest].pos - V[v].pos;
+        }
+
+        // Project onto tangent plane
+        t = t - t.dot(n) * n;
+        // Fallback if we get a degenerate tangent
+        if (t.squaredNorm() <= eps) {
+            std::vector<int> adjHE = vertAdjHEs(v);
+            bool found = false;
+            for (int i = 0; i < adjHE.size(); i++) {
+                int currHE = adjHE[i];
+                Eigen::Vector3d candidate = V[HE[currHE].dest].pos - V[v].pos;
+                candidate = candidate - candidate.dot(n) * n;
+                if (candidate.squaredNorm() > eps) {
+                    t = candidate;
+                    found = true;
+                    break;
+                }
             }
-        } else {        // We are on a face
-            nextData = prevData;
-            success = 1;
-            std::cout << "Landed on face. Computing next direction by projection" << std::endl;
-            if (Utils::projectVectorOntoTangentPlane(F[nextData.elIdx].n, prevDirec, nextDirec) == -1) {
+            if (!found) {
                 return -1;
             }
         }
-        if (success != 1) { // Could not find a new direction
-            std::cout << "Could not find a suitable next direction" << std::endl;
-            return -1;
-        }
-    }
-    if (nextData.elType < 0) {  // No valid next direction
-        std::cout << "No valid next direction" << std::endl;
-        return -1;
-    }
-    std::cout << "Next direction: " << nextDirec[0] << ", "
-                                        << nextDirec[1] << ", "
-                                        << nextDirec[2] << std::endl;
-
-    // Case 1: Check if walk direction is on an edge, simply grab the other end vertex of the edge
-    if (nextData.elType == 1) {
-        // Opt to actually compute the matching direction instead of assuming the start is at a vertex
-        // This way we can handle degenerate cases where the initial walk direction is on an edge
-        int he = E[nextData.elIdx].he;
-        Eigen::Vector3d heVec = (V[HE[he].dest].pos - V[HE[HE[he].twin].dest].pos).normalized();
-        // Orient ourselves correctly
-        int next;
-        if (nextDirec.dot(heVec) >= 0.0) {
-            next = HE[he].dest;
-        } else {
-            next = HE[HE[he].twin].dest;
-        }
-        std::cout << "Walking along edge. Next vert found: " << next << std::endl;
-        Vert nextVert = createVertex(V[next].pos, V[next].n, 2, -1, 0, next);
-        // Recurse
-        tracedVerts.push_back(nextVert);
-        return traceGeodesic(nextVert, end, nextDirec, nextData, tracedVerts, depth, max_depth, true, fast);
-    }
-
-    // If we reached this point, we are definitely walking on a face
-    // Project walk direction onto specified direction
-    Eigen::Vector3d hit;
-    vertProjData hit_Data;
-    std::cout << "Walking along face " << nextData.elIdx << std::endl;
-    if (rayCastOnFace(nextData.elIdx, start.pos, nextDirec, hit, hit_Data) == -1) {
-        std::cout << "Raycasting failed." << std::endl;
-        return -1;
-    }
-    std::cout << "Raycast succeeded. Recursing." << std::endl;
-    // Create a new vertex at intersection and append to list
-    Vert nextVert = createVertex(hit, getNormal(hit_Data), 2, -1, hit_Data);
-
-    tracedVerts.push_back(nextVert);
-    return traceGeodesic(nextVert, end, nextDirec, nextData, tracedVerts, depth, max_depth, true, fast);
-}
-
-// Test whether the start and end are visible from each other on a particular face
-// Returns true if so.
-bool mesh::testVisibility(int f, Eigen::Vector3d start, Eigen::Vector3d end, double eps) {
-    std::vector<Eigen::Vector3d> fVerts = faceAdjVerts(f);
-    if (fVerts.size() == 3) {   // Triangles must be convex
-        return true;
-    }
-    Eigen::Vector3d t1, t2;
-    Utils::buildPlaneBasis(F[f].n, t1, t2);
-    // For simplicity, assume tangent plane is centered on the start
-    std::vector<Eigen::Vector2d> projFVerts(fVerts.size());
-    Eigen::Vector2d start2D = Eigen::Vector2d::Zero();
-    Eigen::Vector2d end2D = Utils::convertTo2D(end, start, t1, t2);
-    for (int v = 0; v < fVerts.size(); v++) {
-        Eigen::Vector3d proj3D = Utils::projectPointOntoPlane(F[f].n, start, fVerts[v]);
-        projFVerts[v] = Utils::convertTo2D(proj3D, start, t1, t2);
-    }
-    Eigen::Vector2d direc = end2D - start2D;
-    double t_end = direc.norm();
-    direc.normalize();
-
-    std::vector<double> intersections;
-    // Raycast to find nearest segment, tracking the t-vals of intersections
-    for (int v = 0; v < projFVerts.size(); v++) {
-        int v_p1 = (v+projFVerts.size()+1) % projFVerts.size();
-        double t, u;
-        // Raycast to find nearest segment
-        if (Utils::raycastToSegment2D(start2D, direc, projFVerts[v], projFVerts[v_p1], t, u)) {
-            // Filter out any that are behind
-            if (t >= eps) {
-                intersections.push_back(t);
-            }
-        }
-    }
-
-    // If intersects none then we are outside the face and/or pointing the wrong way... not good, but check anyways
-    if (intersections.size() == 0) {
-        return false;
-    }
-    // Otherwise, check if we hit anything first
-    for (double t : intersections) {
-        // If we are w/in an epsilon, then ignore
-        if (t <= t_end - eps) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// Find the next intersection point while walking on a particular face
-int mesh::rayCastOnFace(int f, Eigen::Vector3d start, Eigen::Vector3d direc, Eigen::Vector3d& hit, vertProjData& hitData, double eps) {
-    double tol = 1e-5 * bboxDiag;
-    Eigen::Vector3d projDirec;
-    Utils::projectVectorOntoTangentPlane(F[f].n, direc, projDirec);
-    std::vector<int> fVertIdxs = faceAdjVertIdxs(f);
-    std::vector<Eigen::Vector3d> fVerts = adjVerts(fVertIdxs);
-
-    Eigen::Vector3d t1, t2;
-    Utils::buildPlaneBasis(F[f].n, t1, t2);
-    // For simplicity, assume tangent plane is centered on the start
-    std::vector<Eigen::Vector2d> projFVerts(fVerts.size());
-    Eigen::Vector2d start2D = Eigen::Vector2d::Zero();
-    Eigen::Vector2d direc2D = Utils::convertTo2D(start + projDirec, start, t1, t2);
-    for (int v = 0; v < fVerts.size(); v++) {
-        Eigen::Vector3d proj3D = Utils::projectPointOntoPlane(F[f].n, start, fVerts[v]);
-        projFVerts[v] = Utils::convertTo2D(proj3D, start, t1, t2);
-    }
-    direc2D.normalize();
-
-    // intersections are a pair of local segment index and the u parameter along that segment
-    std::vector<std::pair<int, double>> intersections;
-    std::vector<double> intersections_t;
-    // Raycast to find nearest segment, tracking the t-vals of intersections
-    for (int v = 0; v < projFVerts.size(); v++) {
-        int v_p1 = (v+projFVerts.size()+1) % projFVerts.size();
-        double t, u;
-        // Raycast to find nearest segment
-        if (Utils::raycastToSegment2D(start2D, direc2D, projFVerts[v], projFVerts[v_p1], t, u)) {
-            // Filter out any that are behind
-            if (t >= eps) {
-                intersections.push_back(std::make_pair(v, u));
-                intersections_t.push_back(t);
-            }
-        }
-    }
-
-    // If intersects none then we are outside the face and/or pointing the wrong way... not good, but check anyways
-    if (intersections.size() == 0) {
-        return -1;
-    }
-    // Otherwise, check what we hit first
-    int nearest_idx = 0;
-    double nearest = intersections_t[0];
-    for (int i = 1; i < intersections_t.size(); i++) {
-        if (intersections_t[i] < nearest) {
-            nearest = intersections_t[i];
-            nearest_idx = i;
-        }
-    }
-    // Compute the intersection
-    int v = intersections[nearest_idx].first;
-    double u = intersections[nearest_idx].second;
-    hit = fVerts[v] + u * (fVerts[(v+1)%fVerts.size()] - fVerts[v]);
-    // Apply snapping as necessary
-    hitData.elType = 1;
-    hitData.elIdx = HE[vertPairToHE[std::make_pair(fVertIdxs[v], fVertIdxs[(v+1)%fVertIdxs.size()])]].edge;
-    int v_next = (v+1) % fVerts.size();
-    if ((hit - fVerts[v]).norm() <= tol) {
-        hit = fVerts[v];
-        hitData.elType = 0;
-        hitData.elIdx = fVertIdxs[v];
-    } else if ((hit - fVerts[v_next]).norm() <= tol) {
-        hit = fVerts[v_next];
-        hitData.elType = 0;
-        hitData.elIdx = fVertIdxs[v_next];
-    }
-    return 1;
-}
-
-// Compute the next walk element given that we intersected with an edge
-// Returns the next 
-int mesh::nextEl_Edge(int e, const vertProjData& originData, const Eigen::Vector3d& prev_direc, 
-                    Eigen::Vector3d& next_direc, vertProjData& nextData, bool bdy_snap) {
-                        // Get adjacent faces
-    nextData.elType = 2;
-    if (originData.elType != 2 || originData.elIdx < 0 || originData.elIdx >= F.size()) {
-        return -1;
-    }
-    std::vector<int> adjF = edgeAdjFaces(e);
-    nextData.elIdx = adjF[0];
-    if (originData.elIdx == adjF[0]) {
-        nextData.elIdx = adjF[1];
-    }
-    // Projection step for safety
-    Eigen::Vector3d proj_direc;
-    double valid = Utils::projectVectorOntoTangentPlane(F[originData.elIdx].n, prev_direc, proj_direc);
-    if (valid <= 0.0) {
-        return -1;
-    }
-    // Handle boundary case first
-    // Snap to the better boundary edge direction
-    if (nextData.elIdx == -1) {
-        if (bdy_snap) {
-            nextData.elIdx = e;
-            nextData.elType = 1;
-            // Find the better fit direction 
-            int v1 = HE[E[e].he].dest;
-            int v0 = HE[HE[E[e].he].twin].dest;
-            if (((V[v1].pos - V[v0].pos).normalized()).dot(proj_direc) >= 0) {
-                next_direc = (V[v1].pos - V[v0].pos).normalized();
-            } else {
-                next_direc = (V[v0].pos - V[v1].pos).normalized();
-            }
-            return 1;
-        } else {    // Hit a dead end
-            return -1;
-        }
-    }
-    // Otherwise, we just rotate onto the plane of the adajcent face
-    // Get the halfedge of the incoming face
-    int he0 = E[e].he;
-    if (HE[he0].face == originData.elIdx) {
-        he0 = HE[he0].twin;
-    }
-    // Compute the local tangent basis of the origin face
-    Eigen::Vector3d tangent = ((V[HE[he0].dest].pos - V[HE[HE[he0].twin].dest].pos).normalized());
-    // Normalized for numerical safety
-    Eigen::Vector3d biN_origin = tangent.cross(F[originData.elIdx].n).normalized();
-    Eigen::Vector3d biN_next = tangent.cross(F[nextData.elIdx].n).normalized();
-    Eigen::Matrix3d rot = Utils::computeRotation(biN_origin, biN_next);
-    next_direc = rot * proj_direc;
-    return 1;
-}
-
-// Find the next walk direction given we are starting from an edge
-int mesh::nextEl_EdgeStart(int e, const vertProjData& originData, const Eigen::Vector3d& start_direc,
-                           Eigen::Vector3d& next_direc, vertProjData& nextData, bool bdy_snap, double eps) {
-    nextData.elType = -1;
-    nextData.elIdx = -1;
-    next_direc.setZero();
-    if (e < 0 || e >= E.size()) {
-        return -1;
-    }
-    if (originData.elType != 1 || originData.elIdx != e) {
-        return -1;
-    }
-    // Get adjacent attributes
-    int he0 = E[e].he;
-    int he1 = HE[he0].twin;
-    int v0 = HE[he1].dest;
-    int v1 = HE[he0].dest;
-    Eigen::Vector3d tangent = (V[v1].pos - V[v0].pos).normalized();
-    int f0 = HE[he0].face;
-    int f1 = HE[he1].face;
-    double dot0 = 0.0;
-    double dot1 = 0.0;
-
-    // Check the edge itself
-    // First, check if the desired direction is essentially along the edge
-    Eigen::Vector3d edgeProj;
-    double edgeProjLen = Utils::projectVectorOntoTangentPlane(E[e].n, start_direc, edgeProj);
-    Eigen::Vector3d binorm0 = (E[e].n.cross(tangent)).normalized();
-    Eigen::Vector3d binorm1 = -1 * binorm0;
-    if (edgeProjLen > eps) {
-        double side = edgeProj.dot(binorm0);
-        if (std::abs(side) <= 1e-5) {
-            return snapWalkToEdge(e, start_direc, next_direc, nextData, eps);
-        } 
     } else {
         return -1;
     }
-
-    // The face whose outward binormal aligns more with the walk direction is the face we are coming from (prev)
-    dot0 = edgeProj.dot(binorm0);
-    dot1 = edgeProj.dot(binorm1);
-    vertProjData tempOrigin;
-    nextData.elType = 2;
-    if (dot0 > dot1) {
-        nextData.elIdx = f0;
+    if (n.squaredNorm() <= eps) {
+        return -1;
+    }
+    n.normalize();
+    t = t - t.dot(n) * n;
+    if (t.squaredNorm() <= eps) {
+        Utils::buildPlaneBasis(n, t, b);
     } else {
-        nextData.elIdx = f1;
+        t.normalize();
+        b = n.cross(t);
     }
-
-    if (nextData.elIdx == -1) { // Snap to boundary edge if needed
-        if (bdy_snap) {
-            nextData.elType = 1;
-            nextData.elIdx = e;
-            if (tangent.dot(edgeProj) >= 0.0) {
-                next_direc = tangent;
-            } else {
-                next_direc = -1 * tangent;
-            }
-        } else {
-            return -1;
-        }
-    }
-
-    // We must be on a face; get the new direction
-    Utils::projectVectorOntoTangentPlane(F[nextData.elIdx].n, edgeProj, next_direc);
+    frame.col(0) = t;
+    frame.col(1) = b;
+    frame.col(2) = n;
     return 1;
-}
-
-// Helper for next edge that performs edge snapping
-int mesh::snapWalkToEdge(int e, const Eigen::Vector3d& direc, Eigen::Vector3d& next_direc,
-                         vertProjData& nextData, double eps) const {
-    nextData.elType = -1;
-    nextData.elIdx = -1;
-    next_direc.setZero();
-    // Get adjacent attributes
-    int he = E[e].he;
-    int twin = HE[he].twin;
-    int v0 = HE[twin].dest;
-    int v1 = HE[he].dest;
-
-    Eigen::Vector3d edgeVec = V[v1].pos - V[v0].pos;
-    if (edgeVec.norm() <= eps) {
-        return -1;
-    }
-    edgeVec.normalize();
-
-    // Compute which side of the edge 
-    if (direc.dot(edgeVec) >= 0.0) {
-        next_direc = edgeVec;
-    } else {
-        next_direc = -1*edgeVec;
-    }
-
-    nextData.elType = 1;
-    nextData.elIdx = e;
-    return 1;
-}
-
-// Compute the next walk element given that we intersected with a vertex
-int mesh::nextEl_Vert(int v, const vertProjData& originData, 
-                    const Eigen::Vector3d& prev_direc, Eigen::Vector3d& next_direc, 
-                    vertProjData& nextData, bool bdy_snap, double eps) {
-    nextData.elType = 2;
-    // Gather all of the adjacent halfedges and faces
-    std::vector<int> adjHE = vertAdjHEs(v);
-    // Figure out which halfedge "matches" the face origin and also find the local umbrella angle sum
-    int localIdx = -1;
-    double angleSum = 0.0;
-    std::vector<double> angleBuckets(adjHE.size());
-    std::vector<Eigen::Vector3d> cornerNormals(adjHE.size());
-    for (int he_idx = 0; he_idx < adjHE.size(); he_idx++) {
-        int he0 = adjHE[he_idx];
-        int he1 = adjHE[(he_idx + 1) % adjHE.size()];
-        // Compute angle between the two vectors by first computing an axis
-        Eigen::Vector3d vec0 = V[HE[he0].dest].pos - V[v].pos;
-        Eigen::Vector3d vec1 = V[HE[he1].dest].pos - V[v].pos;
-        Eigen::Vector3d axis = vec0.cross(vec1);
-        if (axis.norm() <= eps) {
-            axis = F[HE[he0].face].n;
-        }
-        cornerNormals[he_idx] = axis.normalized();
-        // Get the positive signed angle
-        angleBuckets[he_idx] = Utils::signedAngle(vec0, vec1, axis, true);
-        angleSum += angleBuckets[he_idx];
-        // Get the matching face as a local halfedge index in adjHE
-        if (originData.elType == 1 && HE[adjHE[he_idx]].edge == originData.elIdx) {
-            localIdx = he_idx;
-        } else if (originData.elType == 2 && HE[adjHE[he_idx]].face == originData.elIdx) {
-            localIdx = he_idx;
-        }
-    }
-    if (localIdx == -1) {   // Did not find a match
-        return -1;
-    }
-    // Compute the projected walk direction onto the corner normal's plane
-    Eigen::Vector3d proj_direc;
-    double valid = Utils::projectVectorOntoTangentPlane(cornerNormals[localIdx], prev_direc, proj_direc);
-    if (valid <= 0.0) {
-        return -1;
-    }
-    double angleToFace = Utils::signedAngle(V[HE[adjHE[localIdx]].dest].pos - V[v].pos, -1 * prev_direc, cornerNormals[localIdx], true);
-
-    // Get the halfway angle
-    double targetAngle = angleSum / 2.0;
-    int stopHE = -1;
-    targetAngle += angleToFace; // Add this on so we can start accumulating angles from the halfedge
-    // Iterate over faces to get the target angle
-    for (int f = 0; f < adjHE.size(); f++) {
-        int f_curr = (localIdx + f) % adjHE.size();
-        if (targetAngle <= angleBuckets[f_curr]) {  // Found the face
-            stopHE = f_curr;
-            break;
-        } else {    // Keep going
-            targetAngle -= angleBuckets[f_curr];
-        }
-    }
-    if (stopHE < 0) {   // Just in case
-        return -1;
-    }
-    // Use the computed face and remnant angle to determine the vector
-    Eigen::Vector3d heVec = (V[HE[adjHE[stopHE]].dest].pos - V[v].pos).normalized();
-    // To make this well-posed, compute corner normal as the average of adjacent corner normals
-    if (cornerNormals[stopHE].norm() <= eps) {
-        cornerNormals[stopHE] = (cornerNormals[(stopHE + 1)%adjHE.size()] + cornerNormals[(stopHE + adjHE.size() - 1)%adjHE.size()]) / 2;
-    }
-    Eigen::Matrix3d rot = Utils::computeRotation(cornerNormals[stopHE], targetAngle);
-    next_direc = rot * heVec;
-
-    Eigen::Vector3d heVec1 = (V[HE[adjHE[(stopHE+1)%adjHE.size()]].dest].pos - V[v].pos).normalized();
-    nextData.elIdx = HE[adjHE[stopHE]].face;
-    // Process boundary if we hit one
-    if (nextData.elIdx == -1) {
-        if (bdy_snap) {
-            nextData.elType = 1;
-            // Compute best adjacent edge to snap to
-            if (next_direc.dot(heVec) >= next_direc.dot(heVec1)) {
-                next_direc = heVec;
-                nextData.elIdx = HE[adjHE[stopHE]].edge;
-            } else {
-                next_direc = heVec1;
-                nextData.elIdx = HE[adjHE[(stopHE+1)%adjHE.size()]].edge;
-            }
-            return 1;
-        } else {    // Failure
-            return -1;
-        }
-    }
-    // Check for edge snaps
-    if (next_direc.normalized().dot(heVec) >= 1.0 - eps) {
-        next_direc = heVec;
-        nextData.elIdx = HE[adjHE[stopHE]].edge;
-        nextData.elType = 1;
-        return 1;
-    } else if (next_direc.normalized().dot(heVec1) >= 1.0 - eps) {
-        next_direc = heVec1;
-        nextData.elIdx = HE[adjHE[(stopHE+1)%adjHE.size()]].edge;
-        nextData.elType = 1;
-        return 1;
-    }
-    return 1;
-}
-
-int mesh::nextEl_VertStart(int v, const vertProjData& originData, const Eigen::Vector3d& start_direc,
-                           Eigen::Vector3d& next_direc, vertProjData& nextData, bool bdy_snap, double eps) {
-    nextData.elType = -1;
-    nextData.elIdx = -1;
-    next_direc.setZero();
-    if (v < 0 || v >= V.size()) {
-        return -1;
-    }
-    if (originData.elType != 0 || originData.elIdx != v) {
-        return -1;
-    }
-    // Get adjacent attributes
-    Eigen::Vector3d t0, t1;
-    Utils::buildPlaneBasis(V[v].n, t0, t1);
-    std::vector<int> adjHE = vertAdjHEs(v);
-    std::vector<double> adjAngles(adjHE.size());
-    for (int he = 0; he < adjHE.size(); he++) {
-        double theta;
-        if (!Utils::directionAngleInPlane(V[v].pos, V[HE[adjHE[he]].dest].pos, V[v].n, t0, t1, theta)) {
-            return -1;
-        }
-        adjAngles[he] = theta;
-    }
-    double start_theta;
-    if (!Utils::directionAngleInPlane(V[v].pos, V[v].pos + start_direc, V[v].n, t0, t1, start_theta)) {
-        return -1;
-    }
-    int face_he = -1;
-    for (int he = 0; he < adjHE.size(); he++) { // Find which "corner" we are in
-        double curr_angle = adjAngles[he];
-        double next_angle = adjAngles[(he+1) % adjHE.size()];
-
-        double d = std::abs(adjAngles[he] - start_theta);
-        d = std::min(d, 2.0 * M_PI - d);
-        if (d <= eps) { // i.e., we are on the edge of the halfedge
-            next_direc = (V[HE[adjHE[he]].dest].pos - V[v].pos).normalized();
-            nextData.elType = 1;
-            nextData.elIdx = HE[adjHE[he]].edge;
-            return 1;
-        }
-        // Wrap-around check
-        double temp_start = start_theta;
-        if (adjAngles[he] > next_angle) {
-            next_angle += 2.0*M_PI;
-            if (temp_start < adjAngles[he]) {
-                temp_start += 2.0*M_PI;
-            }
-        }
-        // Once we find the right one, return
-        if (temp_start < next_angle && temp_start > adjAngles[he]) {
-            face_he = he;
-        }
-    }
-    if (face_he == -1) {    // NOTE: face_he is an index local to adjHE
-        return -1;
-    }
-
-    nextData.elType = 2;
-    nextData.elIdx = HE[adjHE[face_he]].face;
-    // To get the estimated new direction, project onto vertex tangent plane, and then project again onto the corner normal plane
-    Eigen::Vector3d v_ProjDirec;
-    Utils::projectVectorOntoTangentPlane(V[v].n, start_direc, v_ProjDirec);
-    int next_he = (face_he + 1) % adjHE.size();
-    Eigen::Vector3d tangent0 = (V[HE[adjHE[face_he]].dest].pos - V[v].pos).normalized();
-    Eigen::Vector3d tangent1 = (V[HE[adjHE[next_he]].dest].pos - V[v].pos).normalized();
-    Eigen::Vector3d corner_normal = tangent0.cross(tangent1);
-    if (corner_normal.norm() <= eps) {
-        if (nextData.elIdx != -1) {
-            corner_normal = F[nextData.elIdx].n;
-        } else {
-            corner_normal = V[v].n;
-        }
-    } else {
-        corner_normal.normalize();
-    }
-    if (Utils::projectVectorOntoTangentPlane(corner_normal, v_ProjDirec, next_direc) <= eps) {
-        return -1;
-    };
-    next_direc.normalize();
-    // Handle the boundary case
-    if (HE[adjHE[face_he]].face == -1) {    // Handle boundary case
-        if (bdy_snap) {
-            nextData.elType = 1;
-            if (tangent0.dot(next_direc) >= tangent1.dot(next_direc)) {
-                nextData.elIdx = HE[adjHE[face_he]].edge;
-            } else {
-                nextData.elIdx = HE[adjHE[next_he]].edge;
-            }
-        } else {
-            return -1;
-        }
-    }
-    
-    return 1;
-    
 }
 
 }   // namespace Mesh

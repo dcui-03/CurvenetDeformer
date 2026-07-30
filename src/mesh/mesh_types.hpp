@@ -10,13 +10,34 @@
 namespace Mesh {
     // Bounding Volume Hierarchy for mesh
     struct AABB {
-        std::array<Eigen::Vector3d, 8> bdyVerts;
-        std::vector<int> faces;
-    };
-    struct BVH {
-        int depth;
+        int depth = 0;
+        bool leaf = false;
         std::vector<int> children;
-        AABB bbox;
+        std::vector<int> faces;                                 // Faces in the bvh
+        std::pair<Eigen::Vector3d, Eigen::Vector3d> bdyVerts;   // Bounding box verts
+    };
+
+    // Used in projection AABB priority queue
+    struct BVHQueueEntry {
+        int box;
+        double dist2;
+
+        bool operator<(const BVHQueueEntry& other) const {
+            return dist2 > other.dist2; // reversed for std::priority_queue min-heap behavior
+        }
+    };
+
+    // Heavier projection sample data for curvenet/dcurvenet purposes
+    struct meshBindData {
+        int elType = -1;
+        int elIdx = -1;
+        Eigen::VectorXd coords;  // MVC, or t-val on an edge, or 
+        // Projection vector
+        Eigen::Vector3d proj = Eigen::Vector3d::Zero(); // Projection location
+        Eigen::Vector3d offset = Eigen::Vector3d::Zero();   // Projection offset vector
+
+        // Rest frame at bind time
+        Eigen::Matrix3d restFrame = Eigen::Matrix3d::Identity();
     };
 
     // Data needed if we want to interpolate deformations

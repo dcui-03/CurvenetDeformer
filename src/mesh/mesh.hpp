@@ -30,6 +30,8 @@ class mesh {
         int computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap = true, bool fast = true) const;
         // A version which returns a vertProjData object
         vertProjData computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, bool snap = true, bool fast = true) const;
+        // A generalization of computeVProjection that also computes other data if the caller wants
+        int computeVBinding(const Eigen::Vector3d& p, meshBindData& bind, bool snap = true, bool fast = true) const;
         
         // Getters
         Eigen::Vector3d getVPos(int v) const;
@@ -159,9 +161,30 @@ class mesh {
         void computeMeanE();
         // Compute the length of the diagonal of the bounding box.
         void computeBBoxDiag();
+        // Compute bounding volume hierarchy
+        int computeBVH();
+        int buildBVHNode(const std::vector<int>& faces, int depth);
 
 
         // ------------- UTILITIES (mesh_utils.cpp) -----------------
+        // Projection helpers
+        // Squared distance of point to AABB
+        double pointAABBDist2(const Eigen::Vector3d& p, int box) const;
+        // Closest point of a point to a face
+        int closestPointOnFace(int f,
+                            const Eigen::Vector3d& p,
+                            Eigen::Vector3d& proj,
+                            vertProjData& projData,
+                            bool snap) const;
+        // Find closest face given the BVH
+        int closestFaceBVH(const Eigen::Vector3d& p,
+                        Eigen::Vector3d& proj,
+                        vertProjData& projData,
+                        bool snap) const;
+        int computeBindCoords(int elType, int elIdx, const Eigen::Vector3d& proj, Eigen::VectorXd& coords) const;
+        int computeBindFrame(int elType, int elIdx, Eigen::Matrix3d& frame) const;
+
+        // GEODESICS
         // Optional default input parameters for traced intersection vertices
         int traceGeodesic(const Vert& start, 
                         const Vert& end, 
@@ -198,6 +221,10 @@ class mesh {
         // Figures out which next attribute to walk on given the start is on a vert
         int nextEl_VertStart(int v, const vertProjData& originData, const Eigen::Vector3d& start_direc,
                            Eigen::Vector3d& next_direc, vertProjData& nextData, bool bdy_snap, double eps = 1e-6);
+
+        // BVH
+        std::vector<AABB> BVH;
+        int max_depth = 5;
 };
 
 }   // namespace Mesh

@@ -118,9 +118,11 @@ namespace Mesh {
             Eigen::Vector3d direc = (V[v1].pos - V[v0].pos).normalized();
             //Eigen::Vector3d direc = (dCN_V[dCN_v1].pos - dCN_V[dCN_v0].pos).normalized();
             std::cout << "Starting trace from vert " << v0 << " (proj type: " << V[v0].projData.elType << ") to " << v1 << " (proj type: " << V[v1].projData.elType << ")" << std::endl;
+            /*
             std::cout << "Initial direction: " << direc[0] << ", "
                                         << direc[1] << ", "
                                         << direc[2] << std::endl;
+            */
             int success = M->traceGeodesic(V[v0], V[v1], direc, 
                                            V[v0].projData,
                                            traceVerts, depth);

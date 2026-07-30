@@ -26,6 +26,9 @@ mesh::mesh(const std::vector<Eigen::Vector3d>& V_List, const std::vector<std::ve
     computeVNormalsAreas();
     computeMeanE();
     computeBBoxDiag();
+    if (computeBVH() != 1) {
+        throw std::runtime_error("Failed to build BVH.");
+    }
     
     return;
 }
@@ -494,6 +497,166 @@ void mesh::computeBBoxDiag() {
     }
     bboxDiag = found ? (maxV - minV).norm() : 0.0;
     return;
+}
+
+// Compute bounding volume hierarchy
+int mesh::computeBVH() {
+    BVH.clear();
+
+    // Get active face list
+    std::vector<int> activeFaces;
+    activeFaces.reserve(F.size());
+    for (int f = 0; f < F.size(); f++) {
+        if (F[f].active) {
+            activeFaces.push_back(f);
+        }
+    }
+    if (activeFaces.empty()) {
+        return -1;
+    }
+
+    int root = buildBVHNode(activeFaces, 0);
+    if (root < 0) {
+        return -1;
+    }
+    // Get the true max depth
+    max_depth = 0;
+    for (int i = 0; i < BVH.size(); i++) {
+        max_depth = std::max(BVH[i].depth, max_depth);
+    }
+    return 1;
+}
+
+int mesh::buildBVHNode(const std::vector<int>& faces, int depth) {
+    if (faces.empty()) {
+        return -1;
+    }
+    int max_depth = 16;     // Hard stop so we don't recurse too much
+    int leafFaceCount = 50; // Maximum number of faces a leaf node can have
+    int nodeIdx = static_cast<int>(BVH.size());
+    BVH.emplace_back();
+
+    BVH[nodeIdx].depth = depth;
+    BVH[nodeIdx].leaf = false;
+    BVH[nodeIdx].faces.clear();
+    BVH[nodeIdx].children.clear();
+
+    // 1. Compute tight AABB around all faces in this node
+    bool found = false;
+    Eigen::Vector3d minV;
+    Eigen::Vector3d maxV;
+    for (int f_idx = 0; f_idx < faces.size(); f_idx++) {
+        int f = faces[f_idx];
+        if (f < 0 || f >= F.size() || !F[f].active) {
+            continue;
+        }
+        std::vector<Eigen::Vector3d> fVerts = faceAdjVerts(f);
+        for (int v_idx = 0; v_idx < fVerts.size(); v_idx++) {
+            const Eigen::Vector3d& p = fVerts[v_idx];
+            if (!found) {
+                minV = p;
+                maxV = p;
+                found = true;
+            } else {
+                minV = minV.cwiseMin(p);
+                maxV = maxV.cwiseMax(p);
+            }
+        }
+    }
+    if (!found) {
+        return -1;
+    }
+    BVH[nodeIdx].bdyVerts = {minV, maxV};
+
+    // 2. Leaf stopping criteria
+    if (depth >= max_depth || faces.size() <= leafFaceCount) {
+        BVH[nodeIdx].leaf = true;
+        BVH[nodeIdx].faces = faces;
+        return nodeIdx;
+    }
+
+    // 3. Choose split axis using longest AABB extent
+    Eigen::Vector3d extent = maxV - minV;
+    int axis = 0;
+    extent.maxCoeff(&axis);
+    // Degenerate box: cannot split meaningfully
+    if (extent[axis] <= 1e-12) {
+        BVH[nodeIdx].leaf = true;
+        BVH[nodeIdx].faces = faces;
+        return nodeIdx;
+    }
+
+    // 4. Compute face centroids along selected axis
+    // Note since we only split along one axis, we only need to take the average along that axis
+    std::vector<std::pair<double, int>> centroidFacePairs;
+    centroidFacePairs.reserve(faces.size());
+    for (int f_idx = 0; f_idx < faces.size(); f_idx++) {
+        int f = faces[f_idx];
+        if (f < 0 || f >= F.size() || !F[f].active) {
+            continue;
+        }
+        std::vector<Eigen::Vector3d> fVerts = faceAdjVerts(f);
+        if (fVerts.empty()) {
+            continue;
+        }
+        Eigen::Vector3d centroid = Eigen::Vector3d::Zero();
+        for (int v_idx = 0; v_idx < fVerts.size(); v_idx++) {
+            centroid += fVerts[v_idx];
+        }
+        centroid /= static_cast<double>(fVerts.size());
+        centroidFacePairs.push_back(std::make_pair(centroid[axis], f));
+    }
+    // We've hit the leaf face count. Terminate at this node
+    if (centroidFacePairs.size() <= leafFaceCount) {
+        BVH[nodeIdx].leaf = true;
+        for (int i = 0; i < centroidFacePairs.size(); i++) {
+            BVH[nodeIdx].faces.push_back(centroidFacePairs[i].second);
+        }
+        return nodeIdx;
+    }
+
+    // 5. Sort faces by centroid coordinate
+    std::sort(centroidFacePairs.begin(), centroidFacePairs.end());
+    // 6. Split face list in half
+    int mid = centroidFacePairs.size() / 2;
+    // Safety: Degenerate case
+    if (mid <= 0 || mid >= centroidFacePairs.size()) {
+        BVH[nodeIdx].leaf = true;
+        for (int i = 0; i < centroidFacePairs.size(); i++) {
+            BVH[nodeIdx].faces.push_back(centroidFacePairs[i].second);
+        }
+        return nodeIdx;
+    }
+
+    // Distinguish the left and right side faces
+    std::vector<int> leftFaces;
+    std::vector<int> rightFaces;
+    leftFaces.reserve(mid);
+    rightFaces.reserve(centroidFacePairs.size() - mid);
+    for (int i = 0; i < centroidFacePairs.size(); i++) {
+        if (i < mid) {
+            leftFaces.push_back(centroidFacePairs[i].second);
+        } else {
+            rightFaces.push_back(centroidFacePairs[i].second);
+        }
+    }
+
+    // 7. Recurse to get children
+    int leftChild = buildBVHNode(leftFaces, depth + 1);
+    int rightChild = buildBVHNode(rightFaces, depth + 1);
+    if (leftChild < 0 || rightChild < 0) {  // If either child encounters an error, then return as leaf
+        BVH[nodeIdx].leaf = true;
+        BVH[nodeIdx].faces = faces;
+        BVH[nodeIdx].children.clear();
+        return nodeIdx;
+    }
+    BVH[nodeIdx].children.push_back(leftChild);
+    BVH[nodeIdx].children.push_back(rightChild);
+
+    // Clear any non-leaf nodes' faces for storage (we will never need them)
+    BVH[nodeIdx].faces.clear();
+    BVH[nodeIdx].leaf = false;
+    return nodeIdx;
 }
 
 

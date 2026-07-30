@@ -96,7 +96,7 @@ void doubleListIdxSort(std::vector<double>& ref_List, std::vector<int>& idx_List
         return;
     }
 
-    const int n = static_cast<int>(ref_List.size());
+    const int n = ref_List.size();
 
     for (int i = 0; i < n - 1; ++i) {
         bool swapped = false;
@@ -160,9 +160,9 @@ bool orientFacesConsistently(std::vector<std::vector<int>>& F_List) {
     std::map<EdgeKey, std::vector<FaceEdgeUse>> edgeUses;
 
     // 1. Build undirected edge -> incident face uses.
-    for (int f = 0; f < static_cast<int>(F_List.size()); f++) {
+    for (int f = 0; f < F_List.size(); f++) {
         const auto& face = F_List[f];
-        int n = static_cast<int>(face.size());
+        int n = face.size();
 
         if (n < 3) {
             return false;
@@ -218,7 +218,7 @@ bool orientFacesConsistently(std::vector<std::vector<int>>& F_List) {
     // flip[f] == 1 means reverse this face.
     std::vector<int> flip(F_List.size(), -1);
 
-    for (int root = 0; root < static_cast<int>(F_List.size()); root++) {
+    for (int root = 0; root < F_List.size(); root++) {
         if (flip[root] != -1) {
             continue;
         }
@@ -248,7 +248,7 @@ bool orientFacesConsistently(std::vector<std::vector<int>>& F_List) {
     }
 
     // 5. Apply flips.
-    for (int f = 0; f < static_cast<int>(F_List.size()); f++) {
+    for (int f = 0; f < F_List.size(); f++) {
         if (flip[f]) {
             std::reverse(F_List[f].begin(), F_List[f].end());
         }
@@ -417,15 +417,164 @@ Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts
     return a + vBary * ab + wBary * ac;
 }
 
+// Overload with returned element type
+Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d>& triVerts, const Eigen::Vector3d& p, 
+                                         int& projType, int& projIdx, double snapTol) {
+    const double eps = 1e-8;
+    projType = -1;
+    projIdx = -1;
+
+    if (triVerts.size() != 3) {
+        return Eigen::Vector3d::Zero();
+    }
+
+    const Eigen::Vector3d& a = triVerts[0];
+    const Eigen::Vector3d& b = triVerts[1];
+    const Eigen::Vector3d& c = triVerts[2];
+
+    const Eigen::Vector3d ab = b - a;
+    const Eigen::Vector3d ac = c - a;
+    const Eigen::Vector3d ap = p - a;
+
+    const double d1 = ab.dot(ap);
+    const double d2 = ac.dot(ap);
+
+    Eigen::Vector3d cp;
+
+    // Vertex region outside A
+    if (d1 <= 0.0 && d2 <= 0.0) {
+        cp = a;
+        projType = 0;
+        projIdx = 0;
+    } else {
+        const Eigen::Vector3d bp = p - b;
+        const double d3 = ab.dot(bp);
+        const double d4 = ac.dot(bp);
+
+        // Vertex region outside B
+        if (d3 >= 0.0 && d4 <= d3) {
+            cp = b;
+            projType = 0;
+            projIdx = 1;
+        } else {
+            const double vc = d1 * d4 - d3 * d2;
+
+            // Edge region AB
+            if (vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0) {
+                const double denom = d1 - d3;
+                double t = 0.0;
+                if (std::abs(denom) > eps) {
+                    t = d1 / denom;
+                }
+                cp = a + t * ab;
+                projType = 1;
+                projIdx = 0; // edge 0 -> 1
+            } else {
+                const Eigen::Vector3d cpv = p - c;
+                const double d5 = ab.dot(cpv);
+                const double d6 = ac.dot(cpv);
+                // Vertex region outside C
+                if (d6 >= 0.0 && d5 <= d6) {
+                    cp = c;
+                    projType = 0;
+                    projIdx = 2;
+                } else {
+                    const double vb = d5 * d2 - d1 * d6;
+                    // Edge region AC
+                    if (vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0) {
+                        const double denom = d2 - d6;
+                        double t = 0.0;
+                        if (std::abs(denom) > eps) {
+                            t = d2 / denom;
+                        }
+                        cp = a + t * ac;
+                        projType = 1;
+                        projIdx = 2; // edge 2 -> 0
+                    } else {
+                        const double va = d3 * d6 - d5 * d4;
+                        // Edge region BC
+                        if (va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0) {
+                            const double denom = (d4 - d3) + (d5 - d6);
+                            double t = 0.0;
+                            if (std::abs(denom) > eps) {
+                                t = (d4 - d3) / denom;
+                            }
+                            cp = b + t * (c - b);
+                            projType = 1;
+                            projIdx = 1; // edge 1 -> 2
+                        } else {
+                            const double denom = va + vb + vc;
+                            if (std::abs(denom) <= eps) {
+                                // Degenerate triangle fallback.
+                                Eigen::Vector3d pab = closestPointOnSegment3D(p, a, b, true);
+                                Eigen::Vector3d pbc = closestPointOnSegment3D(p, b, c, true);
+                                Eigen::Vector3d pca = closestPointOnSegment3D(p, c, a, true);
+
+                                double dab = (p - pab).squaredNorm();
+                                double dbc = (p - pbc).squaredNorm();
+                                double dca = (p - pca).squaredNorm();
+
+                                if (dab <= dbc && dab <= dca) {
+                                    cp = pab;
+                                    projType = 1;
+                                    projIdx = 0;
+                                } else if (dbc <= dab && dbc <= dca) {
+                                    cp = pbc;
+                                    projType = 1;
+                                    projIdx = 1;
+                                } else {
+                                    cp = pca;
+                                    projType = 1;
+                                    projIdx = 2;
+                                }
+                            } else {
+                                const double invDenom = 1.0 / denom;
+                                const double vBary = vb * invDenom;
+                                const double wBary = vc * invDenom;
+                                cp = a + vBary * ab + wBary * ac;
+                                projType = 2;
+                                projIdx = -1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Optional snapping override.
+    if (snapTol > 0.0) {
+        for (int i = 0; i < 3; i++) {
+            if ((cp - triVerts[i]).norm() <= snapTol) {
+                projType = 0;
+                projIdx = i;
+                return triVerts[i];
+            }
+        }
+
+        for (int i = 0; i < 3; i++) {
+            int j = (i + 1) % 3;
+            Eigen::Vector3d ecp = closestPointOnSegment3D(cp, triVerts[i], triVerts[j], true);
+
+            if ((cp - ecp).norm() <= snapTol) {
+                projType = 1;
+                projIdx = i;
+                return ecp;
+            }
+        }
+    }
+
+    return cp;
+}
+
 // Computes the closest point to a bilinear patch
 // NOTE: Currently uses a "cheap" convergence check by thresholding u, v
-Eigen::Vector3d bilinearPatchClosestPoint(const std::vector<Eigen::Vector3d>& patchVerts, const Eigen::Vector3d& p, double eps, int max_iter) {
+int bilinearPatchClosestPoint(const std::vector<Eigen::Vector3d>& patchVerts, const Eigen::Vector3d& p, double& u, double& v,double eps, int max_iter) {
     if (patchVerts.size() != 4) {
-        return Eigen::Vector3d::Zero();
+        return -1;
     }
     // 1. Find closest point on segments
     Eigen::Vector3d new_guess;
-    double u, v;
     double closest = std::numeric_limits<double>::infinity();
     int closest_idx = 0;
     for (int e = 0; e < 4; e++) {
@@ -488,15 +637,259 @@ Eigen::Vector3d bilinearPatchClosestPoint(const std::vector<Eigen::Vector3d>& pa
             break;
         }
     }
-    std::cout << "Converged in " << counter << " iterations: (" << u << ", " << v << ")" << std::endl;
-    return bilinearPatch(patchVerts, u, v);
-    // return new_guess;
+    // std::cout << "Converged in " << counter << " iterations: (" << u << ", " << v << ")" << std::endl;
+    return 1;
 }
+
+Eigen::Vector3d bilinearPatchClosestPoint(const std::vector<Eigen::Vector3d>& patchVerts, const Eigen::Vector3d& p, double eps, int max_iter) {
+    double u, v;
+    if (bilinearPatchClosestPoint(patchVerts, p, u, v, eps, max_iter) != -1) {
+        return Eigen::Vector3d::Zero();
+    }
+    return bilinearPatch(patchVerts, u, v);
+}
+
+// Overload with returned element type
+Eigen::Vector3d bilinearPatchClosestPoint(const std::vector<Eigen::Vector3d>& patchVerts, const Eigen::Vector3d& p,
+                                              int& projType, int& projIdx, double snapTol, double eps, int max_iter) {
+    projType = -1;
+    projIdx = -1;
+
+    if (patchVerts.size() != 4) {
+        return Eigen::Vector3d::Zero();
+    }
+
+    Eigen::Vector3d new_guess;
+    double u = 0.0;
+    double v = 0.0;
+
+    double closest = std::numeric_limits<double>::infinity();
+    int closest_idx = 0;
+
+    for (int e = 0; e < 4; e++) {
+        Eigen::Vector3d closestOnEdge = closestPointOnSegment3D(
+            p,
+            patchVerts[e],
+            patchVerts[(e + 1) % 4],
+            true
+        );
+        double dist = (p - closestOnEdge).squaredNorm();
+        if (dist < closest) {
+            closest = dist;
+            new_guess = closestOnEdge;
+            closest_idx = e;
+        }
+    }
+
+    double edge_len = (patchVerts[(closest_idx + 1) % 4] - patchVerts[closest_idx]).norm();
+    double seg_len = (new_guess - patchVerts[closest_idx]).norm();
+
+    if (edge_len <= eps) {
+        edge_len = 1.0;
+        seg_len = 0.0;
+    }
+
+    double t = seg_len / edge_len;
+
+    if (closest_idx == 0) {
+        u = t;
+        v = 0.0;
+    } else if (closest_idx == 1) {
+        u = 1.0;
+        v = t;
+    } else if (closest_idx == 2) {
+        u = 1.0 - t;
+        v = 1.0;
+    } else {
+        u = 0.0;
+        v = 1.0 - t;
+    }
+
+    Eigen::Vector3d a = patchVerts[1] - patchVerts[0];
+    Eigen::Vector3d b = patchVerts[2] - patchVerts[1];
+    Eigen::Vector3d c = patchVerts[3] - patchVerts[2];
+    Eigen::Vector3d d = patchVerts[0] - patchVerts[3];
+
+    for (int iter = 0; iter < max_iter; iter++) {
+        double old_u = u;
+        double old_v = v;
+
+        Eigen::Vector3d A = (1.0 - v) * patchVerts[0] + v * patchVerts[3];
+        Eigen::Vector3d B = (1.0 - v) * a - v * c;
+
+        double denom = B.squaredNorm();
+        if (denom > 1e-16) {
+            u = std::clamp((p - A).dot(B) / denom, 0.0, 1.0);
+        }
+
+        Eigen::Vector3d C = (1.0 - u) * patchVerts[0] + u * patchVerts[1];
+        Eigen::Vector3d D = u * b - (1.0 - u) * d;
+
+        denom = D.squaredNorm();
+        if (denom > 1e-16) {
+            v = std::clamp((p - C).dot(D) / denom, 0.0, 1.0);
+        }
+
+        if (std::abs(u - old_u) <= eps && std::abs(v - old_v) <= eps) {
+            break;
+        }
+    }
+
+    Eigen::Vector3d cp = bilinearPatch(patchVerts, u, v);
+
+    double featureTol = snapTol > 0.0 ? snapTol : eps;
+
+    // Vertex classification.
+    if (snapTol > 0.0) {
+        for (int i = 0; i < 4; i++) {
+            if ((cp - patchVerts[i]).norm() <= snapTol) {
+                projType = 0;
+                projIdx = i;
+                return patchVerts[i];
+            }
+        }
+    }
+
+    // Parametric vertex classification, useful even when snapTol == 0.
+    if (u <= featureTol && v <= featureTol) {
+        projType = 0;
+        projIdx = 0;
+    } else if (u >= 1.0 - featureTol && v <= featureTol) {
+        projType = 0;
+        projIdx = 1;
+    } else if (u >= 1.0 - featureTol && v >= 1.0 - featureTol) {
+        projType = 0;
+        projIdx = 2;
+    } else if (u <= featureTol && v >= 1.0 - featureTol) {
+        projType = 0;
+        projIdx = 3;
+    } else if (v <= featureTol) {
+        projType = 1;
+        projIdx = 0;
+    } else if (u >= 1.0 - featureTol) {
+        projType = 1;
+        projIdx = 1;
+    } else if (v >= 1.0 - featureTol) {
+        projType = 1;
+        projIdx = 2;
+    } else if (u <= featureTol) {
+        projType = 1;
+        projIdx = 3;
+    } else {
+        projType = 2;
+        projIdx = -1;
+    }
+
+    // If snapping to edge is requested, replace cp with exact segment projection.
+    if (snapTol > 0.0 && projType == 1) {
+        int i = projIdx;
+        int j = (i + 1) % 4;
+        cp = closestPointOnSegment3D(cp, patchVerts[i], patchVerts[j], true);
+    }
+
+    return cp;
+}
+
 // Evaluate bilinear patch point at specified u, v
 // NOTE: I am not guarding values outside the range 0, 1
 Eigen::Vector3d bilinearPatch(const std::vector<Eigen::Vector3d>& patchVerts, double u, double v) {
     return (1 - v) * ((1 - u) * patchVerts[0] + u * patchVerts[1]) + v * ((1 - u) * patchVerts[3] + u * patchVerts[2]);
 }
+
+Eigen::Vector3d polygonClosestPointNewell(const std::vector<Eigen::Vector3d>& polyVerts, const Eigen::Vector3d& p,
+                                          const Eigen::Vector3d& polyNormal, int& projType, int& projIdx, double snapTol) {
+    projType = -1;
+    projIdx = -1;
+    const int n = polyVerts.size();
+
+    if (n < 3) {
+        return Eigen::Vector3d::Zero();
+    }
+
+    Eigen::Vector3d barycenter = Eigen::Vector3d::Zero();
+    for (int i = 0; i < n; i++) {
+        barycenter += polyVerts[i];
+    }
+    barycenter /= static_cast<double>(n);
+
+    Eigen::Vector3d t1;
+    Eigen::Vector3d t2;
+    buildPlaneBasis(polyNormal, t1, t2);
+
+    Eigen::Vector3d pProj3D = projectPointOntoPlane(polyNormal, barycenter, p);
+    Eigen::Vector2d pProj2D = convertTo2D(pProj3D, barycenter, t1, t2);
+    std::vector<Eigen::Vector2d> poly2D(n);
+
+    for (int i = 0; i < n; i++) {
+        Eigen::Vector3d viProj3D = projectPointOntoPlane(polyNormal, barycenter, polyVerts[i]);
+        poly2D[i] = convertTo2D(viProj3D, barycenter, t1, t2);
+    }
+    Eigen::Vector3d cp3D;
+    Eigen::Vector2d cp2D;
+
+    bool inside = pointInPolygon2D(pProj2D, poly2D);
+    if (inside) {
+        cp2D = pProj2D;
+        cp3D = revertTo3D(cp2D, barycenter, t1, t2);
+        projType = 2;
+        projIdx = -1;
+    } else {
+        double bestDist2 = std::numeric_limits<double>::infinity();
+        for (int i = 0; i < n; i++) {
+            int j = (i + 1) % n;
+            Eigen::Vector3d edgeCP = closestPointOnSegment3D(p, polyVerts[i], polyVerts[j], true);
+            double d2 = (p - edgeCP).squaredNorm();
+
+            if (d2 < bestDist2) {
+                bestDist2 = d2;
+                cp3D = edgeCP;
+                projType = 1;
+                projIdx = i;
+            }
+        }
+        if (snapTol > 0.0) {
+            for (int i = 0; i < n; i++) {
+                if ((cp3D - polyVerts[i]).norm() <= snapTol) {
+                    projType = 0;
+                    projIdx = i;
+                    return polyVerts[i];
+                }
+            }
+        }
+        return cp3D;
+    }
+
+    // Snap inside-face projection to local vertices/edges.
+    if (snapTol > 0.0) {
+        for (int i = 0; i < n; i++) {
+            if ((cp2D - poly2D[i]).norm() <= snapTol) {
+                projType = 0;
+                projIdx = i;
+                return polyVerts[i];
+            }
+        }
+
+        for (int i = 0; i < n; i++) {
+            int j = (i + 1) % n;
+            Eigen::Vector2d edgeCP2D = closestPointOnSegment2D(cp2D, poly2D[i], poly2D[j], true);
+            double d = (cp2D - edgeCP2D).norm();
+            if (d <= snapTol) {
+                Eigen::Vector2d e = poly2D[j] - poly2D[i];
+                double denom = e.squaredNorm();
+                double t = 0.0;
+                if (denom > 1e-20) {
+                    t = (edgeCP2D - poly2D[i]).dot(e) / denom;
+                    t = std::clamp(t, 0.0, 1.0);
+                }
+                projType = 1;
+                projIdx = i;
+                return polyVerts[i] + t * (polyVerts[j] - polyVerts[i]);
+            }
+        }
+    }
+    return cp3D;
+}
+
 
 // Converts a 3D direction into an angle in the tangent plane spanned by t1, t2.
 // Returns false if the projected direction is degenerate.

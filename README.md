@@ -21,14 +21,11 @@ cd ..
 # Updates and Notes
 **Update 7/28**
 
-Weight authoring complete! It's clear that applying to both def grads and positions is both wrong and unintuitive; I have it only applied to def grads at the moment and I think it's better.
-
-Next, for projection posing I REALLY need barycentric coordinates for each projection. This should lead naturally into the animation support for PM, where we use the offset and a local frame rotation to propagate deformations from the mesh onto the curvenet. This seems to imply that I need to either have heavy interfacing between the backend/frontend curvenets + meshes, or I need to bake the curvenet class into each UI somehow... More to ponder.
+Starting to work on extracting barycentric coordinates for a projection. Got the mesh side, now I need to hook it up to the curvenet/dcurvenet side. This will be useful in projection posing. This should lead naturally into the animation support for PM, where we use the offset and a local frame rotation to propagate deformations from the mesh onto the curvenet. This seems to imply that I need to either have heavy interfacing between the backend/frontend curvenets + meshes, or I need to bake the curvenet class into each UI somehow... More to ponder.
 
 Next few TODO's:
 - Store barycentric coordinates for each dcurvenet vertex's projection. This will enable projection posing + later animation/face-rig compatibility
 - On the front end, my curve representation needs to be broad enough to handle catmull-rom and cubic bezier. Leave this for Blender/Maya API
-- Also create BVH for faster distance querying --> use an elimination strategy by keeping only the closest possible candidates until we hit a low enough set of leaves, then query all faces in those leaves.
 - Code cleanup: It's getting messy, let's clean it up...
 
 It's also time to start thinking about the plug-in itself. It looks like Maya and Blender's Bezier curve types are not robust enough to handle multiple adjacent curves to a control. May need to do some front-end magic to make this happen. Thoughts on Houdini as well?
@@ -41,7 +38,7 @@ Important note about Eigen. For Eigen fixed-size containers that are a multiple 
 
 - *Code Cleanup*: Change checks into asserts and add error flags. Delete unused variables, uniformify naming.
 
-- *Curvenet-Adjacent Features*: (1) Add support for face rigging. This is less of a profilemover class problem, but perhaps a new class called facerig, which combines the mesh class with the curvenet and dcurvenet classes?
+- *Curvenet-Adjacent Features*: (1) Add support for face rigging. This is less of a profilemover class problem, but perhaps a new class called facerig, which combines the mesh class with the curvenet and dcurvenet classes? Basically, add a bunch of robustness to the curvenet/dcurvenet classes and their surrounding features.
 
 - *Robustness*: A couple of extra things to try once its tested and stable: (1) use a better arclength curve sampling strategy than the naive one we currently have --> Do we need to? Naive samples with many more points is potentially just faster and simpler; (2) Preliminary validity checks and unique error signatures (1) Test manifoldness + planarity of faces, 2. Test that no projected vertices collide, 3. Bound the sampling rate by the snapping criteria, 4. Test failure modes of the geodesics step (do we catch most/all errors?) 4. Test that the input curvenets/deformed curvenets do not have degenerate tangents/normals, 5. Test validity of input splines at init AND at runtime i.e., no degenerate splines such as when start and endpoint have the same location and tangent vectors, 6. Test mesh orientability code. 7. Test validity of input meshes and curve networks. Prevent curvenets and meshes with loose verts/edges or clean them up before using.
 

@@ -63,11 +63,24 @@ namespace Utils {
     
     // Computes the closest point to a triangle
     Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d> triVerts, const Eigen::Vector3d p);
+    // Overload with projection type
+    Eigen::Vector3d triangleClosestPoint(const std::vector<Eigen::Vector3d>& triVerts, const Eigen::Vector3d& p, 
+                                         int& projType, int& projIdx, double snapTol = 0.0);
 
     // Computes the closest point to a bilinear patch
     Eigen::Vector3d bilinearPatchClosestPoint(const std::vector<Eigen::Vector3d>& patchVerts, const Eigen::Vector3d& p, double eps = 1e-6, int max_iter = 15);
+    int bilinearPatchClosestPoint(const std::vector<Eigen::Vector3d>& patchVerts, const Eigen::Vector3d& p, double& u, double& v, double eps = 1e-6, int max_iter = 15);
+    // Overload with projection type
+    Eigen::Vector3d bilinearPatchClosestPoint(const std::vector<Eigen::Vector3d>& patchVerts, const Eigen::Vector3d& p,
+                                              int& projType, int& projIdx, double snapTol = 0.0, double eps = 1e-8, int max_iter = 15);
     // Evaluate a bilinear patch query point given u and v
     Eigen::Vector3d bilinearPatch(const std::vector<Eigen::Vector3d>& patchVerts, double u, double v);
+    
+    // Computes closest point to a Newell polygon
+    Eigen::Vector3d polygonClosestPointNewell(const std::vector<Eigen::Vector3d>& polyVerts, const Eigen::Vector3d& p,
+                                              const Eigen::Vector3d& polyNormal, int& projType, int& projIdx, double snapTol = 0.0);
+
+
     // Compute the angle of a vector starting at an origin and ending at a target, when projected onto a basis spanned by t1 and t2.
     bool directionAngleInPlane(
         const Eigen::Vector3d& origin,

@@ -10,6 +10,13 @@
 
 namespace DCurvenet {
 
+    // Projection data onto the corresponding mesh for each vertex
+    struct projData {
+        int f = -1;
+        Eigen::VectorXd MVC_weights;
+        Eigen::Vector3d projVec = Eigen::Vector3d::Zero();
+    };
+
     struct Vert {
         Eigen::Vector3d pos;
         Eigen::Vector3d n = Eigen::Vector3d::Zero();    // Init to zero, since most vertices will not receive an initial normal
@@ -19,6 +26,9 @@ namespace DCurvenet {
         // cn_idx is redundant due to initialization, but better to be safe
         int cn_idx = -1;    // curvenet index if coincident with a control vertex
         int cn_type = -1;   // curvenet vertex type if coincident with a control vertex
+
+        // Robustness for future work
+        projData proj;
 
         // Weights
         double w = 1.0;
