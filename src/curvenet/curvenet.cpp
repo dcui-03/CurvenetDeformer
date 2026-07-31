@@ -1,6 +1,7 @@
 #include "curvenet.hpp"
 
 #include "utils/utils.hpp"
+#include "mesh/mesh.hpp"
 #include <Eigen/Core>
 #include <cmath>
 #include <array>
@@ -30,7 +31,9 @@ namespace Curvenet {
             inputTtoHE[S[1]] = he.first;
             inputTtoHE[S[2]] = he.second;
         }
-        ctrlNormalsFromMesh(M);
+        // Get projection data
+        ctrlProjDataFromMesh(M);
+        tanProjDataFromMesh(M);
         sortAdjHEAll();
         assignCtrlTypeAll();
         if (traceCurves() == -1) {
@@ -153,20 +156,45 @@ namespace Curvenet {
     }
 
     // Compute normals for each vertex by projecting onto a mesh
-    int curvenet::ctrlNormalsFromMesh(const Mesh::mesh& m) {
+    int curvenet::ctrlProjDataFromMesh(const Mesh::mesh& m) {
         #pragma omp parallel for
         for (int c = 0; c < C.size(); c++) {
             if (!C[c].active) {
                 continue;
             }
-            int elType, elIdx;
-            Eigen::Vector3d proj;
-            elType = m.computeVProjection(C[c].pos, proj, elIdx, false);
-            if (elType == -1) {
-                throw std::runtime_error("curvenet::ctrlNormalsFromMesh(): invalid normals");
+            Mesh::meshBindData bindData;
+            if (m.computeVBinding(C[c].pos, bindData) != 1) {
+                throw std::runtime_error("curvenet::ctrlProjDataFromMesh(): invalid bind data");
             }
-            Eigen::Vector3d n = m.getNormal(elType, elIdx);
+            Eigen::Vector3d n = m.getNormal(bindData.elType, bindData.elIdx);
+            // Copy over data
             editControlN(c, n);
+            C[c].proj.elType = bindData.elType;
+            C[c].proj.elIdx = bindData.elIdx;
+            C[c].proj.coords = bindData.coords;
+            C[c].proj.projVec = bindData.offset;
+            C[c].proj.projFrame = bindData.restFrame;
+        }
+        return 1;
+    }
+
+    // Compute normals for each vertex by projecting onto a mesh
+    int curvenet::tanProjDataFromMesh(const Mesh::mesh& m) {
+        #pragma omp parallel for
+        for (int he = 0; he < HE.size(); he++) {
+            if (!HE[he].active) {
+                continue;
+            }
+            Mesh::meshBindData bindData;
+            if (m.computeVBinding(HE[he].rest_tan, bindData) != 1) {
+                throw std::runtime_error("curvenet::tanProjDataFromMesh(): invalid bind data");
+            }
+            // Copy over data
+            HE[he].proj.elType = bindData.elType;
+            HE[he].proj.elIdx = bindData.elIdx;
+            HE[he].proj.coords = bindData.coords;
+            HE[he].proj.projVec = bindData.offset;
+            HE[he].proj.projFrame = bindData.restFrame;
         }
         return 1;
     }

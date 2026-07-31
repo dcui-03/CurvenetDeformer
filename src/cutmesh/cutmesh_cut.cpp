@@ -23,18 +23,17 @@ namespace Mesh {
         // 1. First, create a list of all projections (parallel)
         #pragma omp parallel for
         for (int v = 0; v < dCN_V.size(); v++) {
-            Eigen::Vector3d pos = dCN_V[v].pos;
-            Eigen::Vector3d proj;
+            // Since we already compute this at the dcurvenet level, grab the data from it
+            const DCurvenet::projData proj = dCN_V[v].proj;
             Eigen::Vector3d n;
-            vertProjData projData = M->computeVProjection(pos, proj);
-            if (projData.elType == 0) {  // Vertex
-                n = M->V[projData.elIdx].n;
-            } else if (projData.elType == 1) {   // Edge
-                n = M->E[projData.elIdx].n;
+            if (proj.elType == 0) {  // Vertex
+                n = M->V[proj.elIdx].n;
+            } else if (proj.elType == 1) {   // Edge
+                n = M->E[proj.elIdx].n;
             } else {    // Face
-                n = M->F[projData.elIdx].n;
+                n = M->F[proj.elIdx].n;
             }
-            proj_V[v] = createVertex(proj, n, 1, -1, projData.elType, projData.elIdx, pos-proj);
+            proj_V[v] = createVertex(dCN_V[v].pos - proj.projVec, n, 1, -1, proj.elType, proj.elIdx, proj.projVec);
         }
         
         // Now, add all vertices into the cutmesh (SEQUENTIAL)

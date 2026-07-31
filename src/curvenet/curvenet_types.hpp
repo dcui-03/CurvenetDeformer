@@ -10,8 +10,9 @@ namespace Curvenet {
 
     // Projection data onto the corresponding mesh for tangents and handles
     struct projData {
-        int f = -1;
-        Eigen::VectorXd MVC_weights;
+        int elType = -1;
+        int elIdx = -1;
+        Eigen::VectorXd coords;
         Eigen::Vector3d projVec = Eigen::Vector3d::Zero();
         // Local coordinate frame at projection point
         Eigen::Matrix3d projFrame = Eigen::Matrix3d::Identity();

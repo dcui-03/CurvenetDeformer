@@ -12,8 +12,9 @@ namespace DCurvenet {
 
     // Projection data onto the corresponding mesh for each vertex
     struct projData {
-        int f = -1;
-        Eigen::VectorXd MVC_weights;
+        int elType = -1;
+        int elIdx = -1;
+        Eigen::VectorXd coords;
         Eigen::Vector3d projVec = Eigen::Vector3d::Zero();
     };
 

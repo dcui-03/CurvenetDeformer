@@ -114,7 +114,7 @@ namespace ProfileMover {
         } else {
             auto dCN_start = std::chrono::steady_clock::now();
             // Initialize discrete curvenet
-            dCN = DCurvenet::dcurvenet(&CN);
+            dCN = DCurvenet::dcurvenet(&CN, &M);
             dCN_init = true;
             auto dCN_end = std::chrono::steady_clock::now();
             std::chrono::duration<double> dCN_elapsed = dCN_end - dCN_start;

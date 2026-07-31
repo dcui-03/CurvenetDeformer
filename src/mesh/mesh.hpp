@@ -44,6 +44,9 @@ class mesh {
         int getNumActiveE() const;
         int getNumActiveF() const;
 
+        // Recover a point location from stored coordinates
+        int recoverCoords(int elType, int elIdx, const Eigen::VectorXd& coords, Eigen::Vector3d& p, bool fast = true);
+
         // Get mean edge length
         double getMeanE() const;
         // Get bbox diagonal length

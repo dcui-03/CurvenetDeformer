@@ -70,7 +70,8 @@ class curvenet {
         int editControlN(int c, Eigen::Vector3d normal);
 
         // --------- OTHER -----------
-        int ctrlNormalsFromMesh(const Mesh::mesh& m);
+        int ctrlProjDataFromMesh(const Mesh::mesh& m);
+        int tanProjDataFromMesh(const Mesh::mesh& m);
         int sortAdjHEAll();
         int assignCtrlTypeAll();
 

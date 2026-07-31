@@ -1,6 +1,7 @@
 #include "dcurvenet.hpp"
 
 #include "curvenet/curvenet.hpp"
+#include "mesh/mesh.hpp"
 #include "utils/utils.hpp"
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -11,7 +12,7 @@
 
 namespace DCurvenet {
     // Takes the original curvenet and discretizes it
-    dcurvenet::dcurvenet(Curvenet::curvenet* CN): CN(CN) {
+    dcurvenet::dcurvenet(Curvenet::curvenet* CN, Mesh::mesh* M): CN(CN), M(M) {
         const std::vector<Curvenet::Control>& cnCtrl = CN->controls();
         int num_curves = CN->numCurves();
         // Defensive reset
@@ -39,6 +40,8 @@ namespace DCurvenet {
             int v = ctrlVerts[v_idx];
             rewireVertAdjHE(v);
         }
+        // Compute projection data
+        computeProjData();
 
         // 4. Compute all corner normals and widths
         std::vector<curveDeformData> curveData;
@@ -605,6 +608,24 @@ namespace DCurvenet {
                 HE[he].defData.newFrame.binormal = (HE[he].defData.newFrame.tangent.cross(HE[he].defData.newFrame.normal)).normalized();
                 HE[he].defData.newFrame.h = std::sqrt(std::abs(HE[he].defData.newFrame.l * HE[he].defData.newFrame.w));
             }
+        }
+        return 1;
+    }
+
+    // Compute projection data for this dcurvenet point
+    int dcurvenet::computeProjData() {
+        for (int v = 0; v < V.size(); v++) {
+            if (!V[v].active) {
+                continue;
+            }
+            Mesh::meshBindData bindData;
+            if (M->computeVBinding(V[v].pos, bindData) != 1) {
+                return -1;
+            }
+            V[v].proj.coords = bindData.coords;
+            V[v].proj.elType = bindData.elType;
+            V[v].proj.elIdx = bindData.elIdx;
+            V[v].proj.projVec = bindData.offset;
         }
         return 1;
     }

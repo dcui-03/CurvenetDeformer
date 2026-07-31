@@ -3,6 +3,7 @@
 
 #include "dcurvenet_types.hpp"
 #include "curvenet/curvenet.hpp"
+#include "mesh/mesh.hpp"
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <vector>
@@ -28,7 +29,7 @@ class dcurvenet {
         //       Curves are similar.
         // Takes the original curvenet and discretizes it
         // Alpha is the user-inputted sampling parameter
-        dcurvenet(Curvenet::curvenet* CN);
+        dcurvenet(Curvenet::curvenet* CN, Mesh::mesh* M);
         // Initialize with empty constructor
         dcurvenet();
 
@@ -83,6 +84,8 @@ class dcurvenet {
         int addCurve(int crv);
         // Rewire incoming/outgoing halfedges of an intersection vertex such that topology is correct
         int rewireVertAdjHE(int v);
+        // Compute projection data
+        int computeProjData();
 
         // --------- SCALED FRAME COMPUTATION -----------
         // For controls, computes their corner normals and widths. For non-intersections, this method does nothing (return -1)
@@ -131,6 +134,8 @@ class dcurvenet {
 
         // Pointer to parent curvenet
         Curvenet::curvenet* CN;
+        // Pointer to parent mesh
+        Mesh::mesh* M;
 };
 
 }   // namespace DCurvenet

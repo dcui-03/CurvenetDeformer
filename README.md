@@ -19,12 +19,13 @@ cd ..
 ```
 
 # Updates and Notes
-**Update 7/28**
+**Update 7/31**
 
-Starting to work on extracting barycentric coordinates for a projection. Got the mesh side, now I need to hook it up to the curvenet/dcurvenet side. This will be useful in projection posing. This should lead naturally into the animation support for PM, where we use the offset and a local frame rotation to propagate deformations from the mesh onto the curvenet. This seems to imply that I need to either have heavy interfacing between the backend/frontend curvenets + meshes, or I need to bake the curvenet class into each UI somehow... More to ponder.
+Curvenets and dCurvenets now have barycentric coordinates! I can now set up the facerig class if I want, although this is lower priority than ex. projection posing
 
 Next few TODO's:
-- Store barycentric coordinates for each dcurvenet vertex's projection. This will enable projection posing + later animation/face-rig compatibility
+- Projection posing
+- Face rigging using the profilerig class
 - On the front end, my curve representation needs to be broad enough to handle catmull-rom and cubic bezier. Leave this for Blender/Maya API
 - Code cleanup: It's getting messy, let's clean it up...
 

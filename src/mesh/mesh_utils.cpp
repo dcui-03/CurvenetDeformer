@@ -463,4 +463,43 @@ int mesh::computeBindFrame(int elType, int elIdx, Eigen::Matrix3d& frame) const 
     return 1;
 }
 
+// Recover a point location from stored coordinates
+int mesh::recoverCoords(int elType, int elIdx, const Eigen::VectorXd& coords, Eigen::Vector3d& p, bool fast) {
+    if (elType == 0) {  // verts
+        if (elIdx < 0 || elIdx >= V.size()) {
+            return -1;
+        } else {
+            p = V[elIdx].pos;
+        }
+    } else if (elType == 1) {  // edges
+        if ((elIdx < 0 || elIdx >= E.size()) || 
+            coords.size() != 1 || (coords(0) < 0.0 || coords(1) > 1.0)) {
+            return -1;
+        } else {
+            Eigen::Vector3d v1 = V[HE[E[elIdx].he].dest].pos;
+            Eigen::Vector3d v0 = V[HE[HE[E[elIdx].he].twin].dest].pos;
+            p = v0 + coords(0) * (v1 - v0);
+        }
+    } else if (elType == 2) {
+        if (elIdx < 0 || elIdx >= F.size()) {
+            return -1;
+        }
+        std::vector<Eigen::Vector3d> adjVerts = faceAdjVerts(elIdx);
+        if (coords.size() != adjVerts.size() || adjVerts.size() <= 2) {
+            return -1;
+        }
+        // Special exception for quads
+        if (adjVerts.size() == 4) {
+            p = Utils::bilinearPatch(adjVerts, coords(0), coords(1));
+        } else {    // Classic coordinates
+            // Stack
+            Eigen::MatrixXd adjVertsStack = (DECUtils::posOp(adjVerts)).transpose();
+            p = adjVertsStack * coords;
+        }
+    } else {
+        return -1;
+    }
+    return 1;
+}
+
 }   // namespace Mesh
