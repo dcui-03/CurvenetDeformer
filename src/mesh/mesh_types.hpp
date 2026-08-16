@@ -3,7 +3,6 @@
 
 #include <Eigen/Core>
 #include <vector>
-#include <array>
 
 // File with basic structs used by mesh class
 

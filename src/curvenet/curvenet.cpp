@@ -14,8 +14,7 @@
 
 namespace Curvenet {
     // Initialize from an existing list of controls, splines
-    curvenet::curvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, const Mesh::mesh& M, int alpha): alpha(alpha) {
-        meanE = M.getMeanE();
+    curvenet::curvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, const Mesh::mesh* M, int alpha): alpha(alpha) {
         for (int c = 0; c < Controls.size(); c++) {
             int new_c = addControl(Controls[c]);
             inputCtoC[c] = new_c;
@@ -28,14 +27,16 @@ namespace Curvenet {
             }
             int c0 = inputCtoC.at(S[0]);
             int c1 = inputCtoC.at(S[3]);
-            std::pair<int, int> he = addSpline(c0, c1, Tangents[S[1]], Tangents[S[2]]);
+            std::pair<int, int> he = addSpline(c0, c1, Tangents[S[1]], Tangents[S[2]], M);
             inputTtoHE[S[1]] = he.first;
             inputTtoHE[S[2]] = he.second;
         }
         // Get projection data
-        ctrlProjDataFromMesh(M);
-        tanProjDataFromMesh(M);
-        sortAdjHEAll();
+        if (M) {
+            ctrlProjDataFromMesh(*M);
+            tanProjDataFromMesh(*M);
+            sortAdjHEAll();
+        }
         assignCtrlTypeAll();
         if (traceCurves() == -1) {
             throw std::runtime_error("Failed to trace curve network.");
@@ -79,6 +80,8 @@ namespace Curvenet {
         C.clear();
         HE.clear();
         S.clear();
+        vertData.clear();
+        tanData.clear();
     }
 
     // Create new control
@@ -87,15 +90,18 @@ namespace Curvenet {
         C.emplace_back();
         C[c].pos = pos;
         C[c].new_pos = pos;
+        vertData.emplace_back();
         return c;
     }
     // Add a spline to the spline list given indices of the points
-    std::pair<int, int> curvenet::addSpline(int start, int end, Eigen::Vector3d t0, Eigen::Vector3d t1) {
+    std::pair<int, int> curvenet::addSpline(int start, int end, Eigen::Vector3d t0, Eigen::Vector3d t1, const Mesh::mesh* M) {
         // Create 2 new halfedges and a new spline
         int he0 = HE.size();
         int he1 = he0+1;
         HE.emplace_back();
         HE.emplace_back();
+        tanData.emplace_back();
+        tanData.emplace_back();
         int s = S.size();
         S.emplace_back();
 
@@ -113,7 +119,7 @@ namespace Curvenet {
         S[s].he = he0;
         // Determine sampling
         // NOTE: Setting sampling for the estimate to 75 for now
-        S[s].num_samples = computeNumSamples(arclenEst(s, 75));
+        S[s].num_samples = computeNumSamples(arclenEst(s, 75), M);
         // Insert spline into vertex list
         C[start].adjHE.push_back(he0);
         C[end].adjHE.push_back(he1);
@@ -144,12 +150,13 @@ namespace Curvenet {
             Eigen::Vector3d n = m.getNormal(bindData.elType, bindData.elIdx);
             // Copy over data
             editControlN(c, n);
-            C[c].proj.elType = bindData.elType;
-            C[c].proj.elIdx = bindData.elIdx;
-            C[c].proj.coords = bindData.coords;
-            C[c].proj.projVec = bindData.offset;
-            C[c].proj.projFrame = bindData.restFrame;
+            vertData[c].elType = bindData.elType;
+            vertData[c].elIdx = bindData.elIdx;
+            vertData[c].coords = bindData.coords;
+            vertData[c].projVec = bindData.offset;
+            vertData[c].projFrame = bindData.restFrame;
         }
+        setMesh = true;
         return 1;
     }
 
@@ -165,12 +172,13 @@ namespace Curvenet {
                 throw std::runtime_error("curvenet::tanProjDataFromMesh(): invalid bind data");
             }
             // Copy over data
-            HE[he].proj.elType = bindData.elType;
-            HE[he].proj.elIdx = bindData.elIdx;
-            HE[he].proj.coords = bindData.coords;
-            HE[he].proj.projVec = bindData.offset;
-            HE[he].proj.projFrame = bindData.restFrame;
+            tanData[he].elType = bindData.elType;
+            tanData[he].elIdx = bindData.elIdx;
+            tanData[he].coords = bindData.coords;
+            tanData[he].projVec = bindData.offset;
+            tanData[he].projFrame = bindData.restFrame;
         }
+        setMesh = true;
         return 1;
     }
 
@@ -218,6 +226,9 @@ namespace Curvenet {
         return 1;   // success
     }
     int curvenet::sortAdjHEAll() {
+        if (!setMesh) {
+            return -1;
+        }
         for (int c = 0; c < C.size(); c++) {
             if (C[c].active && !C[c].sorted) {
                 if (sortAdjHE(c) == -1) {

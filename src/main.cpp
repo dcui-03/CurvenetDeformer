@@ -4,15 +4,11 @@
 #include "polyscope/point_cloud.h"
 
 #include <Eigen/Core>
-#include <chrono>
 #include <memory>
 #include <iostream>
 #include <string>
-#include <cmath>
-#include <tuple>
 #include <array>
 #include <vector>
-#include <stdexcept>
 #include <glm/glm.hpp>
 #include <glm/vec3.hpp>
 

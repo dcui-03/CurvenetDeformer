@@ -2,17 +2,13 @@
 
 #include "curvenet/curvenet.hpp"
 #include "mesh/mesh.hpp"
-#include "utils/utils.hpp"
 #include <Eigen/Core>
-#include <Eigen/Geometry>
-#include <Eigen/Sparse>
 #include <vector>
-#include <cmath>
-#include <utility>
+#include <algorithm>
 
-namespace DCurvenet {
+namespace Polynet {
     // Takes the original curvenet and discretizes it
-    dcurvenet::dcurvenet(Curvenet::curvenet* CN, Mesh::mesh* M): CN(CN) {
+    dcurvenet::dcurvenet(Curvenet::curvenet* CN, const Mesh::mesh* M, bool sampleNaive): CN(CN), sampleNaive(sampleNaive) {
         const std::vector<Curvenet::Control>& cnCtrl = CN->controls();
         int num_curves = CN->numCurves();
         // Defensive reset
@@ -20,6 +16,8 @@ namespace DCurvenet {
         HE.clear();
         E.clear();
         C.clear();
+        vertData.clear();
+        curveCNIdx.clear();
         // 1. First copy in the control points
         int num_controls = cnCtrl.size();
         std::vector<int> ctrlVerts(num_controls);
@@ -30,18 +28,21 @@ namespace DCurvenet {
         }
         // 2. Initialize new dCN copies of the CN curves
         for (int crv = 0; crv < num_curves; crv++) {
-            int c = addCurve(crv);
+            int c = addCurve(crv, sampleNaive);
             inputCrvToC[crv] = c;
         }
 
         // 3. Iterate over every control vertex that is an intersection/anchor and rewire its outgoing/incoming halfedges
-        // NOTE: This is not really necessary. We already have the outgoing order of halfedges per control vertex, and we will never need to traverse betweem curves
+        // NOTE: This is not really necessary. We already have the outgoing order of halfedges per control vertex, and we will never need to traverse betwen curves
         for (int v_idx = 0; v_idx < ctrlVerts.size(); v_idx++) {
             int v = ctrlVerts[v_idx];
-            rewireVertAdjHE(v);
+            rewireVertAdjHE(v, CN->setMesh);
         }
         // Compute projection data
-        computeProjData(M);
+        if (M) {
+            computeProjData(M);
+            setMesh = true;
+        }
     }
 
     // Update the new frames on all halfedges
@@ -65,7 +66,7 @@ namespace DCurvenet {
                 int s = splines[s_idx];
                 int n_samples = cnSpline[s].num_samples;
                 // Assume n_samples will always be > 3
-                const std::vector<Eigen::Vector3d> samples = CN->unifSample(s, n_samples);
+                const std::vector<Eigen::Vector3d> samples = sampleNaive ? CN->sampleBezierNaive(s, n_samples) : CN->unifSample(s, n_samples);
                 // Exploit the fact that this matches the halfedge direction that the curve was constructed from
                 for (int i = 1; i < samples.size(); i++) {
                     // for numerical reasons, only copy in non-controls
@@ -87,62 +88,21 @@ namespace DCurvenet {
 
     // Add a new vertex that matches an existing control
     int dcurvenet::addVert(Curvenet::Control ctrl, int ctrl_idx) {
-        int v = V.size();
-        V.emplace_back();
-        V[v].n = ctrl.n;
-        V[v].pos = ctrl.pos;
-        V[v].new_pos = ctrl.pos;
-        V[v].cn_idx = ctrl_idx;
-        V[v].cn_type = ctrl.cType;
+        int v = polynet::addVert(ctrl.pos, ctrl.n);
         V[v].adjHE.resize(ctrl.adjHE.size(), -1);
+        vertData.emplace_back();
+        vertData[v].cn_idx = ctrl_idx;
+        vertData[v].cn_type = ctrl.cType;
         return v;
     }
     // Add a vertex given its parameters
-    int dcurvenet::addVert(Eigen::Vector3d new_pos, Eigen::Vector3d new_n, int ctrl_idx, int ctrl_type, int adjSize) {
-        int v = V.size();
-        V.emplace_back();
-        V[v].n = new_n;
-        V[v].pos = new_pos;
-        V[v].new_pos = new_pos;
-        V[v].cn_idx = ctrl_idx;
-        V[v].cn_type = ctrl_type;
-        V[v].adjHE.resize(adjSize, -1);
+    int dcurvenet::addVert(Eigen::Vector3d new_pos, Eigen::Vector3d new_n) {
+        int v = polynet::addVert(new_pos, new_n);
+        vertData.emplace_back();
         return v;
     }
-    // Add a new edge in and return its halfedges
-    int dcurvenet::addEdge(int origin, int dest, int prev_he0, int next_he1, int c) {
-        if (origin < 0 || origin >= V.size() || dest < 0 || dest >= V.size()) {
-            return -1;
-        }
-        int e = E.size();
-        E.emplace_back();
-        int he0 = HE.size();
-        int he1 = he0+1;
-        HE.emplace_back();
-        HE.emplace_back();
-        
-        // Rewire
-        E[e].he = he0;
-        E[e].curve = c;
-        HE[he0].dest = dest;
-        HE[he1].dest = origin;
-        HE[he0].twin = he1;
-        HE[he1].twin = he0;
-        HE[he0].prev = prev_he0;
-        HE[he1].next = next_he1;
-        HE[he0].edge = e;
-        HE[he1].edge = e;
-        if (prev_he0 != -1) {
-            HE[prev_he0].next = he0;
-        }
-        if (next_he1 != -1) {
-            HE[next_he1].prev = he1;
-        }
-
-        return e;
-    }
     // Add a curve that matches an input curvenet curve
-    int dcurvenet::addCurve(int crv) {
+    int dcurvenet::addCurve(int crv, bool sampleNaive) {
         const std::vector<Curvenet::HalfEdge>& cnHE = CN->HE;
         const std::vector<Curvenet::CubicSpline>& cnSpline = CN->S;
         const std::vector<Curvenet::Curve>& cnCrv = CN->Crv;
@@ -155,7 +115,7 @@ namespace DCurvenet {
         }
         int c = C.size();
         C.emplace_back();
-        C[c].cn_idx = crv;
+        curveCNIdx.push_back(crv);
 
         // Track the previous positive halfedge and previous negative halfedge
         // so that each newly added segment is wired into the curve chain.
@@ -178,6 +138,8 @@ namespace DCurvenet {
             // Get the start and end dCN vertices
             int s_start = inputCtoV.at(cn_start);
             int s_end   = inputCtoV.at(cn_end);
+            vertData[s_start].splineT.push_back({s, 0.0});
+            vertData[s_end].splineT.push_back({s, 1.0});
             if (s_idx == 0) {
                 C[c].start = s_start;
                 temp_origin = s_start;
@@ -188,7 +150,22 @@ namespace DCurvenet {
 
             // Sample the spline
             int n_samples = cnSpline[s].num_samples;
-            const std::vector<Eigen::Vector3d> samples = CN->unifSample(s, n_samples);
+            std::vector<Eigen::Vector3d> samples;
+            std::vector<double> sampleT;
+            if (sampleNaive) {
+                samples = CN->sampleBezierNaive(s, n_samples);
+                sampleT.resize(n_samples);
+                double h = 1.0 / (n_samples - 1);
+                for (int i = 0; i < n_samples; i++) {
+                    sampleT[i] = std::min(1.0, i * h);
+                }
+            } else {
+                sampleT = CN->unifSampleT(s, n_samples);
+                samples.resize(sampleT.size());
+                for (int i = 0; i < static_cast<int>(sampleT.size()); i++) {
+                    samples[i] = CN->tSampleBezier(s, sampleT[i]);
+                }
+            }
             // Get the local spline index for the start and end vertices
             std::vector<int> startLocalSplineIdx = CN->controlLocalSplineIdx(cn_start, s);
             std::vector<int> endLocalSplineIdx   = CN->controlLocalSplineIdx(cn_end, s);
@@ -205,6 +182,7 @@ namespace DCurvenet {
                     v = s_end;
                 } else {    // Interior sample
                     v = addVert(samples[i]);
+                    vertData[v].splineT.push_back({s, sampleT[i]});
                 }
                 // Add a new edge
                 int new_edge = addEdge(temp_origin, v, prev_he0, next_he1, c);
@@ -213,7 +191,7 @@ namespace DCurvenet {
                 int he1 = HE[he0].twin;         // negative/opposite direction
 
                 // Assign adjacent halfedge(s) for each prev vert
-                if (V[temp_origin].cn_idx < 0) {    // Interior vert
+                if (vertData[temp_origin].cn_idx < 0) {    // Interior vert
                     V[temp_origin].adjHE.clear();
                     V[temp_origin].adjHE.push_back(he0);
                 } else if (i == 1) {    // Previous vert must be the spline start
@@ -238,112 +216,24 @@ namespace DCurvenet {
 
         return c;
     }
-    // Rewire incoming and outgoing halfedges of intersection and anchor vertices
-    int dcurvenet::rewireVertAdjHE(int v) {
-        const std::vector<int> adjHE = V[v].adjHE;
-        for (int he = 0; he < adjHE.size(); he++) {
-            int he0 = adjHE[he];
-            int he1 = adjHE[(he+1)%adjHE.size()];
-            HE[he0].prev = HE[he1].twin;
-            HE[HE[he1].twin].next = he0;
-        }
-        return 1;
-    }
 
-
-    // Compute projection data for this dcurvenet point
-    int dcurvenet::computeProjData(Mesh::mesh* M) {
-        for (int v = 0; v < V.size(); v++) {
-            if (!V[v].active) {
-                continue;
-            }
-            Mesh::meshBindData bindData;
-            if (M->computeVBinding(V[v].pos, bindData) != 1) {
-                return -1;
-            }
-            V[v].proj.coords = bindData.coords;
-            V[v].proj.elType = bindData.elType;
-            V[v].proj.elIdx = bindData.elIdx;
-            V[v].proj.projVec = bindData.offset;
-        }
-        return 1;
-    }
-
-    // Propagate weights to rest of curvenet using Laplacian
+    // Propagate weights to rest of curvenet using a Laplacian
     int dcurvenet::propagateWeights() {
-        using T = Eigen::Triplet<double>;
-        std::vector<T> tripletList;
-        tripletList.reserve(E.size() * 4);  // Conservative overestimate
-        // First, build Laplacian system
-        Eigen::SparseMatrix<double> cnL(V.size(), V.size());
-        // Eigen::VectorXd M(V.size());
-        Eigen::VectorXd f(V.size());
-        f.setZero();
-        // M.setZero();
-        std::vector<bool> fixed(V.size(), false);
-        int num_fixed = 0;
-        // Process fixed verts first
+        // Sync fixed/value info from the source curvenet's controls into the base's generic fields
         for (int v = 0; v < V.size(); v++) {
-            int v_type = V[v].cn_type;
-            int v_idx = V[v].cn_idx;
-
+            int v_type = vertData[v].cn_type;
+            int v_idx = vertData[v].cn_idx;
             if (v_type != -1 && CN->C[v_idx].fixed_w) {
-                fixed[v] = true;
+                V[v].fixed_w = true;
                 V[v].w = CN->C[v_idx].w;
-                f[v] = V[v].w;
-                tripletList.push_back(T(v, v, 1.0));
-                num_fixed++;
+            } else {
+                V[v].fixed_w = false;
             }
         }
-        if (num_fixed == 0) {
-            for (int v = 0; v < V.size(); v++) {
-                V[v].w = 1.0;
-            }
-            return 1;
-        }
-        for (int e = 0; e < E.size(); e++) {
-            int v0 = HE[E[e].he].dest;
-            int v1 = HE[HE[E[e].he].twin].dest;
-
-            int v0_idx = V[v0].cn_idx;
-            int v1_idx = V[v1].cn_idx;
-            // If both are fixed, then skip
-            if (fixed[v0] && fixed[v1]) {   // Unlikely case, but check anyways
-                continue;
-            }
-            double e_len = std::max((V[v1].pos - V[v0].pos).norm(), 1e-8);
-            double weight = 1/e_len;
-            bool f0 = fixed[v0];
-            bool f1 = fixed[v1];
-            // Add to diagonal entries
-            if (!f0 && !f1) {
-                tripletList.push_back(T(v0, v0,  weight));
-                tripletList.push_back(T(v1, v1,  weight));
-                tripletList.push_back(T(v0, v1, -weight));
-                tripletList.push_back(T(v1, v0, -weight));
-            } else if (!f0 && f1) {
-                tripletList.push_back(T(v0, v0, weight));
-                f[v0] += weight * V[v1].w;
-            } else if (f0 && !f1) {
-                tripletList.push_back(T(v1, v1, weight));
-                f[v1] += weight * V[v0].w;
-            }
-            // M[v0] += e_len;
-            // M[v1] += e_len;
-        }
-        cnL.setFromTriplets(tripletList.begin(), tripletList.end());
-        // M *= 0.5;
-        // Eigen::VectorXd RHS = M.asDiagonal() * f;
-        Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> factorL;
-        factorL.analyzePattern(cnL);
-        factorL.factorize(cnL);
-        Eigen::VectorXd new_weights = factorL.solve(f);
-        
-        // Redistribute weights
-        for (int v = 0; v < V.size(); v++) {
-            V[v].w = std::clamp(new_weights[v], 0.0, 1.0);
-        }
-
-        return 1;
+        return polynet::propagateWeights();
     }
-}   // namespace DCurvenet
+
+    bool dcurvenet::hasOrderedConnectivity() const {
+        return CN->setMesh;
+    }
+}   // namespace Polynet

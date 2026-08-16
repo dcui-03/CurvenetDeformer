@@ -3,14 +3,12 @@
 #include "../utils/decUtils.hpp"
 #include "../utils/utils.hpp"
 #include <Eigen/Core>
-#include <Eigen/Sparse>
 #include <Eigen/Dense>
 #include <vector>
 #include <limits>
 #include <queue>
 #include <utility>
 #include <algorithm>
-#include <iostream>
 
 // Utility functions for mesh (projection, etc.)
 

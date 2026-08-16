@@ -4,12 +4,10 @@
 #include "curvenet/curvenet.hpp"
 #include "dcurvenet/dcurvenet.hpp"
 #include "cutmesh/cutmesh.hpp"
-#include "utils/decUtils.hpp"
 #include "utils/utils.hpp"
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
-#include <Eigen/IterativeLinearSolvers>
 #include <chrono>
 #include <iostream>
 
@@ -102,7 +100,7 @@ namespace ProfileMover {
             return;
         }
         auto CN_start = std::chrono::steady_clock::now();
-        CN = Curvenet::curvenet(Controls, Tangents, Splines, M, alpha);
+        CN = Curvenet::curvenet(Controls, Tangents, Splines, &M, alpha);
         CN_init = true;
         auto CN_end = std::chrono::steady_clock::now();
         std::chrono::duration<double> CN_elapsed = CN_end - CN_start;
@@ -122,8 +120,11 @@ namespace ProfileMover {
         } else {
             auto dCN_start = std::chrono::steady_clock::now();
             // Initialize discrete curvenet
-            dCN = DCurvenet::dcurvenet(&CN, &M);
+            dCN = Polynet::dcurvenet(&CN, &M);
             dCN_init = true;
+            if (!dCN.hasOrderedConnectivity()) {
+                throw std::runtime_error("profilemover::computeDiscreteCurvenet(): discrete curvenet has no ordered connectivity; cannot compute local frames.");
+            }
             initDeformation();
             auto dCN_end = std::chrono::steady_clock::now();
             std::chrono::duration<double> dCN_elapsed = dCN_end - dCN_start;
@@ -162,7 +163,7 @@ namespace ProfileMover {
         return CM;
     }
 
-    const DCurvenet::dcurvenet& profilemover::discreteCurvenet() const {
+    const Polynet::dcurvenet& profilemover::discreteCurvenet() const {
         if (!dCN_init) {
             throw std::runtime_error("profilemover::discreteCurvenet(): discrete curvenet not initialized");
         }

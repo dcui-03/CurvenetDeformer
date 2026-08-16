@@ -2,9 +2,6 @@
 #pragma once
 
 #include <Eigen/Core>
-#include <vector>
-#include <array>
-#include <map>
 
 namespace psCurvenet {
     // NOTE: These use pointers, which should make deletion much easier

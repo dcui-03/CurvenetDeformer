@@ -6,7 +6,6 @@
 #include "mesh/mesh.hpp"
 #include "cutmesh/cutmesh.hpp"
 #include "profilemover_types.hpp"
-#include "utils/decUtils.hpp"
 #include <vector>
 #include <array>
 #include <map>
@@ -14,8 +13,6 @@
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
-#include <Eigen/IterativeLinearSolvers>
-#include <glm/glm.hpp>
 #include <glm/vec3.hpp>
 
 
@@ -33,7 +30,7 @@ class profilemover {
 
         // Getters in case we need it
         const Mesh::cutmesh& cutmesh() const;
-        const DCurvenet::dcurvenet& discreteCurvenet() const;
+        const Polynet::dcurvenet& discreteCurvenet() const;
 
         // Weights
         void assignWeight(int cnVert, bool fixed = true, double w = 1.0);
@@ -122,7 +119,7 @@ class profilemover {
         Curvenet::curvenet CN;
         bool CN_init = false;
         // Store the neutral discrete curvenet
-        DCurvenet::dcurvenet dCN;
+        Polynet::dcurvenet dCN;
         bool dCN_init = false;
         // Scaled frame / deformation gradient data on each dCN halfedge
         std::vector<heDeformData> heDefData;

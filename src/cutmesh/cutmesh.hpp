@@ -10,7 +10,7 @@
 #include <vector>
 #include <map>
 
-namespace DCurvenet {
+namespace Polynet {
     class dcurvenet;
 }
 
@@ -33,7 +33,7 @@ class cutmesh : public mesh {
     public:
         // Constructor
         // Copies in vertex and edge data from the reference mesh then applies the dCN to embed the curves
-        cutmesh(mesh* MRef, DCurvenet::dcurvenet* dCN);
+        cutmesh(mesh* MRef, Polynet::dcurvenet* dCN);
         cutmesh();
 
         // Helpers for profilemover class
@@ -95,7 +95,7 @@ class cutmesh : public mesh {
         // Pointer to a reference Mesh object
         mesh* M;
         // Pointer to a dCN object if necessary
-        DCurvenet::dcurvenet* dCN;
+        Polynet::dcurvenet* dCN;
 
         // Extra per-vertex data only cut-vertices need, parallel to V (same size/indexing)
         std::vector<CutData> cutData;

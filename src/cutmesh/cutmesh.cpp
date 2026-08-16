@@ -1,21 +1,11 @@
 #include "cutmesh.hpp"
 
-#include "dcurvenet/dcurvenet.hpp"
-#include "../utils/decUtils.hpp"
-#include "../utils/utils.hpp"
-#include <Eigen/Core>
-#include <Eigen/Sparse>
-#include <vector>
-#include <map>
-#include <limits>
-#include <utility>
-
 // Cutmesh class functions for initialization
 
 namespace Mesh {
 
 // Constructor takes the projected curvenet and the mesh, and produces a cut-mesh
-cutmesh::cutmesh(mesh* MRef, DCurvenet::dcurvenet* dCN): M(MRef), dCN(dCN) {
+cutmesh::cutmesh(mesh* MRef, Polynet::dcurvenet* dCN): M(MRef), dCN(dCN) {
     // Copy in vertex and edge data from the reference mesh
     if (!copyFromMesh()) {
         throw std::runtime_error("Failed to initialize copy from mesh.");

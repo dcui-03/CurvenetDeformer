@@ -2,7 +2,6 @@
 #pragma once
 
 #include <Eigen/Core>
-#include <vector>
 #include <utility>
 
 // File with basic structs used by the profilemover class

@@ -2,7 +2,6 @@
 #include "cutmesh.hpp"
 
 #include "dcurvenet/dcurvenet.hpp"
-#include "../utils/decUtils.hpp"
 #include "../utils/utils.hpp"
 #include <Eigen/Core>
 #include <vector>
@@ -18,14 +17,14 @@ namespace Mesh {
             return -1;
         }
         std::map<int, int> dCNVtoV;
-        const std::vector<DCurvenet::Vert>& dCN_V = dCN->V;
+        const std::vector<Polynet::Vert>& dCN_V = dCN->V;
         std::vector<Vert> proj_V(dCN_V.size());
         std::vector<CutData> proj_CD(dCN_V.size());
         // 1. First, create a list of all projections (parallel)
         #pragma omp parallel for
         for (int v = 0; v < dCN_V.size(); v++) {
             // Since we already compute this at the dcurvenet level, grab the data from it
-            const DCurvenet::projData proj = dCN_V[v].proj;
+            const Polynet::projData proj = dCN_V[v].proj;
             Eigen::Vector3d n;
             if (proj.elType == 0) {  // Vertex
                 n = M->V[proj.elIdx].n;
@@ -97,8 +96,8 @@ namespace Mesh {
         }
 
         // Trace the curves (SEQUENTIAL, due to geodesics)
-        const std::vector<DCurvenet::Edge>& dCN_E = dCN->E;
-        const std::vector<DCurvenet::HalfEdge>& dCN_HE = dCN->HE;
+        const std::vector<Polynet::Edge>& dCN_E = dCN->E;
+        const std::vector<Polynet::HalfEdge>& dCN_HE = dCN->HE;
         for (int e = 0; e < dCN_E.size(); e++) {
             // For this edge, connect the two associated vertices in the cutmesh
             int dCN_he0 = dCN_E[e].he;

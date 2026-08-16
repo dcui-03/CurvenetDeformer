@@ -2,12 +2,10 @@
 
 #include "dcurvenet/dcurvenet.hpp"
 #include "../utils/decUtils.hpp"
-#include "../utils/utils.hpp"
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <vector>
 #include <map>
-#include <limits>
 #include <utility>
 #include <iostream>
 

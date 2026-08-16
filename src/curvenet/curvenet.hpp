@@ -2,14 +2,13 @@
 #pragma once
 
 #include "curvenet_types.hpp"
-#include "curvenet_types.hpp"
 #include "mesh/mesh.hpp"
 #include <Eigen/Core>
 #include <vector>
 #include <array>
 #include <map>
 
-namespace DCurvenet {
+namespace Polynet {
     class dcurvenet;
 }
 
@@ -21,7 +20,7 @@ class curvenet {
     public:
         // Constructor takes four points [start, tangent 1, tangent 2, end], and associated normals
         // NOTE: Constructor assumes you already have no duplicates in your inputs
-        curvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, const Mesh::mesh& M, int alpha = 5);
+        curvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, const Mesh::mesh* M = nullptr, int alpha = 5);
         // Empty constructor
         curvenet();
 
@@ -51,8 +50,11 @@ class curvenet {
         // Takes a user parameter alpha which helps control sampling
         // Returns the length of the computed curve
         std::vector<Eigen::Vector3d> unifSample(int s, int n_samples = 50) const;
+        // Same as unifSample, but returns the t-values instead of the sampled points
+        std::vector<double> unifSampleT(int s, int n_samples = 50) const;
         // Compute number of samples to take on a spline given a user parameter alpha
-        int computeNumSamples(double arclen);
+        // Falls back to a fixed arclength-based heuristic if no mesh is given
+        int computeNumSamples(double arclen, const Mesh::mesh* M);
 
         // --------- EDITING -----------
         // Exposed normal augmentation
@@ -65,7 +67,7 @@ class curvenet {
         int sortAdjHEAll();
         int assignCtrlTypeAll();
 
-        friend class DCurvenet::dcurvenet;
+        friend class Polynet::dcurvenet;
     protected:
         // No class inheritance
     private:
@@ -74,7 +76,7 @@ class curvenet {
         int addControl(Eigen::Vector3d pos);
 
         // Add a spline given the start, end, and two tangent endpoints
-        std::pair<int, int> addSpline(int start, int end, Eigen::Vector3d t0, Eigen::Vector3d t1);
+        std::pair<int, int> addSpline(int start, int end, Eigen::Vector3d t0, Eigen::Vector3d t1, const Mesh::mesh* M);
 
         // --------- ITERATORS -----------
         // Get the adjacent tangent vectors to a control vertex
@@ -103,6 +105,10 @@ class curvenet {
         std::vector<CubicSpline> S;
         std::vector<Curve> Crv;
 
+        // Mesh-projection data, parallel to C and HE respectively (empty if no mesh is used)
+        std::vector<projData> vertData;
+        std::vector<projData> tanData;
+
         // Map from input control index to output control index
         std::map<int, int> inputCtoC;
         // Map from input tangent index to output halfedge index
@@ -110,7 +116,11 @@ class curvenet {
 
         // User sampling parameter
         int alpha = 5;
-        double meanE = 0.0;
+        // True once a mesh has been bound (at construction or later)
+        bool setMesh = false;
+        // Naive fallback sampling density (arc length per sample) when no mesh is available
+        // TODO: Replace with a curvature-based heuristic
+        double defaultSample = 0.1;
 };
 
 }   // namespace Curvenet

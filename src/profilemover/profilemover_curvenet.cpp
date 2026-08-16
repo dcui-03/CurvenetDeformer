@@ -35,8 +35,8 @@ namespace ProfileMover {
 
     // Compute the raw edge tangent/length for every dCN halfedge from its current positions
     int profilemover::computeEdgeFrames() {
-        std::vector<DCurvenet::Vert>& dCN_V = dCN.V;
-        std::vector<DCurvenet::HalfEdge>& HE = dCN.HE;
+        std::vector<Polynet::Vert>& dCN_V = dCN.V;
+        std::vector<Polynet::HalfEdge>& HE = dCN.HE;
         for (int he = 0; he < HE.size(); he++) {
             int origin = HE[HE[he].twin].dest;
             int dest = HE[he].dest;
@@ -49,26 +49,26 @@ namespace ProfileMover {
 
     // For intersections, computes their corner normals. For non-controls, this method does nothing (return -1)
     int profilemover::vertCornerNormalsWidths(int v, std::vector<curveDeformData>& curveData) {
-        std::vector<DCurvenet::Vert>& dCN_V = dCN.V;
-        std::vector<DCurvenet::HalfEdge>& HE = dCN.HE;
-        std::vector<DCurvenet::Edge>& E = dCN.E;
-        std::vector<DCurvenet::Curve>& dCN_C = dCN.C;
+        std::vector<Polynet::Vert>& dCN_V = dCN.V;
+        std::vector<Polynet::HalfEdge>& HE = dCN.HE;
+        std::vector<Polynet::Edge>& E = dCN.E;
+        std::vector<Polynet::Curve>& dCN_C = dCN.C;
         if (!dCN_V[v].active) {
             return -1;
         }
         // Only original curvenet controls have corner data
-        if (dCN_V[v].cn_idx < 0 || dCN_V[v].cn_type < 1) {
+        if (dCN.vertData[v].cn_idx < 0 || dCN.vertData[v].cn_type < 1) {
             return -1;
         }
         double eps = 1e-12;
         const std::vector<int> adjHE = dCN_V[v].adjHE;
         std::vector<Eigen::Vector3d> adjNormals(adjHE.size());
         // Explictly handle anchors and closed curves
-        if (dCN_V[v].cn_type < 3) {
+        if (dCN.vertData[v].cn_type < 3) {
             // Check if we are on the start of a curve
             int he0 = adjHE[0];
             int c = E[HE[he0].edge].curve;
-            if ((dCN_C[c].start != v) && dCN_V[v].cn_type == 2) {   // valence 2 control that is not the start of the curve
+            if ((dCN_C[c].start != v) && dCN.vertData[v].cn_type == 2) {   // valence 2 control that is not the start of the curve
                 return -1;
             }
             for (int he_idx = 0; he_idx < adjHE.size(); he_idx++) {
@@ -228,8 +228,8 @@ namespace ProfileMover {
 
     // Corner normals on only intersections
     int profilemover::allCornerNormalsAndWidths(std::vector<curveDeformData>& curveData) {
-        std::vector<DCurvenet::Vert>& dCN_V = dCN.V;
-        std::vector<DCurvenet::Curve>& dCN_C = dCN.C;
+        std::vector<Polynet::Vert>& dCN_V = dCN.V;
+        std::vector<Polynet::Curve>& dCN_C = dCN.C;
         curveData.clear();
         curveData.resize(dCN_C.size());
         // TODO: Parallelize? NOTE: This may not be safe, since we operate on curveData simultaneously
@@ -242,9 +242,9 @@ namespace ProfileMover {
 
     // Transport corner normals and widths from the two ends of a curve
     int profilemover::transportNWOnCurve(int c, const curveDeformData& cData) {
-        std::vector<DCurvenet::Vert>& dCN_V = dCN.V;
-        std::vector<DCurvenet::HalfEdge>& HE = dCN.HE;
-        std::vector<DCurvenet::Curve>& dCN_C = dCN.C;
+        std::vector<Polynet::Vert>& dCN_V = dCN.V;
+        std::vector<Polynet::HalfEdge>& HE = dCN.HE;
+        std::vector<Polynet::Curve>& dCN_C = dCN.C;
         if (!dCN_C[c].active) {
             return -1;
         }
@@ -253,8 +253,8 @@ namespace ProfileMover {
         int end = dCN_C[c].end;
         int he_start = dCN_C[c].he_start;
         int he_end = dCN_C[c].he_end;
-        int start_type = dCN_V[dCN_C[c].start].cn_type;
-        int end_type = dCN_V[dCN_C[c].end].cn_type;
+        int start_type = dCN.vertData[dCN_C[c].start].cn_type;
+        int end_type = dCN.vertData[dCN_C[c].end].cn_type;
 
         // Case 1: Both endpoints are intersections or both are anchors
         if (start_type == end_type) {
@@ -357,7 +357,7 @@ namespace ProfileMover {
     }
     // Transport normals for all curves
     int profilemover::transportNormalsAndWidths(const std::vector<curveDeformData>& curveData) {
-        std::vector<DCurvenet::Curve>& dCN_C = dCN.C;
+        std::vector<Polynet::Curve>& dCN_C = dCN.C;
         // TODO: Parallelize?
         #pragma omp parallel for
         for (int c = 0; c < dCN_C.size(); c++) {
@@ -367,7 +367,7 @@ namespace ProfileMover {
     }
 
     int profilemover::computeScaledFrames() {
-        std::vector<DCurvenet::HalfEdge>& HE = dCN.HE;
+        std::vector<Polynet::HalfEdge>& HE = dCN.HE;
         // TODO: Parallelize?
         #pragma omp parallel for
         for (int he = 0; he < HE.size(); he++) {
@@ -421,7 +421,7 @@ namespace ProfileMover {
 
     // Accumulate rotation matrices, starting from an initial halfedge and tracing forward until we hit the goal vertex
     double profilemover::accumulateRotations(int start_he, int end_v, std::vector<Eigen::Matrix3d>& rots, std::vector<double>& lens) {
-        std::vector<DCurvenet::HalfEdge>& HE = dCN.HE;
+        std::vector<Polynet::HalfEdge>& HE = dCN.HE;
         rots.clear();
         lens.clear();
         int he_curr = start_he;
@@ -474,7 +474,7 @@ namespace ProfileMover {
 
     // Pre-compute maps
     int profilemover::computedCNMats(Eigen::MatrixXd& f_dCN_flat, Eigen::MatrixXd& x_dCN) {
-        std::vector<DCurvenet::Vert>& dCN_V = dCN.V;
+        std::vector<Polynet::Vert>& dCN_V = dCN.V;
         int num_HE = dCN.numHalfedges();
         int num_V  = dCN.numVerts();
 

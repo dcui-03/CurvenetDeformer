@@ -3,9 +3,7 @@
 #include "utils/utils.hpp"
 #include <Eigen/Core>
 #include <vector>
-#include <utility>
 #include <map>
-#include <glm/glm.hpp>
 #include <glm/vec3.hpp>
 #include <cmath>
 #include <iostream>
@@ -25,9 +23,9 @@ int profilemover::dcurvenetPolyscopeFormat(Eigen::MatrixXd& Verts,
                             std::vector<glm::vec3>& negEdgeBinormals,
                             std::vector<glm::vec3>& negEdgeNormals,
                             std::vector<double>& weights) const {
-    const std::vector<DCurvenet::Vert>& dCN_V = dCN.V;
-    const std::vector<DCurvenet::HalfEdge>& HE = dCN.HE;
-    const std::vector<DCurvenet::Edge>& E = dCN.E;
+    const std::vector<Polynet::Vert>& dCN_V = dCN.V;
+    const std::vector<Polynet::HalfEdge>& HE = dCN.HE;
+    const std::vector<Polynet::Edge>& E = dCN.E;
     Verts.resize(dCN_V.size(), 3);
     weights.resize(dCN_V.size());
     Edges.resize(E.size());

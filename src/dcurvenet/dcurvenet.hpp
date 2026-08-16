@@ -2,10 +2,10 @@
 #pragma once
 
 #include "dcurvenet_types.hpp"
+#include "polynet/polynet.hpp"
 #include "curvenet/curvenet.hpp"
 #include "mesh/mesh.hpp"
 #include <Eigen/Core>
-#include <Eigen/Sparse>
 #include <vector>
 #include <map>
 
@@ -21,23 +21,19 @@ namespace ProfileMover {
     class profilemover;
 }
 
-namespace DCurvenet {
+namespace Polynet {
 
-// Discrete curvenet (i.e., polylines)
-class dcurvenet {
+// Discrete curvenet (i.e., polylines discretized from a curvenet)
+class dcurvenet : public polynet {
     public:
         // NOTE: Vertices are copied directly from the Control of the curve network (CN),
         //       meaning they are in the same order and have the same corresponding indices.
         //       Curves are similar.
         // Takes the original curvenet and discretizes it
         // Alpha is the user-inputted sampling parameter
-        dcurvenet(Curvenet::curvenet* CN, Mesh::mesh* M);
+        dcurvenet(Curvenet::curvenet* CN, const Mesh::mesh* M = nullptr, bool sampleNaive = false);
         // Initialize with empty constructor
         dcurvenet();
-
-        // --------- GETTERS -----------
-        const int numVerts() const { return V.size(); }
-        const int numHalfedges() const { return HE.size(); }
 
         // --------- RUNTIME COMPUTATION -----------
         // Update with new curvenet positions and local frames
@@ -46,34 +42,30 @@ class dcurvenet {
         // Propagate weights along curvenet
         int propagateWeights();
 
+        // True iff the source curvenet has ordered (mesh-derived) connectivity at high-valence verts
+        bool hasOrderedConnectivity() const;
+
         friend class Mesh::cutmesh;    // Friend class to access curvenet variables
         friend class ProfileMover::profilemover;
     protected:
-        // No inherited classes
+        // No further inherited classes
     private:
         // --------- INITIALIZATION -----------
-        // Add a vertex
+        // Add a vertex that matches an existing control
         int addVert(Curvenet::Control ctrl, int ctrl_idx = -1);
-        int addVert(Eigen::Vector3d new_pos, Eigen::Vector3d new_n = Eigen::Vector3d::Zero(), int ctrl_idx = -1, int ctrl_type = -1, int adjSize = 0);
-        // Add an edge and return the index of the new edge
-        int addEdge(int origin, int dest, int prev_he0 = -1, int next_he1 = -1, int c = -1);
-        // Add a curve
-        int addCurve(int crv);
-        // Rewire incoming/outgoing halfedges of an intersection vertex such that topology is correct
-        int rewireVertAdjHE(int v);
-        // Compute projection data
-        int computeProjData(Mesh::mesh* M);
+        // Add a vertex given its parameters (keeps vertData in lockstep with the inherited V)
+        int addVert(Eigen::Vector3d new_pos, Eigen::Vector3d new_n = Eigen::Vector3d::Zero());
+        // Add a curve that matches an input curvenet curve
+        int addCurve(int crv, bool sampleNaive = false);
 
         // --------- OTHER -----------
         // Check if a halfedge is the positive or negative side
         bool isPositiveHalfedge(int he) const;
 
-        // Attributes as lists
-        std::vector<Vert> V;
-        std::vector<HalfEdge> HE;
-        std::vector<Edge> E;
-        std::vector<Curve> C;
-        
+        // Extra per-vertex/per-curve data linking back to the source curvenet, parallel to V/C
+        std::vector<dCNVertData> vertData;
+        std::vector<int> curveCNIdx;
+
         // Map input vertex index to local vertex index
         std::map<int, int> inputCtoV;
         // Map input curve index to local curve index
@@ -81,6 +73,8 @@ class dcurvenet {
 
         // Pointer to parent curvenet
         Curvenet::curvenet* CN;
+        // Which spline sampler was used to build this dcurvenet
+        bool sampleNaive = false;
 };
 
-}   // namespace DCurvenet
+}   // namespace Polynet
