@@ -6,6 +6,7 @@
 #include <vector>
 #include <array>
 #include <algorithm>
+#include <stdexcept>
 
 namespace Polynet {
     // Build directly from a raw vertex/edge list and trace its own curves
@@ -43,6 +44,9 @@ namespace Polynet {
         if (M) {
             computeProjData(M);
             setMesh = true;
+        }
+        if (computeBVH() != 1) {
+            throw std::runtime_error("Failed to build BVH.");
         }
     }
 

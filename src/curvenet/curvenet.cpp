@@ -3,6 +3,7 @@
 
 #include "utils/utils.hpp"
 #include "mesh/mesh.hpp"
+#include "dcurvenet/dcurvenet.hpp"
 #include <Eigen/Core>
 #include <cmath>
 #include <array>
@@ -391,5 +392,17 @@ namespace Curvenet {
         // The halfedge we arrived on does not actually end at this control
         // according to the control's adjacency list.
         return -1;
+    }
+
+    // Find the closest point on the curve network to p, via dCN's polyline BVH
+    int curvenet::closestPoint(const Eigen::Vector3d& p, const Polynet::dcurvenet* dCN, cnBindData& bind, bool snap, double snapTol) const {
+        if (dCN == nullptr) {
+            return -1;
+        }
+        if (dCN->closestPoint(p, bind, snap, snapTol) != 1) {
+            return -1;
+        }
+        bind.pos = tSampleBezier(bind.s, bind.t);
+        return 1;
     }
 }   // namespace Curvenet

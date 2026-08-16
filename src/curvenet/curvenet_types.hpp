@@ -8,6 +8,13 @@
 
 namespace Curvenet {
 
+    // Result of a closest-point query against the curve network
+    struct cnBindData {
+        int s = -1;                     // Spline index
+        double t = -1.0;                // Parameter value on that spline
+        Eigen::Vector3d pos;            // Point on the spline at t
+    };
+
     // Projection data onto the corresponding mesh for tangents and handles
     struct projData {
         int elType = -1;

@@ -5,6 +5,7 @@
 #include <Eigen/Core>
 #include <vector>
 #include <algorithm>
+#include <stdexcept>
 
 namespace Polynet {
     // Takes the original curvenet and discretizes it
@@ -18,6 +19,8 @@ namespace Polynet {
         C.clear();
         vertData.clear();
         curveCNIdx.clear();
+        edgeSpline.clear();
+        edgeSplineT.clear();
         // 1. First copy in the control points
         int num_controls = cnCtrl.size();
         std::vector<int> ctrlVerts(num_controls);
@@ -42,6 +45,9 @@ namespace Polynet {
         if (M) {
             computeProjData(M);
             setMesh = true;
+        }
+        if (computeBVH() != 1) {
+            throw std::runtime_error("Failed to build BVH.");
         }
     }
 
@@ -138,8 +144,7 @@ namespace Polynet {
             // Get the start and end dCN vertices
             int s_start = inputCtoV.at(cn_start);
             int s_end   = inputCtoV.at(cn_end);
-            vertData[s_start].splineT.push_back({s, 0.0});
-            vertData[s_end].splineT.push_back({s, 1.0});
+            double temp_t = 0.0;   // t of temp_origin on this spline (always 0 at the spline's own start)
             if (s_idx == 0) {
                 C[c].start = s_start;
                 temp_origin = s_start;
@@ -182,10 +187,11 @@ namespace Polynet {
                     v = s_end;
                 } else {    // Interior sample
                     v = addVert(samples[i]);
-                    vertData[v].splineT.push_back({s, sampleT[i]});
                 }
                 // Add a new edge
                 int new_edge = addEdge(temp_origin, v, prev_he0, next_he1, c);
+                edgeSpline.push_back(s);
+                edgeSplineT.push_back({temp_t, sampleT[i]});
 
                 int he0 = E[new_edge].he;       // positive/canonical direction
                 int he1 = HE[he0].twin;         // negative/opposite direction
@@ -211,6 +217,7 @@ namespace Polynet {
                 prev_he0 = he0;
                 next_he1 = he1;
                 temp_origin = v;
+                temp_t = sampleT[i];
             }
         }
 
@@ -235,5 +242,41 @@ namespace Polynet {
 
     bool dcurvenet::hasOrderedConnectivity() const {
         return CN->setMesh;
+    }
+
+    // Find the closest point on the discretized curve network, then recover which curvenet
+    // spline/t-value it corresponds to
+    int dcurvenet::closestPoint(const Eigen::Vector3d& p, Curvenet::cnBindData& bind, bool snap, double snapTol) const {
+        polyBindData pBind;
+        if (polynet::closestPoint(p, pBind, snap, snapTol) != 1) {
+            return -1;
+        }
+
+        int e = -1;
+        double local_t = 0.0;
+        if (pBind.elType == 1) {   // Edge
+            e = pBind.elIdx;
+            local_t = pBind.t;
+        } else if (pBind.elType == 0) {   // Vertex: borrow any incident edge
+            int v = pBind.elIdx;
+            if (V[v].adjHE.empty()) {
+                return -1;
+            }
+            int he = V[v].adjHE[0];
+            e = HE[he].edge;
+            int origin_v = HE[HE[E[e].he].twin].dest;
+            local_t = (v == origin_v) ? 0.0 : 1.0;
+        } else {
+            return -1;
+        }
+        if (e < 0 || e >= edgeSpline.size()) {
+            return -1;
+        }
+
+        bind = Curvenet::cnBindData();
+        bind.s = edgeSpline[e];
+        bind.t = (1.0 - local_t) * edgeSplineT[e].first + local_t * edgeSplineT[e].second;
+        bind.pos = pBind.pos;
+        return 1;
     }
 }   // namespace Polynet

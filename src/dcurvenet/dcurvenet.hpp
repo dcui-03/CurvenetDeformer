@@ -8,6 +8,7 @@
 #include <Eigen/Core>
 #include <vector>
 #include <map>
+#include <utility>
 
 namespace Mesh {
     class cutmesh;
@@ -45,6 +46,11 @@ class dcurvenet : public polynet {
         // True iff the source curvenet has ordered (mesh-derived) connectivity at high-valence verts
         bool hasOrderedConnectivity() const;
 
+        // Find the closest point on the discretized curve network to p, recovering the
+        // curvenet spline and t-value it corresponds to (position not refined onto the
+        // actual spline; curvenet::closestPoint does that on top of this)
+        int closestPoint(const Eigen::Vector3d& p, Curvenet::cnBindData& bind, bool snap = true, double snapTol = 1e-6) const;
+
         friend class Mesh::cutmesh;    // Friend class to access curvenet variables
         friend class ProfileMover::profilemover;
     protected:
@@ -65,6 +71,10 @@ class dcurvenet : public polynet {
         // Extra per-vertex/per-curve data linking back to the source curvenet, parallel to V/C
         std::vector<dCNVertData> vertData;
         std::vector<int> curveCNIdx;
+
+        // Per dCN edge: parent curvenet spline index, and (t at edge origin, t at edge dest)
+        std::vector<int> edgeSpline;
+        std::vector<std::pair<double, double>> edgeSplineT;
 
         // Map input vertex index to local vertex index
         std::map<int, int> inputCtoV;

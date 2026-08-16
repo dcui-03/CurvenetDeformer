@@ -3,6 +3,7 @@
 
 #include <Eigen/Core>
 #include <vector>
+#include <utility>
 
 // File with basic structs used by the polyline network class
 
@@ -14,6 +15,33 @@ namespace Polynet {
         int elIdx = -1;
         Eigen::VectorXd coords;
         Eigen::Vector3d projVec = Eigen::Vector3d::Zero();
+    };
+
+    // Bounding Volume Hierarchy over edges
+    struct AABB {
+        int depth = 0;
+        bool leaf = false;
+        std::vector<int> children;
+        std::vector<int> edges;                                 // Edges in the bvh
+        std::pair<Eigen::Vector3d, Eigen::Vector3d> bdyVerts;   // Bounding box verts
+    };
+
+    // Used in closest-point AABB priority queue
+    struct BVHQueueEntry {
+        int box;
+        double dist2;
+
+        bool operator<(const BVHQueueEntry& other) const {
+            return dist2 > other.dist2; // reversed for std::priority_queue min-heap behavior
+        }
+    };
+
+    // Result of a closest-point query against the polyline
+    struct polyBindData {
+        int elType = -1;    // 0 = vertex, 1 = edge
+        int elIdx = -1;
+        double t = -1.0;    // Local edge parameter (0/1 if snapped from a vertex)
+        Eigen::Vector3d pos;
     };
 
     struct Vert {

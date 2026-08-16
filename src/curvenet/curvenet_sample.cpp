@@ -15,12 +15,16 @@ namespace Curvenet {
     }
     Eigen::Vector3d curvenet::tSampleBezier(int s, double t) const {
         Eigen::Vector3d c0, c1, c2, c3;
+        splineCtrlPts(s, c0, c1, c2, c3);
+        return tSampleBezier(c0, c1, c2, c3, t);
+    }
+    // Get the 4 control points of a spline
+    void curvenet::splineCtrlPts(int s, Eigen::Vector3d& c0, Eigen::Vector3d& c1, Eigen::Vector3d& c2, Eigen::Vector3d& c3) const {
         int he = S[s].he;
         c0 = C[HE[he].origin].new_pos;
         c1 = HE[he].tan;
         c2 = HE[HE[he].twin].tan;
         c3 = C[HE[HE[he].twin].origin].new_pos;
-        return tSampleBezier(c0, c1, c2, c3, t);
     }
 
     // NOTE: This is a naive, fast sampler that uniformly samples t's. Re-implement if desired

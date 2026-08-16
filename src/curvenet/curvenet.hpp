@@ -67,6 +67,11 @@ class curvenet {
         int sortAdjHEAll();
         int assignCtrlTypeAll();
 
+        // --------- CLOSEST POINT -----------
+        // Find the closest point on the curve network to p, via dCN's polyline BVH, then
+        // evaluated exactly on the spline. Not refined past that; caller does the Newton step.
+        int closestPoint(const Eigen::Vector3d& p, const Polynet::dcurvenet* dCN, cnBindData& bind, bool snap = true, double snapTol = 1e-6) const;
+
         friend class Polynet::dcurvenet;
     protected:
         // No class inheritance
@@ -98,6 +103,9 @@ class curvenet {
         int traceCurves();
         // Helper to find next traced spline
         int nextHEFromControl(int curr_he, int curr_end);
+
+        // Get the 4 control points of a spline
+        void splineCtrlPts(int s, Eigen::Vector3d& c0, Eigen::Vector3d& c1, Eigen::Vector3d& c2, Eigen::Vector3d& c3) const;
 
         // Store attributes as lists
         std::vector<Control> C;

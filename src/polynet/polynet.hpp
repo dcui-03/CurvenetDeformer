@@ -31,6 +31,12 @@ class polynet {
         // Propagate weights along the network using V[].fixed_w/.w as the boundary condition
         int propagateWeights();
 
+        // --------- CLOSEST POINT (polynet_bvh.cpp) -----------
+        // Build a BVH over edges
+        int computeBVH();
+        // Find the closest point on the polyline to p, snapping to a vertex within snapTol
+        int closestPoint(const Eigen::Vector3d& p, polyBindData& bind, bool snap = true, double snapTol = 1e-6) const;
+
     protected:
         // --------- INITIALIZATION -----------
         // Add a vertex given its parameters
@@ -54,6 +60,11 @@ class polynet {
         // Helper to find next traced edge
         int nextHEFromVert(int curr_he, int curr_end);
 
+        // Build one BVH node recursively
+        int buildBVHNode(const std::vector<int>& edges, int depth);
+        // Squared distance from a point to an AABB
+        double pointAABBDist2(const Eigen::Vector3d& p, int box) const;
+
         // Attributes as lists
         std::vector<Vert> V;
         std::vector<HalfEdge> HE;
@@ -62,6 +73,10 @@ class polynet {
 
         // True once a mesh has been bound (at construction or later)
         bool setMesh = false;
+
+        // BVH over edges
+        std::vector<AABB> BVH;
+        int max_depth = 16;
 };
 
 }   // namespace Polynet
