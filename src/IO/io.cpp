@@ -128,15 +128,4 @@ namespace IO {
 
         return true;
     }
-
-
-    bool convertVertsToMatrix(const std::vector<Eigen::Vector3d>& source,
-                              Eigen::MatrixXd& dest) {
-        dest.resize(0, 0);
-        dest.resize(static_cast<Eigen::Index>(source.size()), 3);
-        for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(source.size()); ++i) {
-            dest.row(i) = source[i].transpose();
-        }
-        return true;
-    }
 } // namespace IO

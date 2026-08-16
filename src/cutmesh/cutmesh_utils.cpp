@@ -17,23 +17,18 @@ namespace Mesh {
 // Inserts a vertex at a location and face
 // Returns the index of the new vertex
 // NOTE: The new vertex has no normal information or associated halfedge.
-int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, int ref_Type, int ref_Idx, Eigen::Vector3d proj, Eigen::Matrix3d defGrad) {
-    Vert newV = createVertex(pos, n, label, cornerIdx, ref_Type, ref_Idx, proj, defGrad);
+int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, CutData cutInfo) {
+    Vert newV = createVertex(pos, n);
     int v = V.size();
     V.push_back(newV);
+    cutData.push_back(cutInfo);
     return v;
 }
 
-int cutmesh::insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, int label, int cornerIdx, vertProjData projData, vertDeformData defData) {
-    Vert newV = createVertex(pos, n, label, cornerIdx, projData, defData);
-    int v = V.size();
-    V.push_back(newV);
-    return v;
-}
-
-int cutmesh::insertVertex(Vert splitV) {
+int cutmesh::insertVertex(Vert splitV, CutData cutInfo) {
     int v = V.size();
     V.push_back(splitV);
+    cutData.push_back(cutInfo);
     return v;
 }
 

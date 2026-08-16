@@ -24,7 +24,6 @@ class pscurvenet {
         void updateControlPos(int c, Eigen::Vector3d new_pos, bool project = true);
         void updateControlNormal(int c, const Eigen::Vector3d& new_normal, bool rotation = true, bool project = true);
         // Rotate tangent using some rotation matrix
-        bool rotateTangentPos(int psT_idx, Eigen::Matrix3d rotation);
         bool rotateTangentPos(int s, bool t0, Eigen::Matrix3d rotation);
         // Update tangent position, or returns false
         bool updateTangentPos(int psT_idx, const Eigen::Vector3d& new_pos, bool project = true);
@@ -37,9 +36,6 @@ class pscurvenet {
         int addSpline(int c0, Eigen::Vector3d t0_pos, Eigen::Vector3d t1_pos, int c1);
         // Remove a control
         int removeControl(int c);
-        // Remove a spline given two end controls
-        // NOTE: If two controls are connected by multiple splines, only removes the first one
-        int removeSpline(int c0, int c1);
         // Remove a spline
         int removeSpline(int s);
         // Remove spline by polyscope tangent index
@@ -50,10 +46,6 @@ class pscurvenet {
         // --------- IO -----------
         int saveCurvenet(const std::string& filepath) const;
         int loadCurvenet(const std::string& filepath);
-
-        // --------- COMPLEX OPERATIONS -----------
-        // Merge two splines about a specified control point
-        int mergeSplines(int s0, int s1, int c);
 
         // --------- GETTERS + POLYSCOPE CONVERSION -----------
         Eigen::Vector3d getNormal(int c);

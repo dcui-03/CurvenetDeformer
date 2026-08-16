@@ -112,7 +112,7 @@ std::pair<int, int> selectedPair = {-1, -1};
 
 // Editing helpers
 bool tanConstraint = true;  // Constrain tangent movement to tangent plane only
-bool applyARAP = false; // Whether the curvenetwork should apply arap or not
+bool applyCorot = false; // Whether the curvenetwork should apply the corotational model or not
 
 // Gizmo helpers
 bool activeGizmo = false; // This tells us if there is an active gizmo
@@ -260,7 +260,7 @@ void updateProfileMover(bool recompute = true) {
     // Discrete Curvenet
     // We have to re-get the scaled frames anyways, so no point in flagging for a simple update
     // Recompute all attributes
-    (PM->discreteCurvenet()).polyscopeFormat(psDCN_P, psDCN_E, posScaledTangents, 
+    PM->dcurvenetPolyscopeFormat(psDCN_P, psDCN_E, posScaledTangents,
                                                         posScaledBinormals,
                                                         posScaledNormals,
                                                         negScaledTangents,
@@ -295,7 +295,7 @@ void updateProfileMover(bool recompute = true) {
     ps_weights->setEnabled(true);
 
     // Cut-mesh
-    if ((PM->cutmesh()).polyscopeFormat(psCutMesh_V, psCutMesh_F, psCutMesh_VNormals, psCutMesh_FNormals, psCutMesh_corners, psCutMesh_projVecs) == 1) {
+    if (PM->cutmeshPolyscopeFormat(psCutMesh_V, psCutMesh_F, psCutMesh_VNormals, psCutMesh_FNormals, psCutMesh_corners, psCutMesh_projVecs) == 1) {
         psCutMesh = polyscope::registerSurfaceMesh("Cut Mesh", psCutMesh_V, psCutMesh_F);
         psCutMesh->setSurfaceColor({0.0f, 1.0f, 0.8f});
         auto* vertNorms = psCutMesh->addVertexVectorQuantity("Vert Normals", psCutMesh_VNormals);
@@ -381,25 +381,6 @@ void resetMesh() {
     }
     psMesh = polyscope::registerSurfaceMesh("Surface Mesh", psMesh_V, psMesh_F);
     psMesh->setSurfaceColor({0.6f, 0.6f, 0.6f});
-    return;
-}
-
-// Update the mesh vertex positions
-void updateMesh(const std::vector<Eigen::Vector3d>& new_pos) {
-    // Convert to matrix form
-    if (new_pos.size() != psMesh_V.rows()) {
-        std::cout << "Invalid mesh update size: New pos has size " << new_pos.size() << " but mesh has size " << psMesh_V.rows() << std::endl;
-        return;
-    }
-    for (int v = 0; v < psMesh_V.rows(); v++) {
-        psMesh_V.row(v) = new_pos[v].transpose();
-    }
-    // Update mesh
-    psMesh->updateVertexPositions(psMesh_V);
-    return;
-}
-// Reset all control positions in Polyscope
-void resetCurvenet() {
     return;
 }
 
@@ -521,16 +502,6 @@ int clearModes() {
     return 1;
 }
 
-// Performs call to surface deformation and updates PS mesh
-int computeDeformation() {
-    std::vector<Eigen::Vector3d> controlsV, tangentsV;
-    std::vector<std::array<int, 4>> splines;
-    psCN->cnAsStdVector(controlsV, tangentsV, splines);
-    // Update the dCN
-    updateProfileMover(true);
-    return 1;
-}
-
 void ImGuiSection(const char* label) {
     ImGui::Spacing();
     ImGui::Separator();
@@ -570,7 +541,7 @@ void myCallback() {
             std::vector<std::array<int, 4>> splines;
             psCN->cnAsStdVector(controlsV, tangentsV, splines);
             // Apply mesh and curvenet
-            PM = std::make_unique<ProfileMover::profilemover>(meshV, psMesh_F, controlsV, tangentsV, splines, samplingParam, applyARAP);
+            PM = std::make_unique<ProfileMover::profilemover>(meshV, psMesh_F, controlsV, tangentsV, splines, samplingParam, applyCorot);
             PM_init = true;
             updateProfileMover(false);
             // For easy of debugging, remove all the extra stuff
@@ -584,9 +555,9 @@ void myCallback() {
         }
     }
     ImGui::SameLine();
-    if (ImGui::Checkbox("ARAP", &applyARAP)) {
+    if (ImGui::Checkbox("Corotational", &applyCorot)) {
         if (PM_init && PM) {
-            PM->toggleARAP(applyARAP);
+            PM->toggleCorot(applyCorot);
         }
     }
 

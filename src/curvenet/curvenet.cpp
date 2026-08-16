@@ -1,3 +1,4 @@
+#define _USE_MATH_DEFINES
 #include "curvenet.hpp"
 
 #include "utils/utils.hpp"
@@ -73,24 +74,6 @@ namespace Curvenet {
         }
         return;
     }
-    // Check if all weights are free or not
-    // If all weights are free, then return them all to 1
-    int curvenet::validWeights() {
-        int num_free = 0;
-        int num_fixed = 0;
-        for (int c = 0; c < C.size(); c++) {
-            if (C[c].fixed_w) {
-                num_fixed++;
-            } else {
-                num_free++;
-            }
-        }
-        if (num_fixed < 2) {    // We need at least two constraints, or else we get the null space
-            return -1;
-        }
-        return 1;
-    }
-
     // empty initializer
     curvenet::curvenet() {
         C.clear();
@@ -137,14 +120,6 @@ namespace Curvenet {
         return std::make_pair(he0, he1);
     }
 
-    // Move control
-    int curvenet::editControlPos(int c, Eigen::Vector3d pos) {
-        if (!C[c].active) {
-            return -1;
-        }
-        C[c].new_pos = pos;
-        return c;
-    }
     // Change control normal
     int curvenet::editControlN(int c, Eigen::Vector3d normal) {
         // Catch degenerate cases

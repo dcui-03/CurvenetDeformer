@@ -35,27 +35,6 @@ cutmesh::cutmesh() {
 
 }
 
-// Add a discrete Curvenetwork Pointer
-bool cutmesh::applyDiscreteCurvenet(DCurvenet::dcurvenet* dCurvenet) {
-    dCN = dCurvenet;
-    return true;
-}
-
-// Add a discrete Curvenetwork Pointer
-bool cutmesh::applyMeshRef(mesh* MRef) {
-    M = MRef;
-    return true;
-}
-
-// Assign a discrete curvenet index to a halfedge
-bool cutmesh::assignDCNtoHE(int he, const int dCN_idx) {
-    if (he < 0 || he >= HE.size()) {
-        return false;
-    }
-    HE[he].dCN_idx = dCN_idx;
-    return true;
-}
-
 // Initializes by copying the vertex, edge, and halfedge data from the reference mesh
 bool cutmesh::copyFromMesh() {
     clearMesh();
@@ -66,6 +45,13 @@ bool cutmesh::copyFromMesh() {
     V = M->V;
     HE = M->HE;
     E = M->E;
+
+    // Seed cutData for the copied-in original mesh vertices (each maps to itself)
+    cutData.assign(V.size(), CutData());
+    for (int v = 0; v < V.size(); v++) {
+        cutData[v].projData.elType = 0;
+        cutData[v].projData.elIdx = v;
+    }
 
     // You can either copy faces or clear them.
     // Since you later rebuild faces, clearing is fine.

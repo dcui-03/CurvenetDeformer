@@ -1,7 +1,6 @@
 // dcurvenet_types.hpp
 #pragma once
 
-#include "dcurvenet_def.hpp"
 #include <Eigen/Core>
 #include <vector>
 #include <utility>
@@ -47,9 +46,6 @@ namespace DCurvenet {
         int prev = -1;
         int edge = -1;
         bool active = true;     // For safety, say if the component is active (ignore for now)
-
-        // Deformation data, including the scaled frames (old and new)
-        heDeformData defData;
     };
 
     // Edge in a curve

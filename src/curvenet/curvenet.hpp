@@ -30,19 +30,11 @@ class curvenet {
         // Assign weight to a control
         int assignWeight(int c, bool fixed_w = true, double w = 1.0);
         void resetWeights();
-        // Check if all weights are free or not
-        // If all weights are free, then return them all to 1
-        int validWeights();
 
         // --------- GETTERS -----------
-        const int numControls() const { return C.size(); }
-        const int numSplines() const { return S.size(); }
         const int numCurves() const { return Crv.size(); }
         // TODO: REMOVE the below getters and use friend classes instead
         const std::vector<Control>& controls() const { return C; }
-        const std::vector<HalfEdge>& halfedges() const { return HE; }
-        const std::vector<CubicSpline>& splines() const { return S; }
-        const std::vector<Curve>& curves() const { return Crv; }
         std::vector<int> controlLocalSplineIdx(int c, int s) const;
 
         // --------- SAMPLING -----------
@@ -63,8 +55,6 @@ class curvenet {
         int computeNumSamples(double arclen);
 
         // --------- EDITING -----------
-        // Exposed position edits
-        int editControlPos(int c, Eigen::Vector3d pos);
         // Exposed normal augmentation
         // NOTE: Normals should only applied to vertices once, by projection onto the mesh
         int editControlN(int c, Eigen::Vector3d normal);

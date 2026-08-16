@@ -1,11 +1,13 @@
-// dcurvenet_def.hpp
+// profilemover_types.hpp
 #pragma once
 
 #include <Eigen/Core>
 #include <vector>
 #include <utility>
 
-namespace DCurvenet {
+// File with basic structs used by the profilemover class
+
+namespace ProfileMover {
 
     // Deformation
     struct vertDeformData {
@@ -37,4 +39,4 @@ namespace DCurvenet {
         std::pair<double, double> W_pos;    // first is start, second is end
         std::pair<double, double> W_neg;    // first is start, second is end
     };
-}   // namespace DCurvenet
+}   // namespace ProfileMover

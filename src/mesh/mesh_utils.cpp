@@ -19,11 +19,6 @@ namespace Mesh {
 // Project a vertex onto the mesh. If multiple, just picks the one with smaller index.
 // Also returns the element type that was landed on.
 // For non-planar faces, I am just going to fit a Newell plane using the barycenter and vector area + a barycentric height interpolation
-int mesh::computeVProjection(const Eigen::Vector3d& v, Eigen::Vector3d& proj, int& elIdx, bool snap, bool fast) const {
-    vertProjData projData = computeVProjection(v, proj, snap, fast);
-    elIdx = projData.elIdx;
-    return projData.elType;
-}
 vertProjData mesh::computeVProjection(const Eigen::Vector3d& v,
                                       Eigen::Vector3d& proj,
                                       bool snap,
@@ -472,8 +467,8 @@ int mesh::recoverCoords(int elType, int elIdx, const Eigen::VectorXd& coords, Ei
             p = V[elIdx].pos;
         }
     } else if (elType == 1) {  // edges
-        if ((elIdx < 0 || elIdx >= E.size()) || 
-            coords.size() != 1 || (coords(0) < 0.0 || coords(1) > 1.0)) {
+        if ((elIdx < 0 || elIdx >= E.size()) ||
+            coords.size() != 1 || (coords(0) < 0.0 || coords(0) > 1.0)) {
             return -1;
         } else {
             Eigen::Vector3d v1 = V[HE[E[elIdx].he].dest].pos;
@@ -499,6 +494,55 @@ int mesh::recoverCoords(int elType, int elIdx, const Eigen::VectorXd& coords, Ei
     } else {
         return -1;
     }
+    return 1;
+}
+
+// Evaluate the basis weights of the verts spanning the mesh element a projData sits on
+int mesh::evaluateBasis(const vertProjData& proj, const Eigen::VectorXd& coords, std::vector<std::pair<int, double>>& basis) const {
+    basis.clear();
+
+    if (proj.elType == 0) { // On a vertex (trivial)
+        int v = proj.elIdx;
+        if (v < 0 || v >= V.size() || !V[v].active) {
+            return -1;
+        }
+        basis.push_back({v, 1.0});
+    } else if (proj.elType == 1) {  // On an edge, use the stored t-value
+        int e = proj.elIdx;
+        if (e < 0 || e >= E.size() || !E[e].active || coords.size() != 1) {
+            return -1;
+        }
+        int v1 = HE[E[e].he].dest;
+        int v0 = HE[HE[E[e].he].twin].dest;
+        double t = coords(0);
+        basis.push_back({v0, 1.0 - t});
+        basis.push_back({v1, t});
+    } else if (proj.elType == 2) {  // On a face. Check cases
+        int f = proj.elIdx;
+        if (f < 0 || f >= F.size() || !F[f].active) {
+            return -1;
+        }
+        std::vector<int> fVerts = faceAdjVertIdxs(f);
+        if (fVerts.size() < 3) {        // Triangle: already barycentric
+            return -1;
+        }
+        if (fVerts.size() == 4) {       // Quad as a bilinear patch. Need to compute explicitly
+            if (coords.size() != 2) {
+                return -1;
+            }
+            basis = Utils::bilinearPatchBasis(fVerts, coords(0), coords(1));
+        } else {                        // Aribrary polygon, just return basis
+            if (coords.size() != fVerts.size()) {
+                return -1;
+            }
+            for (int i = 0; i < fVerts.size(); i++) {
+                basis.push_back({fVerts[i], coords(i)});
+            }
+        }
+    } else {
+        return -1;
+    }
+
     return 1;
 }
 

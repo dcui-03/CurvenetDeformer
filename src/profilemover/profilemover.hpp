@@ -5,6 +5,7 @@
 #include "dcurvenet/dcurvenet.hpp"
 #include "mesh/mesh.hpp"
 #include "cutmesh/cutmesh.hpp"
+#include "profilemover_types.hpp"
 #include "utils/decUtils.hpp"
 #include <vector>
 #include <array>
@@ -14,6 +15,8 @@
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
 #include <Eigen/IterativeLinearSolvers>
+#include <glm/glm.hpp>
+#include <glm/vec3.hpp>
 
 
 namespace ProfileMover {
@@ -23,15 +26,13 @@ class profilemover {
         // Constructor, which first builds the mesh
         profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF, 
                                const std::vector<Eigen::Vector3d> Controls, const std::vector<Eigen::Vector3d> Tangents, 
-                               const std::vector<std::array<int, 4>> Splines, int alpha = 5, bool arap = false);
+                               const std::vector<std::array<int, 4>> Splines, int alpha = 5, bool corot = false);
         // Only apply mesh
         profilemover(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF);
         profilemover();
 
         // Getters in case we need it
-        const Mesh::mesh& mesh() const;
         const Mesh::cutmesh& cutmesh() const;
-        const Curvenet::curvenet& curvenet() const;
         const DCurvenet::dcurvenet& discreteCurvenet() const;
 
         // Weights
@@ -39,35 +40,81 @@ class profilemover {
         void clearWeights();
 
         
-        void toggleARAP(bool toggle);
+        void toggleCorot(bool toggle);
+        void toggleDiagnostics(bool toggle);
         void applyMesh(const std::vector<Eigen::Vector3d>& meshV, const std::vector<std::vector<int>>& meshF);
         void applyCurvenet(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents, const std::vector<std::array<int, 4>>& Splines, int alpha = 5);
         void computeDiscreteCurvenet();
         void computeCutMesh();
         // Apply deformation given the new control and tangent locations (connectivity should be same)
         // Returns new mesh positions as an Nx3 matrix
-        std::vector<Eigen::Vector3d> deform(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents);
         std::vector<Eigen::Vector3d> deformOps(const std::vector<Eigen::Vector3d>& Controls, const std::vector<Eigen::Vector3d>& Tangents);
+
+        // --------- POLYSCOPE VIZ -----------
+        int dcurvenetPolyscopeFormat(Eigen::MatrixXd& Verts,
+                            std::vector<std::array<int, 2>>& Edges,
+                            std::vector<glm::vec3>& posEdgeTangents,
+                            std::vector<glm::vec3>& posEdgeBinormals,
+                            std::vector<glm::vec3>& posEdgeNormals,
+                            std::vector<glm::vec3>& negEdgeTangents,
+                            std::vector<glm::vec3>& negEdgeBinormals,
+                            std::vector<glm::vec3>& negEdgeNormals,
+                            std::vector<double>& weights) const;
+        int cutmeshPolyscopeFormat(Eigen::MatrixXd& Verts, std::vector<std::vector<int>>& Faces,
+                            std::vector<glm::vec3>& VertN, std::vector<glm::vec3>& FaceN,
+                            std::vector<glm::vec3>& cornerIdx,
+                            std::vector<glm::vec3>& projVecs) const;
     protected:
         // No class inheritance
     private:
         // Precompute cut-mesh and operators
         // Takes as input the necessary items to construct the curve network
-        void precomputation();
         void precomputeOps();
-        // Assemble final positions into our standard data type
-        std::vector<Eigen::Vector3d> assembleFinalPositions(Eigen::MatrixXd x_v, Eigen::MatrixXd x_c);
 
         // Matrix-forms of runtime computation
         int assembleDiscreteCurvenetMats();
         int weightDefGrads();
-        int computeCDefGrads();
         int applyFaceDeformations(const Eigen::MatrixXd& f_F_flat);
         int applyDefGradsToProj();
         int assembleFinalPositions(std::vector<Eigen::Vector3d>& newV);
 
-        // ARAP-style deformations
-        bool arap = false;
+        // --------- SCALED FRAME / DEFORMATION GRADIENT COMPUTATION (on dCN) -----------
+        // Orchestration: run once right after dCN is (re)built
+        void initDeformation();
+        // Orchestration: run after dCN's positions are updated
+        void updateDeformation();
+        // Compute the raw edge tangent/length for every dCN halfedge from its current positions
+        int computeEdgeFrames();
+        // For controls, computes their corner normals and widths. For non-intersections, this method does nothing (return -1)
+        int vertCornerNormalsWidths(int v, std::vector<curveDeformData>& curveData);
+        // Corner normals on all vertices
+        int allCornerNormalsAndWidths(std::vector<curveDeformData>& curveData);
+        // Transport corner normals and widths from the two end corners of a curve
+        int transportNWOnCurve(int c, const curveDeformData& cData);
+        // Transport normals and widths for all curves
+        int transportNormalsAndWidths(const std::vector<curveDeformData>& curveData);
+        // Compute scaled frames on all curves
+        int computeScaledFrames();
+        // Initialize new frames as copies of old
+        int copyFrameToRest(int he);
+        int copyFramesToRest();
+        // Validate that frames are not zero or NaN
+        int validateFrames();
+        // Accumulates rotation matrices and lengths by tracing from a starting halfedge to an end vertex
+        double accumulateRotations(int start_he, int end_v, std::vector<Eigen::Matrix3d>& rots, std::vector<double>& lens);
+        // Compute torsion
+        double computeTorsion(Eigen::Vector3d n_1, Eigen::Vector3d n_k, Eigen::Matrix3d Om_k, Eigen::Vector3d t_k);
+        // Compute the deformation gradient on an edge given a new scaled frame
+        Eigen::Matrix3d computeHEDefGrad(int he);
+        // Compute deformation gradients on all halfedges
+        int computeDefGradAll();
+        // Pre-compute maps
+        int computedCNMats(Eigen::MatrixXd& f_dCN_flat, Eigen::MatrixXd& x_dCN);
+
+        // Corotational-style deformations
+        bool corot = false;
+        // Print timing/diagnostic info
+        bool printDiagnostics = false;
         // Store copy of mesh
         Mesh::mesh M;
         bool M_init = false;
@@ -77,6 +124,8 @@ class profilemover {
         // Store the neutral discrete curvenet
         DCurvenet::dcurvenet dCN;
         bool dCN_init = false;
+        // Scaled frame / deformation gradient data on each dCN halfedge
+        std::vector<heDeformData> heDefData;
         // Store the cut-mesh
         Mesh::cutmesh CM;
         bool CM_init = false;

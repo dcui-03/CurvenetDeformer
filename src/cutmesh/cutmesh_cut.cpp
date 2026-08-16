@@ -20,6 +20,7 @@ namespace Mesh {
         std::map<int, int> dCNVtoV;
         const std::vector<DCurvenet::Vert>& dCN_V = dCN->V;
         std::vector<Vert> proj_V(dCN_V.size());
+        std::vector<CutData> proj_CD(dCN_V.size());
         // 1. First, create a list of all projections (parallel)
         #pragma omp parallel for
         for (int v = 0; v < dCN_V.size(); v++) {
@@ -33,28 +34,33 @@ namespace Mesh {
             } else {    // Face
                 n = M->F[proj.elIdx].n;
             }
-            proj_V[v] = createVertex(dCN_V[v].pos - proj.projVec, n, 1, -1, proj.elType, proj.elIdx, proj.projVec);
+            proj_V[v] = createVertex(dCN_V[v].pos - proj.projVec, n);
+            proj_CD[v].label = 1;
+            proj_CD[v].corner_idx = -1;
+            proj_CD[v].projData.elType = proj.elType;
+            proj_CD[v].projData.elIdx = proj.elIdx;
+            proj_CD[v].defData.projVector = proj.projVec;
         }
         
         // Now, add all vertices into the cutmesh (SEQUENTIAL)
         std::map<int, std::vector<std::pair<double, int>>> edgeMap;
         for (int v = 0; v < proj_V.size(); v++) {
             // First, identify what kind of vertex should be inserted
-            int elType = proj_V[v].projData.elType;
-            int elIdx = proj_V[v].projData.elIdx;
+            int elType = proj_CD[v].projData.elType;
+            int elIdx = proj_CD[v].projData.elIdx;
             // If it landed on a vertex, then modify the existing vertex
             if (elType == 0) {
                 // If we landed on an existing cut-vertex, then things are bad!
-                if (V[elIdx].label != 0) {
+                if (cutData[elIdx].label != 0) {
                     return -1;
                 }
-                V[elIdx].label = 1;
-                V[elIdx].projData = proj_V[v].projData;
-                V[elIdx].defData.projVector = proj_V[v].defData.projVector;
+                cutData[elIdx].label = 1;
+                cutData[elIdx].projData = proj_CD[v].projData;
+                cutData[elIdx].defData.projVector = proj_CD[v].defData.projVector;
                 dCNVtoV[v] = elIdx;
             } else if (elType == 1) {
                 // If it landed on an edge, we need to figure out where exacty to split the edge
-                int new_v = insertVertex(proj_V[v]);
+                int new_v = insertVertex(proj_V[v], proj_CD[v]);
                 dCNVtoV[v] = new_v;
                 // Check where to split
                 int insert_index = 0;
@@ -85,7 +91,7 @@ namespace Mesh {
                 edgeMap[elIdx].insert(edgeMap[elIdx].begin() + insert_index, std::make_pair(t, new_e));
             } else {
                 // If it landed on a face, then simply insert the vertex
-                int new_v = insertVertex(proj_V[v]);
+                int new_v = insertVertex(proj_V[v], proj_CD[v]);
                 dCNVtoV[v] = new_v;
             }
         }
@@ -112,19 +118,21 @@ namespace Mesh {
             }
             // Classify based on properties
             std::vector<Vert> traceVerts;
+            std::vector<vertProjData> traceProjData;
             traceVerts.push_back(V[v0]);
+            traceProjData.push_back(cutData[v0].projData);
             int depth = 0;
             Eigen::Vector3d direc = (V[v1].pos - V[v0].pos).normalized();
             //Eigen::Vector3d direc = (dCN_V[dCN_v1].pos - dCN_V[dCN_v0].pos).normalized();
-            std::cout << "Starting trace from vert " << v0 << " (proj type: " << V[v0].projData.elType << ") to " << v1 << " (proj type: " << V[v1].projData.elType << ")" << std::endl;
+            std::cout << "Starting trace from vert " << v0 << " (proj type: " << cutData[v0].projData.elType << ") to " << v1 << " (proj type: " << cutData[v1].projData.elType << ")" << std::endl;
             /*
             std::cout << "Initial direction: " << direc[0] << ", "
                                         << direc[1] << ", "
                                         << direc[2] << std::endl;
             */
-            int success = M->traceGeodesic(V[v0], V[v1], direc, 
-                                           V[v0].projData,
-                                           traceVerts, depth);
+            int success = M->traceGeodesic(V[v0], cutData[v0].projData, V[v1], cutData[v1].projData, direc,
+                                           cutData[v0].projData,
+                                           traceVerts, traceProjData, depth);
             // This is a likely spot for failure, so flag it
             if (success != 1) {
                 std::cout << "Trace failed. Trying opposite direction." << std::endl;
@@ -132,39 +140,44 @@ namespace Mesh {
                 // TODO: How necessary is this?
                 depth = 0;
                 traceVerts.clear();
+                traceProjData.clear();
                 traceVerts.push_back(V[v0]);
-                int success_opposite = M->traceGeodesic(V[v0], V[v1], -1 * direc, 
-                                           V[v0].projData,
-                                           traceVerts, depth);
+                traceProjData.push_back(cutData[v0].projData);
+                int success_opposite = M->traceGeodesic(V[v0], cutData[v0].projData, V[v1], cutData[v1].projData, -1 * direc,
+                                           cutData[v0].projData,
+                                           traceVerts, traceProjData, depth);
                 if (success_opposite != 1) {
                     std::cout << "Trace failed again. Quitting." << std::endl;
                     return -1;
                 }
             }
             traceVerts.push_back(V[v1]);
-            
+            traceProjData.push_back(cutData[v1].projData);
+
             // Insert each vert into the cutmesh
             std::vector<int> traceList;
             traceList.push_back(v0);
             for (int v_idx = 1; v_idx < traceVerts.size() - 1; v_idx++) {
-                traceVerts[v_idx].label = 2;
+                CutData traceCD;
+                traceCD.label = 2;
+                traceCD.projData = traceProjData[v_idx];
                 // TODO: Is this a safe thing to do?
-                // i.e., the projVector taken using the midpoint of the associated halfedge, thus being deterministic without 
+                // i.e., the projVector taken using the midpoint of the associated halfedge, thus being deterministic without
                 // Requiring us to subdivide the dCN edge OR change the projection estimate formula (sort of)
-                traceVerts[v_idx].defData.projVector = ((dCN_V[dCN_v1].pos + dCN_V[dCN_v0].pos) / 2) - traceVerts[v_idx].pos;
+                traceCD.defData.projVector = ((dCN_V[dCN_v1].pos + dCN_V[dCN_v0].pos) / 2) - traceVerts[v_idx].pos;
                 // First, compute an estimated curvenet position so we can take the difference
-                if (traceVerts[v_idx].projData.elType == 0) {  // Check if we are on a vertex
-                    if (V[traceVerts[v_idx].projData.elIdx].label != 0) { // If we hit a vertex that is already assigned, then quit
+                if (traceProjData[v_idx].elType == 0) {  // Check if we are on a vertex
+                    if (cutData[traceProjData[v_idx].elIdx].label != 0) { // If we hit a vertex that is already assigned, then quit
                         return -1;
                     }
-                    V[traceVerts[v_idx].projData.elIdx].label = 2;
-                    V[traceVerts[v_idx].projData.elIdx].projData = traceVerts[v_idx].projData;
-                    V[traceVerts[v_idx].projData.elIdx].defData = traceVerts[v_idx].defData;
-                    traceList.push_back(traceVerts[v_idx].projData.elIdx);
-                } else if (traceVerts[v_idx].projData.elType == 1) { // We must be on an edge
-                    int new_v = insertVertex(traceVerts[v_idx]);
+                    cutData[traceProjData[v_idx].elIdx].label = 2;
+                    cutData[traceProjData[v_idx].elIdx].projData = traceCD.projData;
+                    cutData[traceProjData[v_idx].elIdx].defData = traceCD.defData;
+                    traceList.push_back(traceProjData[v_idx].elIdx);
+                } else if (traceProjData[v_idx].elType == 1) { // We must be on an edge
+                    int new_v = insertVertex(traceVerts[v_idx], traceCD);
                     // Check if the edge was already split. If so, find where to split it.
-                    int orig_e = V[new_v].projData.elIdx;   // source mesh edge index
+                    int orig_e = cutData[new_v].projData.elIdx;   // source mesh edge index
                     int e_insert = orig_e;                  // cutmesh edge to split
                     // Compute t ONLY from the original/source edge
                     int orig_he = M->E[orig_e].he;
@@ -330,7 +343,7 @@ namespace Mesh {
             bool deactivate = true;
             for (int he = 0; he < adjHE.size(); he++) {
                 int v = HE[adjHE[he]].dest;
-                if ((V[v].projData.elType != 2)) {
+                if ((cutData[v].projData.elType != 2)) {
                     // At least one vertex in the face is either from the original mesh, landed on a mesh vertex, or split a mesh edge
                     deactivate = false;
                 }
@@ -373,7 +386,7 @@ namespace Mesh {
         int max_v = V.size();
         // Iterate over each dCNVert
         for (int v = 0; v < max_v; v++) {
-            if (V[v].label == 0 || !V[v].active) { // Only process dCN vertices
+            if (cutData[v].label == 0 || !V[v].active) { // Only process dCN vertices
                 continue;
             }
             // Gather all adjacent halfedges
@@ -434,10 +447,14 @@ namespace Mesh {
                 if (i == 0) {
                     v_current = v;
                 } else {
-                    v_current = insertVertex(V[v].pos, V[v].n, V[v].label, -1, V[v].projData.elType, V[v].projData.elIdx, V[v].defData.projVector);
+                    CutData splitCD;
+                    splitCD.label = cutData[v].label;
+                    splitCD.projData = cutData[v].projData;
+                    splitCD.defData.projVector = cutData[v].defData.projVector;
+                    v_current = insertVertex(V[v].pos, V[v].n, splitCD);
                 }
                 // Rewire corner index
-                V[v_current].corner_idx = cornerIdxs[i];
+                cutData[v_current].corner_idx = cornerIdxs[i];
                 V[v_current].he = startHE;
 
                 // Check if we need to first insert the start boundary

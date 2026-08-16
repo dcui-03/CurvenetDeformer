@@ -8,8 +8,6 @@
 #include <Eigen/Sparse>
 #include <vector>
 #include <map>
-#include <glm/glm.hpp>
-#include <glm/vec3.hpp>
 
 namespace Mesh {
     class cutmesh;
@@ -17,6 +15,10 @@ namespace Mesh {
 
 namespace Curvenet {
     class curvenet;
+}
+
+namespace ProfileMover {
+    class profilemover;
 }
 
 namespace DCurvenet {
@@ -36,41 +38,16 @@ class dcurvenet {
         // --------- GETTERS -----------
         const int numVerts() const { return V.size(); }
         const int numHalfedges() const { return HE.size(); }
-        const int numCurves() const { return C.size(); }
-        const std::vector<Vert>& verts() const { return V; }
-        const std::vector<HalfEdge>& halfedges() const { return HE; }
-        const std::vector<Curve>& curves() const { return C; }
 
-        // --------- POLYSCOPE VIZ -----------
-        int polyscopeFormat(Eigen::MatrixXd& Verts, 
-                            std::vector<std::array<int, 2>>& Edges, 
-                            std::vector<glm::vec3>& posEdgeTangents,
-                            std::vector<glm::vec3>& posEdgeBinormals,
-                            std::vector<glm::vec3>& posEdgeNormals,
-                            std::vector<glm::vec3>& negEdgeTangents,
-                            std::vector<glm::vec3>& negEdgeBinormals,
-                            std::vector<glm::vec3>& negEdgeNormals,
-                            std::vector<double>& weights) const;
-
-        
         // --------- RUNTIME COMPUTATION -----------
         // Update with new curvenet positions and local frames
         void updateDiscCurveNet();
-        // Move a single vertex to a new position
-        int moveVert(int v, Eigen::Vector3d new_pos); 
-        // Compute the deformation gradient on an edge given a new scaled frame
-        Eigen::Matrix3d computeHEDefGrad(int he);
-        // Compute deformation gradients on all halfedges
-        int computeDefGradAll();
-        // Pre-compute maps
-        int computedCNMats(Eigen::MatrixXd& f_dCN_flat, Eigen::MatrixXd& x_dCN);
-        // Compute dCN positions matrix
-        int computedCNVerts(Eigen::MatrixXd& x_dCN);
 
         // Propagate weights along curvenet
         int propagateWeights();
 
         friend class Mesh::cutmesh;    // Friend class to access curvenet variables
+        friend class ProfileMover::profilemover;
     protected:
         // No inherited classes
     private:
@@ -85,39 +62,9 @@ class dcurvenet {
         // Rewire incoming/outgoing halfedges of an intersection vertex such that topology is correct
         int rewireVertAdjHE(int v);
         // Compute projection data
-        int computeProjData();
+        int computeProjData(Mesh::mesh* M);
 
-        // --------- SCALED FRAME COMPUTATION -----------
-        // For controls, computes their corner normals and widths. For non-intersections, this method does nothing (return -1)
-        int vertCornerNormalsWidths(int v, std::vector<curveDeformData>& curveData);
-        // Corner normals on all vertices
-        int allCornerNormalsAndWidths(std::vector<curveDeformData>& curveData);
-        // Transport corner normals and widths from the two end corners of a curve
-        int transportNWOnCurve(int c, const curveDeformData& cData);
-        // Transport normals and widths for all curves
-        int transportNormalsAndWidths(const std::vector<curveDeformData>& curveData);
-
-        // Compute local frame on a curve
-        int computeScaledFrameOnCurve(int c);
-        // Compute scaled frames on all curves
-        int computeScaledFrames();
-        // Initialize new frames as copies of old
-        int copyFrameToRest(int he);
-        int copyFramesToRest();
-        // Validate that frames are not zero or NaN
-        int validateFrames();
-        
-        // --------- SCALED FRAME HELPERS -----------
-        
-        // Accumulates rotation matrices and lengths by tracing from a starting halfedge to an end vertex
-        double accumulateRotations(int start_he, int end_v, std::vector<Eigen::Matrix3d>& rots, std::vector<double>& lens);
-        // Compute torsion
-        double computeTorsion(Eigen::Vector3d n_1, Eigen::Vector3d n_k, Eigen::Matrix3d Om_k, Eigen::Vector3d t_k);
-        
         // --------- OTHER -----------
-        // Compute number of samples to take for a given
-        int computeNumSamples(double arclen);
-
         // Check if a halfedge is the positive or negative side
         bool isPositiveHalfedge(int he) const;
 
@@ -134,8 +81,6 @@ class dcurvenet {
 
         // Pointer to parent curvenet
         Curvenet::curvenet* CN;
-        // Pointer to parent mesh
-        Mesh::mesh* M;
 };
 
 }   // namespace DCurvenet

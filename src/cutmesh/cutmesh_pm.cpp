@@ -49,10 +49,10 @@ int cutmesh::computeVMatrix(Eigen::SparseMatrix<double>& V_mat, std::vector<int>
     int num_v = 0;
     // First just get number of vertices
     for (int v = 0; v < V.size(); v++) {
-        if (V[v].label == 0 && V[v].active) {
+        if (cutData[v].label == 0 && V[v].active) {
             vToCM.push_back(v);
             CMtoV[v] = num_v;
-            mToV[V[v].projData.elIdx] = num_v;
+            mToV[cutData[v].projData.elIdx] = num_v;
             num_v++;
         }
     }
@@ -67,7 +67,7 @@ int cutmesh::computeVMatrix(Eigen::SparseMatrix<double>& V_mat, std::vector<int>
     // Our convention is that each halfedge uses its origin vertex
     for (int he = 0; he < heToCMhe.size(); he++) {
         int origin = HE[HE[heToCMhe[he]].twin].dest;
-        if (V[origin].label == 0) {   // Get V only
+        if (cutData[origin].label == 0) {   // Get V only
             tripletList.push_back(T(he, CMtoV[origin], 1.0));
         }
     }
@@ -86,11 +86,11 @@ int cutmesh::computeCMatrix(Eigen::SparseMatrix<double>& C_mat, Eigen::MatrixXd&
     int num_c = 0;
     // First just get number of vertices
     for (int v = 0; v < V.size(); v++) {
-        if (V[v].label != 0 && V[v].active) {
+        if (cutData[v].label != 0 && V[v].active) {
             cToCM.push_back(v);
             CMtoC[v] = num_c;
-            if (V[v].projData.elType == 0) {
-                mToC[V[v].projData.elIdx].push_back(num_c);
+            if (cutData[v].projData.elType == 0) {
+                mToC[cutData[v].projData.elIdx].push_back(num_c);
             }
             num_c++;
         }
@@ -104,16 +104,16 @@ int cutmesh::computeCMatrix(Eigen::SparseMatrix<double>& C_mat, Eigen::MatrixXd&
     tripletList.reserve(num_he);
 
     for (int c = 0; c < cToCM.size(); c++) {
-        int he_idx = V[cToCM[c]].corner_idx;
+        int he_idx = cutData[cToCM[c]].corner_idx;
         int dCN_v_idx = dCN->HE[HE[he_idx].dCN_idx].dest;
         c_rest.row(c) = (dCN->V[dCN_v_idx].pos).transpose();
     }
-    
+
     // Fill the matrix
     // Our convention is that each halfedge uses its origin vertex
     for (int he = 0; he < heToCMhe.size(); he++) {
         int origin = HE[HE[heToCMhe[he]].twin].dest;
-        if (V[origin].label != 0) {
+        if (cutData[origin].label != 0) {
             tripletList.push_back(T(he, CMtoC[origin], 1.0));
         }
     }
@@ -126,7 +126,7 @@ int cutmesh::computeCMatrix(Eigen::SparseMatrix<double>& C_mat, Eigen::MatrixXd&
 int cutmesh::computeProjMatrix(Eigen::MatrixXd& projVecs, const std::vector<int>& cToCM) {
     projVecs.resize(cToCM.size(), 3);
     for (int c = 0; c < cToCM.size(); c++) {
-        projVecs.row(c) = (V[cToCM[c]]).defData.projVector.transpose();
+        projVecs.row(c) = (cutData[cToCM[c]]).defData.projVector.transpose();
     }
     return 1;
 }
@@ -146,19 +146,19 @@ int cutmesh::compute_dCNMaps(Eigen::SparseMatrix<double>& M_dCN_flat,
 
     for (int c = 0; c < num_C; c++) {
         int v = cToCM[c];
-        int CM_he = V[v].corner_idx;
+        int CM_he = cutData[v].corner_idx;
         int dCN_prev = HE[CM_he].dCN_idx;
 
-        if (V[v].label == 1) {  // If we are on a label 1 cut-vert, take the average of the adjacent halfedges
+        if (cutData[v].label == 1) {  // If we are on a label 1 cut-vert, take the average of the adjacent halfedges
             int dCN_next = dCN->HE[dCN_prev].next;
-            int CM_he = V[v].corner_idx;
+            int CM_he = cutData[v].corner_idx;
             // 0.5 * (prev defGrad + next defGrad)
             grad_tripletList.emplace_back(c, dCN_prev, 0.5);
             grad_tripletList.emplace_back(c, dCN_next, 0.5);
             // Get position
             int target_v = dCN->HE[dCN_prev].dest;
             pos_tripletList.emplace_back(c, target_v, 1.0);
-        } else if (V[v].label == 2) {   // Otherwise, just take the parent halfedge
+        } else if (cutData[v].label == 2) {   // Otherwise, just take the parent halfedge
             grad_tripletList.emplace_back(c, dCN_prev, 1.0);
             // Get current position
             int dCN_twin = dCN->HE[dCN_prev].twin;
@@ -235,7 +235,7 @@ int cutmesh::computeFaceOps(Eigen::SparseMatrix<double>& M_v_F,
         // Average over the adjacent vertices
         for (int v = 0; v < adjV.size(); v++) {
             int CM_v = adjV[v];
-            if (V[CM_v].label == 0) {
+            if (cutData[CM_v].label == 0) {
                 int vRow = CMtoV[CM_v];
                 v_tripletList.emplace_back(fRow, vRow, w);
             } else {
@@ -333,14 +333,14 @@ int cutmesh::computeWeightOps(Eigen::VectorXd& weights, const std::vector<int>& 
     weights.resize(cToCM.size());
     for (int c = 0; c < cToCM.size(); c++) {
         int v = cToCM[c];
-        if (!V[v].active || V[v].label == 0) {
+        if (!V[v].active || cutData[v].label == 0) {
             continue;
         }
-        int dCN_prev = HE[V[v].corner_idx].dCN_idx;
-        if (V[v].label == 1) {
+        int dCN_prev = HE[cutData[v].corner_idx].dCN_idx;
+        if (cutData[v].label == 1) {
             int dCN_v = dCN->HE[dCN_prev].dest;
             weights[c] = dCN->V[dCN_v].w;
-        } else if (V[v].label == 2) {
+        } else if (cutData[v].label == 2) {
             int dCN_twin = dCN->HE[dCN_prev].twin;
             int next_v = dCN->HE[dCN_prev].dest;
             int prev_v = dCN->HE[dCN_twin].dest;
@@ -402,120 +402,5 @@ int cutmesh::computeHELaplacian(Eigen::SparseMatrix<double>& L, std::map<int, in
     return 1;
 }
 
-// Compute deformation gradients on cut-vertices
-int cutmesh::computeDefGrads(Eigen::MatrixXd& defGrads, const std::vector<int>& cToCM) {
-    // TODO: Assert so we don't have to resize
-    defGrads.resize(cToCM.size(), 9);
-    defGrads.setZero();
-    // Grab deformation gradients from the corresponding cutmesh
-    #pragma omp parallel for
-    for (int c = 0; c < cToCM.size(); c++) {
-        int v = cToCM[c];
-        int dCN_prev = HE[V[v].corner_idx].dCN_idx;
-        if (dCN_prev < 0) {
-            std::cout << "Incorrect corner index assignment found in cutmesh::computeDefGrads" << std::endl;
-            // return -1;
-        }
-        Eigen::Matrix3d defGrad;
-        // Compute the vertex deformation gradient based on the corresponding dCN def grad
-        if (V[v].label == 1) {
-            int dCN_next = dCN->HE[dCN_prev].next;
-            defGrad = 0.5 * (dCN->HE[dCN_prev].defData.defGrad + dCN->HE[dCN_next].defData.defGrad);
-        } else if (V[v].label == 2) {
-            defGrad = dCN->HE[dCN_prev].defData.defGrad;
-        }
-        V[v].defData.defGrad = defGrad;
-        defGrads.row(c) = Utils::flattenMatrix3d(defGrad).transpose();
-    }
-    // std::cout << "Constraint def grads has size " << cToCM.size() << std::endl;
-    return 1;
-}
-
-// Apply solved deformation gradients to the cutmesh
-void cutmesh::applyDefGrads(const Eigen::MatrixXd& defGrads, const std::vector<int>& vToCM) {
-    // std::cout << "Num def grads to distribute: " << defGrads.rows() << std::endl;
-    #pragma omp parallel for
-    for (int v = 0; v < vToCM.size(); v++) {
-        Eigen::Matrix3d defGrad = Utils::compressVector9d(defGrads.row(v).transpose());
-        V[vToCM[v]].defData.defGrad = defGrad;
-    }
-    // std::cout << "Distributed " << vToCM.size() << " def grads." << std::endl;
-    return;
-}
-
-// Estimate projected curvenet positions
-int cutmesh::estimateCNPositions(Eigen::MatrixXd& cnPos, const std::vector<int>& cToCM) {
-    cnPos.resize(cToCM.size(), 3);
-    cnPos.setZero();
-    std::vector<Eigen::Vector3d> cnPos_vector(cToCM.size());
-
-    #pragma omp parallel for
-    // Grab deformation gradients from the corresponding cutmesh
-    for (int c = 0; c < cToCM.size(); c++) {
-        int v = cToCM[c];
-        int dCN_corner = HE[V[v].corner_idx].dCN_idx;
-        if (dCN_corner < 0) {
-            std::cout << "Incorrect corner index assignment found in cutmesh::estimateCNPositions" << std::endl;
-            // return -1;
-        }
-        Eigen::Vector3d new_pos = -1 * V[v].defData.defGrad * V[v].defData.projVector;
-        // Compute the vertex deformation position based on the corresponding dCN def grad
-        if (V[v].label == 1) {
-            Eigen::Vector3d target_pos = dCN->V[dCN->HE[dCN_corner].dest].new_pos;
-            new_pos += target_pos;
-        } else if (V[v].label == 2) {
-            Eigen::Vector3d next_pos = dCN->V[dCN->HE[dCN_corner].dest].new_pos;
-            Eigen::Vector3d prev_pos = dCN->V[dCN->HE[dCN->HE[dCN_corner].twin].dest].new_pos;
-            new_pos += 0.5 * (next_pos + prev_pos);
-        }
-        cnPos_vector[c] = new_pos.transpose();
-    }
-
-    for (int c = 0; c < cToCM.size(); c++) {
-        cnPos.row(c) = cnPos_vector[c];
-    }
-    return 1;
-}
-
-// Estimate the deformed faces
-int cutmesh::estimateFaceDeformations(Eigen::MatrixXd& deformedFaces, const std::map<int, int>& CMheTohe, bool arap) {
-    deformedFaces.resize(CMheTohe.size(), 3);
-    deformedFaces.setZero();
-
-    // For deformed faces
-    #pragma omp parallel for 
-    for (int f = 0; f < F.size(); f++) {
-        if (!F[f].active) {
-            continue;
-        }
-        // Get the adjacent vertices and halfedges
-        std::vector<int> adjHE_idxs = faceAdjHalfEdges(f);
-        // Make sure to set the flag to origin so we can align easily with V and C's indexing
-        std::vector<int> adjV_idxs = faceAdjVertIdxs(f, true);
-        std::vector<Eigen::Vector3d> adjV = adjVerts(adjV_idxs);
-        Eigen::MatrixXd V_Matrix = DECUtils::posOp(adjV);
-        // Average the deformation gradient
-        Eigen::Matrix3d defGrad = Eigen::Matrix3d::Zero();
-        for (int v = 0; v < adjV.size(); v++) {
-            defGrad += V[adjV_idxs[v]].defData.defGrad;
-        }
-        defGrad /= adjV.size();
-        Eigen::MatrixXd defFace;
-        // ARAP: Extract rotations (test)
-        if (arap) {
-            Eigen::Matrix3d R, S;
-            Utils::polarDecomposition(defGrad, R, S);
-            defFace = V_Matrix * R.transpose();
-        } else {
-            defFace = V_Matrix * defGrad.transpose();
-        }
-
-        for (int v = 0; v < adjV.size(); v++) {
-            int he = adjHE_idxs[v];
-            deformedFaces.row(CMheTohe.at(he)) = defFace.row(v);
-        }
-    }
-    return 1;
-}
 
 }   // namespace Mesh

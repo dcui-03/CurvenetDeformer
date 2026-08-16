@@ -77,10 +77,6 @@ bool pscurvenet::updateTangentPos(int psT_idx, const Eigen::Vector3d& new_pos, b
     return updateTangentPos(psTangentToS[psT_idx].first, psTangentToS[psT_idx].second, new_pos, project);
 }
 
-bool pscurvenet::rotateTangentPos(int psT_idx, Eigen::Matrix3d rotation) {
-    return rotateTangentPos(psTangentToS[psT_idx].first, psTangentToS[psT_idx].second, rotation);
-}
-
 // Update tangent position
 bool pscurvenet::updateTangentPos(int s, bool t0, const Eigen::Vector3d& new_pos, bool project) {
     if (s >= S.size()) {

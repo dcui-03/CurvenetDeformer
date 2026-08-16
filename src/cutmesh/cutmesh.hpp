@@ -3,16 +3,19 @@
 
 #include "mesh/mesh.hpp"
 #include "mesh/mesh_types.hpp"
+#include "cutmesh_types.hpp"
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Eigen/StdVector>
 #include <vector>
 #include <map>
-#include <glm/glm.hpp>
-#include <glm/vec3.hpp>
 
 namespace DCurvenet {
     class dcurvenet;
+}
+
+namespace ProfileMover {
+    class profilemover;
 }
 
 namespace Mesh {
@@ -32,13 +35,6 @@ class cutmesh : public mesh {
         // Copies in vertex and edge data from the reference mesh then applies the dCN to embed the curves
         cutmesh(mesh* MRef, DCurvenet::dcurvenet* dCN);
         cutmesh();
-
-        // Add a discrete Curvenetwork Pointer
-        bool applyDiscreteCurvenet(DCurvenet::dcurvenet* dCurvenet);
-        // Assign a discrete curvenet index to a halfedge
-        bool assignDCNtoHE(int he, const int dCN_idx);
-        // Add a reference mesh
-        bool applyMeshRef(mesh* MRef);
 
         // Helpers for profilemover class
         void computeHEMap(std::vector<int>& heToCMhe, std::map<int, int>& CMheTohe);
@@ -65,34 +61,8 @@ class cutmesh : public mesh {
         int computeWeightOps(Eigen::VectorXd& weights, const std::vector<int>& cToCM);
         
         int computeHELaplacian(Eigen::SparseMatrix<double>& L, std::map<int, int>& CMheTohe);
-        // Compute the deformation gradient on the initial cutmesh dCN verts
-        int computeDefGrads(Eigen::MatrixXd& defGrads, const std::vector<int>& cToCM);
-        // Apply solved deformation gradients to the cutmesh
-        void applyDefGrads(const Eigen::MatrixXd& defGrads, const std::vector<int>& vToCM);
-        // Estimate projected curvenet positions
-        int estimateCNPositions(Eigen::MatrixXd& cnPos, const std::vector<int>& cToCM);
-        // Estimate the deformed faces
-        int estimateFaceDeformations(Eigen::MatrixXd& faceDef, const std::map<int, int>& CMheTohe, bool arap = false);
 
-        // POLYSCOPE reformatting
-        int polyscopeFormat(Eigen::MatrixXd& Verts, std::vector<std::vector<int>>& Faces, 
-                            std::vector<glm::vec3>& VertN, std::vector<glm::vec3>& FaceN, 
-                            std::vector<glm::vec3>& cornerIdx,
-                            std::vector<glm::vec3>& projVecs) const;
-
-        // Getters
-        Eigen::Vector3d getVPos(int v) const;
-        Eigen::Vector3d getNormal(int elType, int elIdx) const;
-        Eigen::Vector3d getVNormal(int v) const;
-        Eigen::Vector3d getENormal(int e) const;
-        Eigen::Vector3d getFNormal(int f) const;
-
-        // Get mean edge length
-        double getMeanE() const;
-        // Get bbox diagonal length
-        double getBBoxDiag() const;
-
-        // friend class ProfileMover::profilemover;
+        friend class ProfileMover::profilemover;
     protected:
     private:
         // ------------- INITIALIZATION (cutmesh.cpp)  -----------------
@@ -115,21 +85,8 @@ class cutmesh : public mesh {
         // Inserts a vertex at a location into a data structure
         // Returns the index of the new vertex
         // TODO: Move to protected part of mesh class
-        int insertVertex(Eigen::Vector3d pos,
-                         Eigen::Vector3d n, 
-                         int label = 0, 
-                         int cornerIdx = -1, 
-                         int ref_Type = 0, 
-                         int ref_Idx = -1, 
-                         Eigen::Vector3d proj = Eigen::Vector3d::Zero(),
-                         Eigen::Matrix3d defGrad = Eigen::Matrix3d::Identity());
-        int insertVertex(Eigen::Vector3d pos, 
-                        Eigen::Vector3d n, 
-                        int label = 0, 
-                        int cornerIdx = -1, 
-                        vertProjData projData = vertProjData({-1, -1}), 
-                        vertDeformData defData = vertDeformData({Eigen::Vector3d::Zero(), Eigen::Matrix3d::Identity()}));
-        int insertVertex(Vert splitV);
+        int insertVertex(Eigen::Vector3d pos, Eigen::Vector3d n, CutData cutInfo);
+        int insertVertex(Vert splitV, CutData cutInfo);
         // Topologically split an edge with an existing vertex
         int splitEdge(int e, int new_v);
         // Insert an edge between two existing vertices
@@ -139,6 +96,9 @@ class cutmesh : public mesh {
         mesh* M;
         // Pointer to a dCN object if necessary
         DCurvenet::dcurvenet* dCN;
+
+        // Extra per-vertex data only cut-vertices need, parallel to V (same size/indexing)
+        std::vector<CutData> cutData;
 };
 
 }   // namespace Mesh
