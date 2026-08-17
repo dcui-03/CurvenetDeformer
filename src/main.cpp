@@ -752,7 +752,7 @@ void myCallback() {
 
             // TODO: Switch to a different version for non-triangle meshes
             Eigen::Vector3d proj;
-            Mesh::vertProjData vProjData = PM_Mesh->computeVProjection(pos, proj);
+            Utils::projData vProjData = PM_Mesh->computeVProjection(pos, proj);
             if (vProjData.elIdx != -1 && vProjData.elType != -1) {
                 Eigen::Vector3d normal = PM_Mesh->getNormal(vProjData);
                 psCN->addControl(pos, normal, static_cast<double>(offsetParam));

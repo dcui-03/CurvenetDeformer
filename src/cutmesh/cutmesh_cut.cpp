@@ -24,21 +24,21 @@ namespace Mesh {
         #pragma omp parallel for
         for (int v = 0; v < dCN_V.size(); v++) {
             // Since we already compute this at the dcurvenet level, grab the data from it
-            const Polynet::projData proj = dCN_V[v].proj;
+            const Utils::frameData proj = dCN_V[v].proj;
             Eigen::Vector3d n;
-            if (proj.elType == 0) {  // Vertex
-                n = M->V[proj.elIdx].n;
-            } else if (proj.elType == 1) {   // Edge
-                n = M->E[proj.elIdx].n;
+            if (proj.proj.elType == 0) {  // Vertex
+                n = M->V[proj.proj.elIdx].n;
+            } else if (proj.proj.elType == 1) {   // Edge
+                n = M->E[proj.proj.elIdx].n;
             } else {    // Face
-                n = M->F[proj.elIdx].n;
+                n = M->F[proj.proj.elIdx].n;
             }
-            proj_V[v] = createVertex(dCN_V[v].pos - proj.projVec, n);
+            proj_V[v] = createVertex(dCN_V[v].pos - proj.offset, n);
             proj_CD[v].label = 1;
             proj_CD[v].corner_idx = -1;
-            proj_CD[v].projData.elType = proj.elType;
-            proj_CD[v].projData.elIdx = proj.elIdx;
-            proj_CD[v].defData.projVector = proj.projVec;
+            proj_CD[v].projData.elType = proj.proj.elType;
+            proj_CD[v].projData.elIdx = proj.proj.elIdx;
+            proj_CD[v].defData.projVector = proj.offset;
         }
         
         // Now, add all vertices into the cutmesh (SEQUENTIAL)
@@ -117,7 +117,7 @@ namespace Mesh {
             }
             // Classify based on properties
             std::vector<Vert> traceVerts;
-            std::vector<vertProjData> traceProjData;
+            std::vector<Utils::projData> traceProjData;
             traceVerts.push_back(V[v0]);
             traceProjData.push_back(cutData[v0].projData);
             int depth = 0;
