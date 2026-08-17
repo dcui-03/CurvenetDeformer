@@ -544,4 +544,49 @@ int mesh::evaluateBasis(const vertProjData& proj, const Eigen::VectorXd& coords,
     return 1;
 }
 
+
+// Compute the mesh laplacian on verts
+int mesh::computeLaplacian(Eigen::SparseMatrix<double>& L) {
+    // Gather vertices into a vector
+    std::vector<Eigen::Vector3d> Verts(V.size());
+    std::vector<std::vector<int>> Faces(F.size());
+    for (int v = 0; v < V.size(); v++) {
+        Verts[v] = V[v].pos;
+    }
+    // Gather faces into a vector
+    for (int f = 0; f < F.size(); f++) {
+        Faces[f] = faceAdjVertIdxs(f);
+    }
+
+    // Call the constructor
+    L = DECUtils::LaplacianOp(Verts, Faces);
+    return 1;
+}
+// Compute the lumped mass matrix (as a vector) on verts
+int mesh::computeMass(Eigen::VectorXd& A) {
+    A.resize(V.size());
+    for (int v = 0; v < V.size(); v++) {
+        A[v] = V[v].vArea;
+    }
+    return 1;
+}
+
+// Get verts as a matrix
+int mesh::vertsAsMatrix(Eigen::MatrixXd& Verts) {
+    Verts.resize(V.size(), 3);
+    for (int v = 0; v < V.size(); v++) {
+        Verts.row(v) = V[v].pos.transpose();
+    }
+    return 1;
+}
+
+// Directly overwrite a vertex position (no BVH/normal recompute)
+void mesh::setVertPos(int v, const Eigen::Vector3d& pos) {
+    if (v < 0 || v >= V.size()) {
+        return;
+    }
+    V[v].pos = pos;
+    return;
+}
+
 }   // namespace Mesh

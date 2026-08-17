@@ -37,6 +37,12 @@ class polynet {
         // Find the closest point on the polyline to p, snapping to a vertex within snapTol
         int closestPoint(const Eigen::Vector3d& p, polyBindData& bind, bool snap = true, double snapTol = 1e-6) const;
 
+        int vertsAsMatrix(Eigen::MatrixXd& Verts);
+        int evaluateBasis(int elType, int elIdx, double t, std::vector<std::pair<int, double>>& basis);
+
+        // Get bounding box diagonal length
+        double getBBoxDiag() const;
+
     protected:
         // --------- INITIALIZATION -----------
         // Add a vertex given its parameters
@@ -46,7 +52,7 @@ class polynet {
         // Rewire incoming/outgoing halfedges of a vertex such that topology is correct
         // At valence 1/2 this is always unambiguous. At valence 3+, prev/next are only
         // wired if `ordered` is true (i.e. adjHE is a genuine CCW order); otherwise they
-        // are left at -1, marking the halfedge chain as ending there.
+        // are left at -1, marking the halfedge chain as ending there
         int rewireVertAdjHE(int v, bool ordered);
         // Compute projection data
         int computeProjData(const Mesh::mesh* M);
@@ -64,6 +70,8 @@ class polynet {
         int buildBVHNode(const std::vector<int>& edges, int depth);
         // Squared distance from a point to an AABB
         double pointAABBDist2(const Eigen::Vector3d& p, int box) const;
+        // Compute the length of the diagonal of the bounding box
+        void computeBBoxDiag();
 
         // Attributes as lists
         std::vector<Vert> V;
@@ -77,6 +85,9 @@ class polynet {
         // BVH over edges
         std::vector<AABB> BVH;
         int max_depth = 16;
+
+        // AABB Diagonal length
+        double bboxDiag = 0.0;
 };
 
 }   // namespace Polynet

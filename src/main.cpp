@@ -120,6 +120,7 @@ double activeWeight = 1.0;
 
 // Pre-computation
 int samplingParam = 5;
+float offsetParam = 0.0f; // Surface offset applied to newly-created controls (0 = on-surface)
 
 // Discrete curvenet for modeling
 std::unique_ptr<psCurvenet::pscurvenet> psCN = nullptr; // Curvenet that polyscope will use for updates
@@ -573,6 +574,7 @@ void myCallback() {
 
     // User parameter for sampling the spline
     ImGui::SliderInt("Sampling Param", &samplingParam, 2, 8);
+    ImGui::SliderFloat("Offset", &offsetParam, 0.0f, 1.0f);
 
     ImGuiSection("Vertex Weights");
     // Weighting vertices
@@ -753,7 +755,7 @@ void myCallback() {
             Mesh::vertProjData vProjData = PM_Mesh->computeVProjection(pos, proj);
             if (vProjData.elIdx != -1 && vProjData.elType != -1) {
                 Eigen::Vector3d normal = PM_Mesh->getNormal(vProjData);
-                psCN->addControl(pos, normal);
+                psCN->addControl(pos, normal, static_cast<double>(offsetParam));
                 clearPM();
                 updateCurvenet(true);
                 updateProfileMover(true);

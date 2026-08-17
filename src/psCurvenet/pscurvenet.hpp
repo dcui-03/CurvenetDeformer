@@ -11,7 +11,7 @@
 namespace psCurvenet {
 
 // Editable curvenet class with various operations for test editing
-// NOTE: This curvenet representation is NOT associated with profilemover class and is for Polyscope testing purposes only
+// NOTE: This curvenet representation is NOT associated with cagedeformer class and is for Polyscope testing purposes only
 class pscurvenet {
     public:
         // Empty constructor
@@ -28,8 +28,8 @@ class pscurvenet {
         // Update tangent position, or returns false
         bool updateTangentPos(int psT_idx, const Eigen::Vector3d& new_pos, bool project = true);
         bool updateTangentPos(int s, bool t0, const Eigen::Vector3d& new_pos, bool project = true);
-        // Add a control and return its index
-        int addControl(Eigen::Vector3d pos, Eigen::Vector3d normal = Eigen::Vector3d::UnitZ());
+        // Add a control and return its index. offset shifts pos along normal before storing (0 = on-surface)
+        int addControl(Eigen::Vector3d pos, Eigen::Vector3d normal = Eigen::Vector3d::UnitZ(), double offset = 0.0);
         // Add a spline given only the start and end. Estimate t0 and t1 from these
         int addSpline(int c0, int c1, double init_factor = 2.5);
         // Add a spline and return its index
@@ -83,7 +83,7 @@ class pscurvenet {
         // Store attributes as maps, where the key is the index
         std::vector<Control> C;
         std::vector<Spline> S;
-        
+
         bool recomputeMap = false;
         std::map<int, std::pair<int, bool>> psTangentToS;    // Maps polyscope tangent to spline and t0/t1
 };

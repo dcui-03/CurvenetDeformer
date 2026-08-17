@@ -434,6 +434,27 @@ void mesh::computeMeanE() {
     return;
 }
 
+double mesh::getSquaredMeanE() const {
+    double sqMeanE = 0.0;
+    if (active_e == 0) {
+        return 0.0;
+    }
+    for (int e = 0; e < E.size(); ++e) {
+        if (!E[e].active) {
+            continue;
+        }
+        std::vector<int> eVerts = edgeAdjVerts(e);
+        sqMeanE += (V[eVerts[0]].pos - V[eVerts[1]].pos).squaredNorm();
+    }
+    sqMeanE /= active_e;
+    return sqMeanE;
+}
+
+// Get bounding box diagonal length
+double mesh::getBBoxDiag() const {
+    return bboxDiag;
+}
+
 // Computes the diagonal length of the mesh's AABB
 void mesh::computeBBoxDiag() {
     bool found = false;     // Safety

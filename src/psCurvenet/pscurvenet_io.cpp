@@ -18,7 +18,7 @@ namespace {
 bool readNextDataLine(std::istream& in, std::string& line) {
     while (std::getline(in, line)) {
         // Strip comments.
-        const std::size_t hash = line.find('#');
+        const auto hash = line.find('#');
         if (hash != std::string::npos) {
             line = line.substr(0, hash);
         }

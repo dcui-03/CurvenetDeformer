@@ -13,10 +13,34 @@ namespace Curvenet {
                         std::pow(t, 3) * c3;
         return sample;
     }
+    // First derivative of Bezier curve
+    Eigen::Vector3d curvenet::tBezier_first(const Eigen::Vector3d& c0, const Eigen::Vector3d& c1, const Eigen::Vector3d& c2, const Eigen::Vector3d& c3, double t) const {
+        Eigen::Vector3d deriv = std::pow(1.0 - t, 2) * (c1 - c0) + 
+                        2 * (1.0 - t) * t * (c2 - c1) +
+                        t * t * (c3 - c2);
+        return 3 * deriv;
+    }
+    // Second derivative of Bezier curve
+    Eigen::Vector3d curvenet::tBezier_second(const Eigen::Vector3d& c0, const Eigen::Vector3d& c1, const Eigen::Vector3d& c2, const Eigen::Vector3d& c3, double t) const {
+        Eigen::Vector3d deriv = (1.0 - t) * (c2 - 2 * c1 + c0) + 
+                        t * (c3 - 2 * c2 + c1);
+        return 6 * deriv;
+    }
     Eigen::Vector3d curvenet::tSampleBezier(int s, double t) const {
         Eigen::Vector3d c0, c1, c2, c3;
         splineCtrlPts(s, c0, c1, c2, c3);
         return tSampleBezier(c0, c1, c2, c3, t);
+    }
+
+    Eigen::Vector3d curvenet::tBezier_first(int s, double t) const {
+        Eigen::Vector3d c0, c1, c2, c3;
+        splineCtrlPts(s, c0, c1, c2, c3);
+        return tBezier_first(c0, c1, c2, c3, t);
+    }
+    Eigen::Vector3d curvenet::tBezier_second(int s, double t) const {
+        Eigen::Vector3d c0, c1, c2, c3;
+        splineCtrlPts(s, c0, c1, c2, c3);
+        return tBezier_second(c0, c1, c2, c3, t);
     }
     // Get the 4 control points of a spline
     void curvenet::splineCtrlPts(int s, Eigen::Vector3d& c0, Eigen::Vector3d& c1, Eigen::Vector3d& c2, Eigen::Vector3d& c3) const {

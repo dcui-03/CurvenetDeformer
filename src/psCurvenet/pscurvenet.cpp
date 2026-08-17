@@ -135,12 +135,12 @@ bool pscurvenet::rotateTangentPos(int s, bool t0, Eigen::Matrix3d rotation) {
     return true;
 }
 
-// Add a control and return its index
-int pscurvenet::addControl(Eigen::Vector3d pos, Eigen::Vector3d normal) {
+// Add a control and return its index. offset shifts pos along normal before storing
+int pscurvenet::addControl(Eigen::Vector3d pos, Eigen::Vector3d normal, double offset) {
     recomputeMap = true;
     int c = C.size();
     C.emplace_back();
-    C[c].pos = pos;
+    C[c].pos = pos + offset * normal.normalized();
     C[c].n = normal;
     return c;
 }

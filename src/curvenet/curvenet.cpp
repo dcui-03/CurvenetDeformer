@@ -42,6 +42,7 @@ namespace Curvenet {
         if (traceCurves() == -1) {
             throw std::runtime_error("Failed to trace curve network.");
         }
+        computeBBoxDiag();
         return;
     }
 
@@ -389,9 +390,21 @@ namespace Curvenet {
         if (adjHE[1] == back_he) {
             return adjHE[0];
         }
-        // The halfedge we arrived on does not actually end at this control
-        // according to the control's adjacency list.
+        // The halfedge we arrived on does not actually end at this control according to the control's adjacency list
         return -1;
+    }
+
+    // Controls and tangents as a matrix
+    int curvenet::CTasMatrix(Eigen::MatrixXd& Verts) {
+        Verts.resize(C.size() + HE.size(), 3);
+
+        for (int c = 0; c < C.size(); c++) {
+            Verts.row(c) = C[c].new_pos.transpose();
+        }
+        for (int t = 0; t < HE.size(); t++) {
+            Verts.row(C.size() + t) = HE[t].tan.transpose();
+        }
+        return 1;
     }
 
     // Find the closest point on the curve network to p, via dCN's polyline BVH
@@ -402,7 +415,88 @@ namespace Curvenet {
         if (dCN->closestPoint(p, bind, snap, snapTol) != 1) {
             return -1;
         }
+        // Optimize t based on the locally guess
+        bind.t = optimizeT(bind.t, bind.s, p);
+        // Compute the explicit position
         bind.pos = tSampleBezier(bind.s, bind.t);
         return 1;
+    }
+
+    // Newton iterations to refine an initial guess t-value to get true closest point
+    double curvenet::optimizeT(double t, int s, const Eigen::Vector3d& p, int max_iter) const {
+        t = std::clamp(t, 0.0, 1.0);
+        double curr_t = t;
+        for (int i = 0; i < max_iter; i++) {
+            Eigen::Vector3d B = tSampleBezier(s, t);
+            Eigen::Vector3d B_ = tBezier_first(s, t);
+            Eigen::Vector3d B__ = tBezier_second(s, t);
+            Eigen::Vector3d diff = B - p;
+            double grad = diff.dot(B_);
+            double hessian = B_.squaredNorm() + diff.dot(B__);
+
+            // refine t
+            double dt = grad / hessian;
+            curr_t -= dt;
+            curr_t = std::clamp(curr_t, 0.0, 1.0);
+            if (dt <= 1e-6) {  // convergence check
+                return curr_t;
+            }
+        }
+        return curr_t;
+    }
+
+    // Evaluate basis functions on a spline
+    int curvenet::evaluateBasis(int s, double t, std::vector<std::pair<int, double>>& basis) {
+        if (s < 0 || s >= S.size()) {
+            return -1;
+        }
+        basis.clear();
+        t = std::clamp(t, 0.0, 1.0);
+        const double eps = 1e-9;
+        int t0 = S[s].he;
+        int c0 = HE[t0].origin;
+        int t1 = HE[t0].twin;
+        int c1 = HE[t1].origin;
+        if (t <= eps) { // Start of spline
+            basis.push_back({c0, 1.0});
+        } else if (t >= 1.0 - eps) {  // End of spline
+            basis.push_back({c1, 1.0});
+        } else {    // Somewhere in the middle
+            basis.resize(4);
+            // Fill in with correct bases
+            // NOTE: The interior "tangent" vertices have a global C + HE indexing here...
+            basis[0] = {c0, std::pow(1.0 - t, 3)};
+            basis[1] = {t0 + C.size(), 3.0 * std::pow(1.0 - t, 2) * t};
+            basis[2] = {t1 + C.size(), 3.0 * (1.0 - t) * t * t};
+            basis[3] = {c1, std::pow(t, 3)};
+        }
+        return 1;
+    }
+
+    // Compute the length of the diagonal of the bounding box
+    void curvenet::computeBBoxDiag() {
+        bool found = false;
+        Eigen::Vector3d minV;
+        Eigen::Vector3d maxV;
+        for (int c = 0; c < C.size(); c++) {
+            if (!C[c].active) {
+                continue;
+            }
+            const Eigen::Vector3d& p = C[c].new_pos;
+            if (!found) {
+                minV = p;
+                maxV = p;
+                found = true;
+            } else {
+                minV = minV.cwiseMin(p);
+                maxV = maxV.cwiseMax(p);
+            }
+        }
+        bboxDiag = found ? (maxV - minV).norm() : 0.0;
+        return;
+    }
+
+    double curvenet::getBBoxDiag() const {
+        return bboxDiag;
     }
 }   // namespace Curvenet

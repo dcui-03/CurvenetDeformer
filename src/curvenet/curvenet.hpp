@@ -35,11 +35,21 @@ class curvenet {
         // TODO: REMOVE the below getters and use friend classes instead
         const std::vector<Control>& controls() const { return C; }
         std::vector<int> controlLocalSplineIdx(int c, int s) const;
+        // Get a combined list of controls and tangents as a matrix
+        int CTasMatrix(Eigen::MatrixXd& Verts);
 
         // --------- SAMPLING -----------
         // Sample a bezier curve at time t
         Eigen::Vector3d tSampleBezier(const Eigen::Vector3d& c0, const Eigen::Vector3d& c1, const Eigen::Vector3d& c2, const Eigen::Vector3d& c3, double t) const;
         Eigen::Vector3d tSampleBezier(int s, double t) const;
+        // Get first derivative of bezier curve at a sample point
+        Eigen::Vector3d tBezier_first(const Eigen::Vector3d& c0, const Eigen::Vector3d& c1, const Eigen::Vector3d& c2, const Eigen::Vector3d& c3, double t) const;
+        Eigen::Vector3d tBezier_first(int s, double t) const;
+        // Get second derivative of bezier curve at a sample point
+        Eigen::Vector3d tBezier_second(const Eigen::Vector3d& c0, const Eigen::Vector3d& c1, const Eigen::Vector3d& c2, const Eigen::Vector3d& c3, double t) const;
+        Eigen::Vector3d tBezier_second(int s, double t) const;
+        // Evaluate basis functions on a spline given a t-value
+        int evaluateBasis(int s, double t, std::vector<std::pair<int, double>>& basis);
         // NOTE: This is a naive, fast sampler that uniformly samples t's. Re-implement if desired
         // Returns n_samples points on the curve, including the endpoints
         std::vector<Eigen::Vector3d> sampleBezierNaive(int s, int n_samples = 50) const;
@@ -71,6 +81,11 @@ class curvenet {
         // Find the closest point on the curve network to p, via dCN's polyline BVH, then
         // evaluated exactly on the spline. Not refined past that; caller does the Newton step.
         int closestPoint(const Eigen::Vector3d& p, const Polynet::dcurvenet* dCN, cnBindData& bind, bool snap = true, double snapTol = 1e-6) const;
+        // Newton iterations to refine an initial guess t-value to get true closest point
+        double optimizeT(double t, int s, const Eigen::Vector3d& p, int max_iter = 10) const;
+
+        // Get bounding box diagonal length
+        double getBBoxDiag() const;
 
         friend class Polynet::dcurvenet;
     protected:
@@ -106,6 +121,8 @@ class curvenet {
 
         // Get the 4 control points of a spline
         void splineCtrlPts(int s, Eigen::Vector3d& c0, Eigen::Vector3d& c1, Eigen::Vector3d& c2, Eigen::Vector3d& c3) const;
+        // Compute the length of the diagonal of the bounding box
+        void computeBBoxDiag();
 
         // Store attributes as lists
         std::vector<Control> C;
@@ -129,6 +146,9 @@ class curvenet {
         // Naive fallback sampling density (arc length per sample) when no mesh is available
         // TODO: Replace with a curvature-based heuristic
         double defaultSample = 0.1;
+
+        // AABB Diagonal length
+        double bboxDiag = 0.0;
 };
 
 }   // namespace Curvenet
