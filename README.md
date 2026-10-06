@@ -7,8 +7,8 @@ This repo contains my from-scratch implementation of the Profile Mover algorithm
 You only need to clone Polyscope into a folder called deps; Eigen is fetched automatically by CMake. This has been tested on Windows (MSVC), Linux, and macOS (Apple Silicon):
 
 ```
-git clone https://github.com/dcui-03/ProfileMover
-cd ./ProfileMover
+git clone https://github.com/dcui-03/CurvenetDeformer
+cd ./CurvenetDeformer
 mkdir deps && cd ./deps
 git clone --recurse-submodules https://github.com/nmwsharp/polyscope.git
 cd ..
