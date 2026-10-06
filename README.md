@@ -1,4 +1,4 @@
-# Profile Mover
+# Curvenet Deformer
 
 This repo contains my from-scratch implementation of the Profile Mover algorithm (de Goes et al., ACM SIGGRAPH 2022) in C++. Please see Notes below for more information.
 
